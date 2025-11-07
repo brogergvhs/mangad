@@ -12,6 +12,17 @@ import (
 var ErrNoConfig = errors.New("no config selected")
 
 func ConfigRoot() string {
+	// Windows
+	if appdata := os.Getenv("APPDATA"); appdata != "" {
+		return filepath.Join(appdata, "mangad")
+	}
+
+	// Linux/macOS XDG
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "mangad")
+	}
+
+	// Linux/macOS default
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "mangad")
 }
