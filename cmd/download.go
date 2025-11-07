@@ -77,8 +77,8 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		IgnoreConfig:   flagIgnoreConfig,
 		Debug:          flagDebug,
 		Output:         flagOutput,
-		ImageWorkers:   flagImageWorkers,
-		ChapterWorkers: flagChapterWorkers,
+		ImageWorkers:   0,
+		ChapterWorkers: 0,
 		KeepFolders:    flagKeepFolders,
 		DefaultURL:     flagURL,
 		DefaultRange:   flagRange,
@@ -88,6 +88,13 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		UserAgent:      flagUserAgent,
 		SkipBroken:     flagSkipBroken,
 	})
+
+	if cmd.Flags().Changed("image-workers") {
+		cfg.ImageWorkers = flagImageWorkers
+	}
+	if cmd.Flags().Changed("chapter-workers") {
+		cfg.ChapterWorkers = flagChapterWorkers
+	}
 
 	if flagAllowExt != "" {
 		cfg.AllowExt = splitExt(flagAllowExt)

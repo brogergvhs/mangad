@@ -48,10 +48,13 @@ func sanitize(s string) string {
 
 func (c Chapter) baseName() string {
 	lbl := sanitize(c.Label)
-
 	title := sanitize(c.Title)
 
-	if title != "" && title != lbl {
+	if trimmed, ok := strings.CutPrefix(title, lbl+"_"); ok {
+		title = trimmed
+	}
+
+	if title != "" {
 		return lbl + "_" + title
 	}
 	return lbl
