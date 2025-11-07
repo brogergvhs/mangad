@@ -65,16 +65,3 @@ package:
 	@echo "Build complete."
 	@echo "Files in $(DIST):"
 	@ls -1 $(DIST)
-
-# ------------------------------------------------------------------------
-# Development helper: watch & rebuild automatically
-#
-# Requires entr:
-#   brew install entr
-#   sudo apt install entr
-#
-# Usage:
-#   make watch
-# ------------------------------------------------------------------------
-watch:
-	find . -type f -name '*.go' | entr -c make build
