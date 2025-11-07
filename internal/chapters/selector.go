@@ -1,77 +1,169 @@
 package chapters
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 )
 
-func Filter(all []Chapter, chapter string, rng string, list string) []Chapter {
+var (
+	ErrInvalidRange = errors.New("invalid chapter range")
+	ErrInvalidList  = errors.New("invalid chapter list")
+	ErrNotFound     = errors.New("chapter not found")
+)
+
+func Filter(
+	all []Chapter,
+	chapter string,
+	rng string,
+	excludeRng string,
+	list string,
+	excludeList string,
+) ([]Chapter, error) {
+
+	n := len(all)
+
 	if chapter != "" {
-		byLabel := FilterChaptersByLabel(all, chapter)
-		if len(byLabel) > 0 {
-			return byLabel
+
+		if byLabel := FilterChaptersByLabel(all, chapter); len(byLabel) > 0 {
+			return byLabel, nil
 		}
-		if idx, err := strconv.Atoi(chapter); err == nil {
-			if idx > 0 && idx <= len(all) {
-				return []Chapter{all[idx-1]}
+
+		if idx, err := strconv.Atoi(strings.TrimSpace(chapter)); err == nil {
+			if idx <= 0 || idx > n {
+				return nil, fmt.Errorf("%w: chapter index %d out of range", ErrNotFound, idx)
 			}
+			return []Chapter{all[idx-1]}, nil
 		}
-		return []Chapter{}
+
+		return nil, fmt.Errorf("%w: %q", ErrNotFound, chapter)
 	}
+
+	keep := make([]bool, n)
+	for i := range keep {
+		keep[i] = true
+	}
+
 	if rng != "" {
-		return FilterChapterRange(all, rng)
+		start, end, err := parseRange(rng, n)
+		if err != nil {
+			return nil, err
+		}
+		applyIncludeRange(keep, start, end)
 	}
+
+	if excludeRng != "" {
+		start, end, err := parseRange(excludeRng, n)
+		if err != nil {
+			return nil, err
+		}
+		applyExcludeRange(keep, start, end)
+	}
+
 	if list != "" {
-		return FilterChapterList(all, list)
+		indices, err := parseList(list, n)
+		if err != nil {
+			return nil, err
+		}
+		applyIncludeList(keep, indices)
 	}
-	return all
+
+	if excludeList != "" {
+		indices, err := parseList(excludeList, n)
+		if err != nil {
+			return nil, err
+		}
+		applyExcludeList(keep, indices)
+	}
+
+	out := make([]Chapter, 0)
+	for i, ok := range keep {
+		if ok {
+			out = append(out, all[i])
+		}
+	}
+
+	return out, nil
 }
 
 func FilterChaptersByLabel(all []Chapter, label string) []Chapter {
-	var out []Chapter
+	out := make([]Chapter, 0, 4)
 	for _, ch := range all {
 		if ch.Label == label {
 			out = append(out, ch)
 		}
 	}
+
 	return out
 }
 
-func FilterChapterRange(all []Chapter, rng string) []Chapter {
-	parts := strings.Split(rng, "-")
+func parseRange(s string, max int) (start, end int, err error) {
+	parts := strings.Split(s, "-")
 	if len(parts) != 2 {
-		return nil
+		return 0, 0, fmt.Errorf("%w: %q", ErrInvalidRange, s)
 	}
-	start, err1 := atoi(parts[0])
-	end, err2 := atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return nil
+
+	start, e1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	end, e2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+
+	if e1 != nil || e2 != nil {
+		return 0, 0, fmt.Errorf("%w: non-integer values in %q", ErrInvalidRange, s)
 	}
-	if start <= 0 || end <= 0 || start > end || end > len(all) {
-		return nil
+	if start <= 0 || end <= 0 || start > end || end > max {
+		return 0, 0, fmt.Errorf("%w: out of bounds %q", ErrInvalidRange, s)
 	}
-	return all[start-1 : end]
+
+	return start - 1, end - 1, nil
 }
 
-func FilterChapterList(all []Chapter, list string) []Chapter {
-	nums := strings.Split(list, ",")
-	out := []Chapter{}
-	for _, n := range nums {
-		n = strings.TrimSpace(n)
-		if n == "" {
-			continue
-		}
-		idx, err := atoi(n)
-		if err != nil {
-			continue
-		}
-		if idx > 0 && idx <= len(all) {
-			out = append(out, all[idx-1])
-		}
+func applyIncludeRange(keep []bool, start, end int) {
+	for i := range keep {
+		keep[i] = i >= start && i <= end
 	}
-	return out
 }
 
-func atoi(s string) (int, error) {
-	return strconv.Atoi(strings.TrimSpace(s))
+func applyExcludeRange(keep []bool, start, end int) {
+	for i := start; i <= end; i++ {
+		keep[i] = false
+	}
+}
+
+func parseList(s string, max int) ([]int, error) {
+	if s == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(s, ",")
+	out := make([]int, 0, len(parts))
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		n, err := strconv.Atoi(p)
+		if err != nil || n <= 0 || n > max {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidList, p)
+		}
+		out = append(out, n-1)
+	}
+	return out, nil
+}
+
+func applyIncludeList(keep []bool, indices []int) {
+	allowed := make([]bool, len(keep))
+	for _, i := range indices {
+		allowed[i] = true
+	}
+	for i := range keep {
+		keep[i] = keep[i] && allowed[i]
+	}
+}
+
+func applyExcludeList(keep []bool, indices []int) {
+	for _, i := range indices {
+		keep[i] = false
+	}
 }

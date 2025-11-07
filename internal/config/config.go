@@ -16,9 +16,11 @@ type Config struct {
 	Debug          bool     `yaml:"debug"`
 	AllowExt       []string `yaml:"allow_ext"`
 
-	DefaultURL   string `yaml:"default_url"`
-	DefaultRange string `yaml:"default_range"`
-	DefaultList  string `yaml:"default_list"`
+	DefaultURL          string `yaml:"default_url"`
+	DefaultRange        string `yaml:"default_range"`
+	DefaultExcludeRange string `yaml:"default_exclude_range"`
+	DefaultList         string `yaml:"default_list"`
+	DefaultExcludeList  string `yaml:"default_exclude_list"`
 
 	Cookie     string `yaml:"cookie"`
 	CookieFile string `yaml:"cookie_file"`
@@ -28,36 +30,40 @@ type Config struct {
 }
 
 type Options struct {
-	IgnoreConfig   bool
-	Debug          bool
-	Output         string
-	ImageWorkers   int
-	ChapterWorkers int
-	KeepFolders    bool
-	DefaultURL     string
-	DefaultRange   string
-	DefaultList    string
-	Cookie         string
-	CookieFile     string
-	UserAgent      string
-	SkipBroken     bool
+	IgnoreConfig        bool
+	Debug               bool
+	Output              string
+	ImageWorkers        int
+	ChapterWorkers      int
+	KeepFolders         bool
+	DefaultURL          string
+	DefaultRange        string
+	DefaultExcludeRange string
+	DefaultList         string
+	DefaultExcludeList  string
+	Cookie              string
+	CookieFile          string
+	UserAgent           string
+	SkipBroken          bool
 }
 
 func DefaultConfig() *Config {
 	return &Config{
-		Output:         ".",
-		ImageWorkers:   5,
-		ChapterWorkers: 2,
-		KeepFolders:    false,
-		Debug:          false,
-		DefaultURL:     "",
-		DefaultRange:   "",
-		DefaultList:    "",
-		Cookie:         "",
-		CookieFile:     "",
-		UserAgent:      "",
-		SkipBroken:     false,
-		AllowExt:       []string{"jpg", "jpeg", "png", "webp"},
+		Output:              ".",
+		ImageWorkers:        5,
+		ChapterWorkers:      2,
+		KeepFolders:         false,
+		Debug:               false,
+		DefaultURL:          "",
+		DefaultRange:        "",
+		DefaultExcludeRange: "",
+		DefaultList:         "",
+		DefaultExcludeList:  "",
+		Cookie:              "",
+		CookieFile:          "",
+		UserAgent:           "",
+		SkipBroken:          false,
+		AllowExt:            []string{"jpg", "jpeg", "png", "webp"},
 	}
 }
 
@@ -136,8 +142,14 @@ func mergeConfig(c *Config, o Options) {
 	if o.DefaultRange != "" {
 		c.DefaultRange = o.DefaultRange
 	}
+	if o.DefaultExcludeRange != "" {
+		c.DefaultExcludeRange = o.DefaultExcludeRange
+	}
 	if o.DefaultList != "" {
 		c.DefaultList = o.DefaultList
+	}
+	if o.DefaultExcludeList != "" {
+		c.DefaultExcludeList = o.DefaultExcludeList
 	}
 	if o.Cookie != "" {
 		c.Cookie = o.Cookie
@@ -183,8 +195,14 @@ func (c *Config) Print() {
 	if c.DefaultRange != "" {
 		fmt.Printf(" -range: %s\n", c.DefaultRange)
 	}
+	if c.DefaultExcludeRange != "" {
+		fmt.Printf(" -exclude_range: %s\n", c.DefaultExcludeRange)
+	}
 	if c.DefaultList != "" {
 		fmt.Printf(" -list: %s\n", c.DefaultList)
+	}
+	if c.DefaultExcludeList != "" {
+		fmt.Printf(" -exclude_list: %s\n", c.DefaultExcludeList)
 	}
 	if c.CookieFile != "" {
 		fmt.Printf(" -cookie_file: %s\n", c.CookieFile)
