@@ -215,6 +215,28 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		for i, ch := range selected {
 			fmt.Printf("%3d) %s  [%s]\n    %s\n", i+1, ch.Title, ch.Label, ch.URL)
 		}
+
+		if len(selected) == 1 {
+			ch := selected[0]
+			fmt.Printf("\nFetching images for chapter %s (%s)...\n\n", ch.Title, ch.Label)
+
+			images, err := scr.GetImages(ctx, ch.URL)
+			if err != nil {
+				return fmt.Errorf("failed to fetch images for %s: %w", ch.Label, err)
+			}
+
+			if len(images) == 0 {
+				fmt.Println("No images found.")
+			} else {
+				fmt.Printf("Found %d images:\n\n", len(images))
+				for i, u := range images {
+					fmt.Printf("%3d) %s\n", i+1, u)
+				}
+			}
+
+			fmt.Println()
+		}
+
 		return nil
 	}
 
