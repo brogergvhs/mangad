@@ -22,13 +22,15 @@ type Scraper struct {
 	client  *http.Client
 	debug   bool
 	allowed *regexp.Regexp
+	checkJS bool
 }
 
-func NewScraper(c *http.Client, debug bool, allowExt []string) *Scraper {
+func NewScraper(c *http.Client, debug bool, allowExt []string, checkJS bool) *Scraper {
 	return &Scraper{
 		client:  c,
 		debug:   debug,
 		allowed: buildExtRegex(normalizeExtList(allowExt)),
+		checkJS: checkJS,
 	}
 }
 
@@ -235,28 +237,85 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 		return nil, err
 	}
 
-	col := newImageCollector(s.allowed)
+	body, _ := s.fetchBody(ctx, chapterURL)
 
-	col.ScanIMGTags(doc, chapterURL)
-	col.ScanBackgroundImages(doc, chapterURL)
+	if s.debug {
+		fmt.Println("\n======= DEBUG HTML START =======")
+		fmt.Println(body)
+		fmt.Println("======= DEBUG HTML END =======")
+		fmt.Println()
+	}
 
-	body, err := s.fetchBody(ctx, chapterURL)
-	if err == nil {
-		if match := reNuxt.FindStringSubmatch(body); len(match) > 1 {
-			var raw map[string]any
-			if json.Unmarshal([]byte(match[1]), &raw) == nil {
-				col.ScanNuxt(raw)
+	col := newImageCollector(s.allowed, s.debug)
+
+	if s.debug {
+		added := col.ScanIMGTags(doc, chapterURL)
+		debugAdded("IMG tags", added)
+
+		added = col.ScanPictureSources(doc, chapterURL)
+		debugAdded("PICTURE sources", added)
+
+		added = col.ScanAnchorImages(doc, chapterURL)
+		debugAdded("ANCHOR href", added)
+
+		added = col.ScanBackgroundImages(doc, chapterURL)
+		debugAdded("CSS background", added)
+	}
+
+	if match := reNuxt.FindStringSubmatch(body); len(match) > 1 {
+		var raw map[string]any
+		if json.Unmarshal([]byte(match[1]), &raw) == nil {
+			if s.debug {
+				fmt.Println("[debug] Found embedded Nuxt/SSR-style JSON")
 			}
+			col.ScanNuxt(raw, chapterURL)
 		}
 	}
 
 	col.ScanLooseURLs(body)
 
-	final := col.Finalize()
+	if s.checkJS {
 
+		if s.debug {
+			fmt.Println("[debug] JS scraping enabled")
+		}
+
+		var jsCode strings.Builder
+		doc.Find("script").Each(func(_ int, sc *goquery.Selection) {
+			t := sc.Text()
+			if strings.TrimSpace(t) != "" {
+				jsCode.WriteString(t)
+				jsCode.WriteString("\n")
+			}
+		})
+
+		jsAnalysis := ExtractJS(jsCode.String())
+
+		if s.debug {
+			fmt.Println("[debug] JS Vars:", jsAnalysis.Vars)
+			fmt.Println("[debug] JS URLs:", jsAnalysis.URLs)
+			fmt.Println("[debug] JS Calls:", jsAnalysis.Calls)
+		}
+
+		s.probeDynamicEndpoints(ctx, chapterURL, jsAnalysis, col)
+	} else {
+		if s.debug {
+			fmt.Println("[debug] JS scraping disabled (use --also-check-js to enable)")
+		}
+	}
+
+	final := col.Finalize()
 	if len(final) == 0 {
 		return nil, fmt.Errorf("no usable images found")
 	}
 
 	return final, nil
+}
+
+func debugAdded(label string, n int) {
+	if n > 0 {
+		fmt.Printf("[debug] %s: +%d candidates\n", label, n)
+	} else {
+		fmt.Printf("[debug] %s: +0\n", label)
+	}
 }

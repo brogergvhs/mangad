@@ -21,6 +21,7 @@ type Config struct {
 	DefaultExcludeRange string `yaml:"default_exclude_range"`
 	DefaultList         string `yaml:"default_list"`
 	DefaultExcludeList  string `yaml:"default_exclude_list"`
+	CheckJS             bool   `yaml:"check_js"`
 
 	Cookie     string `yaml:"cookie"`
 	CookieFile string `yaml:"cookie_file"`
@@ -41,6 +42,7 @@ type Options struct {
 	DefaultExcludeRange string
 	DefaultList         string
 	DefaultExcludeList  string
+	CheckJS             bool
 	Cookie              string
 	CookieFile          string
 	UserAgent           string
@@ -62,6 +64,7 @@ func DefaultConfig() *Config {
 		Cookie:              "",
 		CookieFile:          "",
 		UserAgent:           "",
+		CheckJS:             false,
 		SkipBroken:          false,
 		AllowExt:            []string{"jpg", "jpeg", "png", "webp"},
 	}
@@ -151,6 +154,9 @@ func mergeConfig(c *Config, o Options) {
 	if o.DefaultExcludeList != "" {
 		c.DefaultExcludeList = o.DefaultExcludeList
 	}
+	if o.CheckJS {
+		c.CheckJS = true
+	}
 	if o.Cookie != "" {
 		c.Cookie = o.Cookie
 	}
@@ -203,6 +209,9 @@ func (c *Config) Print() {
 	}
 	if c.DefaultExcludeList != "" {
 		fmt.Printf(" -exclude_list: %s\n", c.DefaultExcludeList)
+	}
+	if c.CheckJS {
+		fmt.Printf(" -check_js: %t\n", c.CheckJS)
 	}
 	if c.CookieFile != "" {
 		fmt.Printf(" -cookie_file: %s\n", c.CookieFile)

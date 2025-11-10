@@ -37,6 +37,7 @@ var (
 	flagKeepFolders    bool
 	flagDryRun         bool
 	flagSkipBroken     bool
+	flagCheckJS        bool
 
 	// headers/auth
 	flagCookie     string
@@ -67,6 +68,7 @@ func init() {
 	downloadCmd.Flags().BoolVar(&flagKeepFolders, "keep-folders", false, "keep temporary folders")
 	downloadCmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "show what would be downloaded, don’t download")
 	downloadCmd.Flags().BoolVar(&flagSkipBroken, "skip-broken", false, "skip failed images instead of failing the whole chapter")
+	downloadCmd.Flags().BoolVar(&flagCheckJS, "check-js", false, "Enable generic JS scanning & dynamic AJAX endpoint discovery")
 
 	// headers/auth
 	downloadCmd.Flags().StringVar(&flagCookie, "cookie", "", "cookie string, e.g. \"key=value; other=123\"")
@@ -89,6 +91,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		DefaultExcludeRange: flagExcludeRange,
 		DefaultList:         flagList,
 		DefaultExcludeList:  flagExcludeList,
+		CheckJS:             flagCheckJS,
 		Cookie:              flagCookie,
 		CookieFile:          flagCookieFile,
 		UserAgent:           flagUserAgent,
@@ -144,7 +147,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	util.SetupInterruptHandler(cfg.Output)
 
-	scr := generic.NewScraper(client, cfg.Debug, cfg.AllowExt)
+	scr := generic.NewScraper(client, cfg.Debug, cfg.AllowExt, cfg.CheckJS)
 
 	allChaptersRaw, err := scr.GetChapters(ctx, cfg.DefaultURL)
 	if err != nil {
