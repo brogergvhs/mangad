@@ -162,7 +162,7 @@ func (c *imageCollector) ScanIMGTags(doc *goquery.Document, chapterURL string) i
 		idx := getIndexFor(img)
 
 		if ss, ok := img.Attr("srcset"); ok && strings.TrimSpace(ss) != "" {
-			for _, p := range strings.Split(ss, ",") {
+			for p := range strings.SplitSeq(ss, ",") {
 				p = strings.TrimSpace(p)
 				if p == "" {
 					continue
@@ -237,7 +237,7 @@ func (c *imageCollector) ScanPictureSources(doc *goquery.Document, chapterURL st
 		idx := getIndexFor(src)
 
 		if ss, ok := src.Attr("srcset"); ok && strings.TrimSpace(ss) != "" {
-			for _, p := range strings.Split(ss, ",") {
+			for p := range strings.SplitSeq(ss, ",") {
 				p = strings.TrimSpace(p)
 				if p == "" {
 					continue
