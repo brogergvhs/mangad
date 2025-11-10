@@ -14,7 +14,7 @@ STATICCHECK     := staticcheck
 VERSION         := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LD_FLAGS        := -X 'github.com/brogergvhs/mangad/cmd.Version=$(VERSION)'
 
-all: build
+PHONY all: build
 
 build:
 	@echo "Building $(APP) (version: $(VERSION))..."
@@ -39,7 +39,7 @@ vet:
 lint:
 	$(STATICCHECK) ./...
 
-check: fmt vet lint
+PHONEY check: fmt vet lint
 
 clean:
 	@echo "Cleaning..."

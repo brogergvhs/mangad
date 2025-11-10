@@ -130,48 +130,6 @@ func SwitchConfig(label string) error {
 	return os.WriteFile(CurrentLabelFile(), []byte(label), 0644)
 }
 
-func AddConfig(label, srcPath string) error {
-	if strings.TrimSpace(label) == "" {
-		return errors.New("label cannot be empty")
-	}
-	if err := ensureDirs(); err != nil {
-		return err
-	}
-
-	dst := filepath.Join(ConfigsDir(), label+".yaml")
-	if _, err := os.Stat(dst); err == nil {
-		return fmt.Errorf("config %q already exists", label)
-	}
-
-	raw, err := os.ReadFile(srcPath)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(dst, raw, 0644)
-}
-
-func CreateEmptyConfig(label string) (string, error) {
-	if strings.TrimSpace(label) == "" {
-		return "", errors.New("label cannot be empty")
-	}
-	if err := ensureDirs(); err != nil {
-		return "", err
-	}
-
-	path := filepath.Join(ConfigsDir(), label+".yaml")
-
-	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("config %q already exists", label)
-	}
-
-	if err := SaveYAML(DefaultConfig(), path); err != nil {
-		return "", err
-	}
-
-	return path, nil
-}
-
 func RenameConfig(oldLabel, newLabel string) error {
 	if strings.TrimSpace(newLabel) == "" {
 		return errors.New("new label cannot be empty")
@@ -229,22 +187,11 @@ func RemoveConfig(label string, force bool) error {
 	return os.Remove(path)
 }
 
-func InitDefaultConfig() (string, error) {
-	if err := ensureDirs(); err != nil {
-		return "", err
+func ConfigPathByLabel(label string) (string, error) {
+	path := filepath.Join(ConfigsDir(), label+".yaml")
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("config %q does not exist", label)
 	}
 
-	defPath := filepath.Join(ConfigsDir(), "Default.yaml")
-
-	if _, err := os.Stat(defPath); err == nil {
-		_ = os.WriteFile(CurrentLabelFile(), []byte("Default"), 0644)
-		return defPath, os.ErrExist
-	}
-
-	if err := SaveYAML(DefaultConfig(), defPath); err != nil {
-		return "", err
-	}
-
-	_ = os.WriteFile(CurrentLabelFile(), []byte("Default"), 0644)
-	return defPath, nil
+	return path, nil
 }

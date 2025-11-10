@@ -1,6 +1,3 @@
-// Package generic implements a provider.Scraper that works on general
-// HTML-based manga reading sites. It extracts chapters and image URLs
-// using DOM-first analysis with fallback heuristics.
 package generic
 
 import (
@@ -16,25 +13,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/util"
-
-	"github.com/PuerkitoBio/goquery"
 )
 
 type Scraper struct {
 	client  *http.Client
 	debug   bool
 	allowed *regexp.Regexp
+	checkJS bool
 }
 
-func NewScraper(c *http.Client, debug bool, allowExt []string) *Scraper {
-	normalized := normalizeExtList(allowExt)
-
+func NewScraper(c *http.Client, debug bool, allowExt []string, checkJS bool) *Scraper {
 	return &Scraper{
 		client:  c,
 		debug:   debug,
-		allowed: buildExtRegex(normalized),
+		allowed: buildExtRegex(normalizeExtList(allowExt)),
+		checkJS: checkJS,
 	}
 }
 
@@ -42,15 +38,13 @@ var (
 	chapRe      = regexp.MustCompile(`(?i)(?:vol(?:ume)?[_\-\s]*\d+[_\-\s]*)?(?:chapter|ch)[_\-\s]*0*([0-9]+)(?:[_\-\s]*([.\-])[_\-\s]*([0-9]+))?`)
 	chapterDash = regexp.MustCompile(`chapter[_\-]?0*([0-9]+)[_\-]?([0-9]+)?`)
 
-	reLikelyChapter = regexp.MustCompile(`(?i)(?:^|[-_/])(?:ch|chapter)[-_]?\d+`)
-	disallowedExt   = regexp.MustCompile(`(?i)\.(?:gif)$`)
-)
-
-var (
 	batoSimple  = regexp.MustCompile(`(?:^|[/\-_])ch[_\-]?(\d+(?:\.\d+)?)`)
 	batoVol     = regexp.MustCompile(`vol[_\-]?(\d+)[/_\-]ch[_\-]?(\d+(?:\.\d+)?)`)
 	batoPlain   = regexp.MustCompile(`[/\-](\d+(?:\.\d+)?)(?:$|[/\-_])`)
 	titlePrefix = regexp.MustCompile(`^\s*(\d+(?:\.\d+)?)\s*[.\- ]`)
+
+	reLikelyChapter = regexp.MustCompile(`(?i)(?:^|[-_/])(?:ch|chapter)[-_]?\d+`)
+	reNuxt          = regexp.MustCompile(`window\.__NUXT__\s*=\s*(\{.*?});`)
 )
 
 func (s *Scraper) fetchDOM(ctx context.Context, target string) (*goquery.Document, error) {
@@ -63,7 +57,9 @@ func (s *Scraper) fetchDOM(ctx context.Context, target string) (*goquery.Documen
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	return goquery.NewDocumentFromReader(resp.Body)
 }
@@ -78,21 +74,19 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return string(b), nil
+	data, err := io.ReadAll(resp.Body)
+	return string(data), err
 }
 
-func parseChapterLabel(href, title string) (main int, typ string, sub int, label string, ok bool) {
+func parseChapterLabel(href, title string) (int, string, int, string, bool) {
 	h := strings.ToLower(href)
 	t := strings.ToLower(title)
 
-	hasChapterKeyword :=
+	hasKey :=
 		strings.Contains(h, "ch") ||
 			strings.Contains(h, "chapter") ||
 			strings.Contains(h, "vol") ||
@@ -100,21 +94,14 @@ func parseChapterLabel(href, title string) (main int, typ string, sub int, label
 			strings.Contains(t, "chapter") ||
 			strings.Contains(t, "vol")
 
-	if !hasChapterKeyword {
+	if !hasKey {
+		return 0, "", 0, "", false
+	}
+	if strings.Contains(h, "/u/") || strings.Contains(h, "batolists") {
 		return 0, "", 0, "", false
 	}
 
-	if strings.Contains(h, "/u/") {
-		return 0, "", 0, "", false
-	}
-	if strings.Contains(h, "batolists") {
-		return 0, "", 0, "", false
-	}
-	if strings.Contains(h, "/title/") && !strings.Contains(h, "ch") && !strings.Contains(h, "vol") {
-		return 0, "", 0, "", false
-	}
-
-	if m := chapterDash.FindStringSubmatch(href); m != nil {
+	if m := chapterDash.FindStringSubmatch(h); m != nil {
 		main, _ := strconv.Atoi(m[1])
 		if m[2] != "" {
 			sub, _ := strconv.Atoi(m[2])
@@ -129,47 +116,34 @@ func parseChapterLabel(href, title string) (main int, typ string, sub int, label
 		return ch, ".", vol, fmt.Sprintf("%d.%d", vol, ch), true
 	}
 
-	if m := batoSimple.FindStringSubmatch(href); m != nil {
+	if m := batoSimple.FindStringSubmatch(h); m != nil {
 		parts := strings.Split(m[1], ".")
 		main, _ := strconv.Atoi(parts[0])
-
 		if len(parts) == 2 {
 			sub, _ := strconv.Atoi(parts[1])
 			return main, ".", sub, fmt.Sprintf("%d.%d", main, sub), true
 		}
-
 		return main, "", 0, fmt.Sprintf("%d", main), true
 	}
 
 	if m := batoPlain.FindStringSubmatch(h); m != nil {
-		if strings.Contains(h, "vol") {
-			goto skipPlain
-		}
-		if n, err := strconv.Atoi(m[1]); err == nil {
-			return n, "", 0, m[1], true
-		}
+		n, _ := strconv.Atoi(m[1])
+		return n, "", 0, m[1], true
 	}
 
-skipPlain:
 	if m := titlePrefix.FindStringSubmatch(title); m != nil {
 		n, _ := strconv.Atoi(m[1])
 		return n, "", 0, m[1], true
 	}
 
 	if m := chapRe.FindStringSubmatch(title); m != nil {
-		main, _ = strconv.Atoi(m[1])
-		typ = m[2]
-		sub, _ = strconv.Atoi(m[3])
-
-		switch typ {
-		case ".":
-			label = fmt.Sprintf("%d.%d", main, sub)
-		case "-":
-			label = fmt.Sprintf("%d-%d", main, sub)
-		default:
+		main, _ := strconv.Atoi(m[1])
+		typ := m[2]
+		sub, _ := strconv.Atoi(m[3])
+		label := fmt.Sprintf("%d%s%d", main, typ, sub)
+		if typ == "" {
 			label = fmt.Sprintf("%d", main)
 		}
-
 		return main, typ, sub, label, true
 	}
 
@@ -178,36 +152,24 @@ skipPlain:
 
 func looksLikeChapterLink(href, title string) bool {
 	h := strings.ToLower(href)
+	if reLikelyChapter.MatchString(h) || batoVol.MatchString(h) || batoSimple.MatchString(h) {
+		return true
+	}
 	t := strings.ToLower(title)
-
-	if reLikelyChapter.MatchString(h) {
-		return true
-	}
-
-	if batoVol.MatchString(h) || batoSimple.MatchString(h) {
-		return true
-	}
-
-	if strings.HasPrefix(t, "ch ") || strings.HasPrefix(t, "chapter ") {
-		return true
-	}
-
-	return false
+	return strings.HasPrefix(t, "ch ") || strings.HasPrefix(t, "chapter ")
 }
 
-func resolveURL(base, href string) string {
+func resolveURL(baseURL, href string) string {
 	if href == "" {
-		return base
+		return baseURL
 	}
+
 	u, err := url.Parse(href)
-	if err != nil {
-		return href
-	}
-	if u.IsAbs() {
+	if err == nil && u.IsAbs() {
 		return u.String()
 	}
 
-	b, err := url.Parse(base)
+	b, err := url.Parse(baseURL)
 	if err != nil {
 		return href
 	}
@@ -226,7 +188,6 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 
 	doc.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
 		href, _ := a.Attr("href")
-
 		if !looksLikeChapterLink(href, a.Text()) {
 			return
 		}
@@ -236,7 +197,7 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 			return
 		}
 
-		u := resolveURL(pageURL, strings.TrimSpace(href))
+		u := resolveURL(pageURL, href)
 		if seen[u] {
 			return
 		}
@@ -261,197 +222,100 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 		if out[i].NumMain != out[j].NumMain {
 			return out[i].NumMain < out[j].NumMain
 		}
-
-		rank := func(t string) int {
-			switch t {
-			case "":
-				return 0
-			case ".":
-				return 1
-			default:
-				return 2
-			}
+		if out[i].SuffixType != out[j].SuffixType {
+			return out[i].SuffixType < out[j].SuffixType
 		}
-
-		ri, rj := rank(out[i].SuffixType), rank(out[j].SuffixType)
-		if ri != rj {
-			return ri < rj
-		}
-
 		return out[i].SuffixNum < out[j].SuffixNum
 	})
 
 	return out, nil
 }
+
 func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, error) {
 	doc, err := s.fetchDOM(ctx, chapterURL)
 	if err != nil {
 		return nil, err
 	}
 
-	var imgs []string
-	seen := map[string]bool{}
+	body, _ := s.fetchBody(ctx, chapterURL)
 
-	doc.Find("img").Each(func(_ int, img *goquery.Selection) {
-		src, _ := img.Attr("src")
+	if s.debug {
+		fmt.Println("\n======= DEBUG HTML START =======")
+		fmt.Println(body)
+		fmt.Println("======= DEBUG HTML END =======")
+		fmt.Println()
+	}
 
-		if src == "" || strings.HasPrefix(src, "data:") {
-			if v, ok := img.Attr("data-src"); ok {
-				src = v
+	col := newImageCollector(s.allowed, s.debug)
+
+	if s.debug {
+		added := col.ScanIMGTags(doc, chapterURL)
+		debugAdded("IMG tags", added)
+
+		added = col.ScanPictureSources(doc, chapterURL)
+		debugAdded("PICTURE sources", added)
+
+		added = col.ScanAnchorImages(doc, chapterURL)
+		debugAdded("ANCHOR href", added)
+
+		added = col.ScanBackgroundImages(doc, chapterURL)
+		debugAdded("CSS background", added)
+	}
+
+	if match := reNuxt.FindStringSubmatch(body); len(match) > 1 {
+		var raw map[string]any
+		if json.Unmarshal([]byte(match[1]), &raw) == nil {
+			if s.debug {
+				fmt.Println("[debug] Found embedded Nuxt/SSR-style JSON")
 			}
-		}
-
-		src = strings.TrimSpace(src)
-		if src == "" {
-			return
-		}
-
-		u := resolveURL(chapterURL, src)
-		lu := strings.ToLower(u)
-
-		if disallowedExt.MatchString(lu) {
-			return
-		}
-		if !s.allowed.MatchString(lu) {
-			return
-		}
-
-		if !seen[u] {
-			seen[u] = true
-			imgs = append(imgs, u)
-		}
-	})
-
-	doc.Find("[style]").Each(func(_ int, el *goquery.Selection) {
-		style, _ := el.Attr("style")
-		sstyle := strings.ToLower(style)
-
-		if !strings.Contains(sstyle, "background-image") {
-			return
-		}
-
-		re := regexp.MustCompile(`url\(([^)]+)\)`)
-		matches := re.FindAllStringSubmatch(style, -1)
-
-		for _, m := range matches {
-			raw := strings.Trim(m[1], `"'`)
-			if raw == "" || strings.HasPrefix(raw, "data:") {
-				continue
-			}
-
-			u := resolveURL(chapterURL, raw)
-			lu := strings.ToLower(u)
-
-			if disallowedExt.MatchString(lu) {
-				continue
-			}
-			if !s.allowed.MatchString(lu) {
-				continue
-			}
-
-			if !seen[u] {
-				seen[u] = true
-				imgs = append(imgs, u)
-			}
-		}
-	})
-
-	body, err := s.fetchBody(ctx, chapterURL)
-	if err == nil {
-		reNuxt := regexp.MustCompile(`window\.__NUXT__\s*=\s*(\{.*?});`)
-		match := reNuxt.FindStringSubmatch(body)
-		if len(match) > 1 {
-			jsonText := match[1]
-
-			var raw map[string]any
-			if json.Unmarshal([]byte(jsonText), &raw) == nil {
-				images := s.extractImagesFromNuxt(raw)
-				for _, u := range images {
-					if !seen[u] {
-						fmt.Println("DEBUG: NUXT IMG:", u)
-						imgs = append(imgs, u)
-						seen[u] = true
-					}
-				}
-			}
+			col.ScanNuxt(raw, chapterURL)
 		}
 	}
 
-	body, err = s.fetchBody(ctx, chapterURL)
-	if err != nil {
-		return nil, err
-	}
+	col.ScanLooseURLs(body)
 
-	candidates := regexp.MustCompile(`https?://[^\s"'<>]+`).FindAllString(body, -1)
-	for _, u := range candidates {
-		lu := strings.ToLower(u)
+	if s.checkJS {
 
-		if disallowedExt.MatchString(lu) {
-			continue
+		if s.debug {
+			fmt.Println("[debug] JS scraping enabled")
 		}
 
-		if s.allowed.MatchString(lu) && !seen[u] {
-			seen[u] = true
-			imgs = append(imgs, u)
+		var jsCode strings.Builder
+		doc.Find("script").Each(func(_ int, sc *goquery.Selection) {
+			t := sc.Text()
+			if strings.TrimSpace(t) != "" {
+				jsCode.WriteString(t)
+				jsCode.WriteString("\n")
+			}
+		})
+
+		jsAnalysis := ExtractJS(jsCode.String())
+
+		if s.debug {
+			fmt.Println("[debug] JS Vars:", jsAnalysis.Vars)
+			fmt.Println("[debug] JS URLs:", jsAnalysis.URLs)
+			fmt.Println("[debug] JS Calls:", jsAnalysis.Calls)
+		}
+
+		s.probeDynamicEndpoints(ctx, chapterURL, jsAnalysis, col)
+	} else {
+		if s.debug {
+			fmt.Println("[debug] JS scraping disabled (use --also-check-js to enable)")
 		}
 	}
 
-	if len(imgs) == 0 {
-		return nil, fmt.Errorf("no images found on page")
+	final := col.Finalize()
+	if len(final) == 0 {
+		return nil, fmt.Errorf("no usable images found")
 	}
 
-	return imgs, nil
+	return final, nil
 }
 
-func (s *Scraper) extractImagesFromNuxt(raw map[string]any) []string {
-	var out []string
-
-	var walk func(v any)
-	walk = func(v any) {
-		switch x := v.(type) {
-
-		case map[string]any:
-			for _, v2 := range x {
-				walk(v2)
-			}
-
-		case []any:
-			for _, v2 := range x {
-				walk(v2)
-			}
-
-		case string:
-			if s.allowed.MatchString(strings.ToLower(x)) {
-				out = append(out, x)
-			}
-		}
+func debugAdded(label string, n int) {
+	if n > 0 {
+		fmt.Printf("[debug] %s: +%d candidates\n", label, n)
+	} else {
+		fmt.Printf("[debug] %s: +0\n", label)
 	}
-
-	walk(raw)
-	return out
-}
-
-func normalizeExtList(list []string) []string {
-	out := []string{}
-
-	for _, ext := range list {
-		ext = strings.ToLower(strings.TrimSpace(ext))
-		ext = strings.TrimPrefix(ext, ".")
-
-		if ext != "" {
-			out = append(out, ext)
-		}
-	}
-
-	return out
-}
-
-func buildExtRegex(exts []string) *regexp.Regexp {
-	if len(exts) == 0 {
-		return regexp.MustCompile(`$a`)
-	}
-
-	pattern := `(?i)\.(` + strings.Join(exts, "|") + `)$`
-
-	return regexp.MustCompile(pattern)
 }

@@ -22,11 +22,13 @@ import (
 
 var (
 	// selection
-	flagURL      string
-	flagChapter  string
-	flagRange    string
-	flagList     string
-	flagAllowExt string
+	flagURL          string
+	flagChapter      string
+	flagRange        string
+	flagExcludeRange string
+	flagList         string
+	flagExcludeList  string
+	flagAllowExt     string
 
 	// runtime
 	flagOutput         string
@@ -35,6 +37,7 @@ var (
 	flagKeepFolders    bool
 	flagDryRun         bool
 	flagSkipBroken     bool
+	flagCheckJS        bool
 
 	// headers/auth
 	flagCookie     string
@@ -53,7 +56,9 @@ func init() {
 	downloadCmd.Flags().StringVar(&flagURL, "url", "", "manga series/chapters page URL")
 	downloadCmd.Flags().StringVar(&flagChapter, "chapter", "", "download single chapter by index or label (e.g. 5 or 28.5)")
 	downloadCmd.Flags().StringVar(&flagRange, "range", "", "download range of chapters by index (e.g. 5-12)")
+	downloadCmd.Flags().StringVar(&flagExcludeRange, "exclude-range", "", "exclude range of chapters by index (e.g. 5-12)")
 	downloadCmd.Flags().StringVar(&flagList, "list", "", "download specific chapter indices (e.g. 1,3,5)")
+	downloadCmd.Flags().StringVar(&flagExcludeList, "exclude-list", "", "exclude specific chapter indices (e.g. 1,3,5)")
 	downloadCmd.Flags().StringVar(&flagAllowExt, "allow-ext", "", "Allowed image extensions (e.g. \"webp|jpg|png\")")
 
 	// runtime
@@ -63,6 +68,7 @@ func init() {
 	downloadCmd.Flags().BoolVar(&flagKeepFolders, "keep-folders", false, "keep temporary folders")
 	downloadCmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "show what would be downloaded, don’t download")
 	downloadCmd.Flags().BoolVar(&flagSkipBroken, "skip-broken", false, "skip failed images instead of failing the whole chapter")
+	downloadCmd.Flags().BoolVar(&flagCheckJS, "check-js", false, "Enable generic JS scanning & dynamic AJAX endpoint discovery")
 
 	// headers/auth
 	downloadCmd.Flags().StringVar(&flagCookie, "cookie", "", "cookie string, e.g. \"key=value; other=123\"")
@@ -74,19 +80,22 @@ func init() {
 
 func runDownload(cmd *cobra.Command, _ []string) error {
 	cfg, usedPath, err := config.LoadMerged(config.Options{
-		IgnoreConfig:   flagIgnoreConfig,
-		Debug:          flagDebug,
-		Output:         flagOutput,
-		ImageWorkers:   0,
-		ChapterWorkers: 0,
-		KeepFolders:    flagKeepFolders,
-		DefaultURL:     flagURL,
-		DefaultRange:   flagRange,
-		DefaultList:    flagList,
-		Cookie:         flagCookie,
-		CookieFile:     flagCookieFile,
-		UserAgent:      flagUserAgent,
-		SkipBroken:     flagSkipBroken,
+		IgnoreConfig:        flagIgnoreConfig,
+		Debug:               flagDebug,
+		Output:              flagOutput,
+		ImageWorkers:        0,
+		ChapterWorkers:      0,
+		KeepFolders:         flagKeepFolders,
+		DefaultURL:          flagURL,
+		DefaultRange:        flagRange,
+		DefaultExcludeRange: flagExcludeRange,
+		DefaultList:         flagList,
+		DefaultExcludeList:  flagExcludeList,
+		CheckJS:             flagCheckJS,
+		Cookie:              flagCookie,
+		CookieFile:          flagCookieFile,
+		UserAgent:           flagUserAgent,
+		SkipBroken:          flagSkipBroken,
 	})
 
 	if cmd.Flags().Changed("image-workers") {
@@ -138,7 +147,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	util.SetupInterruptHandler(cfg.Output)
 
-	scr := generic.NewScraper(client, cfg.Debug, cfg.AllowExt)
+	scr := generic.NewScraper(client, cfg.Debug, cfg.AllowExt, cfg.CheckJS)
 
 	allChaptersRaw, err := scr.GetChapters(ctx, cfg.DefaultURL)
 	if err != nil {
@@ -160,9 +169,19 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		finalRange = cfg.DefaultRange
 	}
 
+	finalExcludeRange := flagExcludeRange
+	if finalExcludeRange == "" {
+		finalExcludeRange = cfg.DefaultExcludeRange
+	}
+
 	finalList := flagList
 	if finalList == "" {
 		finalList = cfg.DefaultList
+	}
+
+	finalExcludeList := flagExcludeList
+	if finalExcludeList == "" {
+		finalExcludeList = cfg.DefaultExcludeList
 	}
 
 	var selected []chapters.Chapter
@@ -175,13 +194,19 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		} else {
 			var idx int
 			if _, err := fmt.Sscanf(flagChapter, "%d", &idx); err == nil && idx > 0 {
-				selected = chapters.Filter(allChapters, strconv.Itoa(idx), finalRange, finalList)
+				selected, err = chapters.Filter(allChapters, strconv.Itoa(idx), finalRange, finalExcludeRange, finalList, finalExcludeList)
+				if err != nil {
+					return err
+				}
 			} else {
 				return fmt.Errorf("chapter '%s' not found", flagChapter)
 			}
 		}
 	} else {
-		selected = chapters.Filter(allChapters, "", finalRange, finalList)
+		selected, err = chapters.Filter(allChapters, "", finalRange, finalExcludeRange, finalList, finalExcludeList)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(selected) == 0 {
@@ -193,6 +218,28 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		for i, ch := range selected {
 			fmt.Printf("%3d) %s  [%s]\n    %s\n", i+1, ch.Title, ch.Label, ch.URL)
 		}
+
+		if len(selected) == 1 {
+			ch := selected[0]
+			fmt.Printf("\nFetching images for chapter %s (%s)...\n\n", ch.Title, ch.Label)
+
+			images, err := scr.GetImages(ctx, ch.URL)
+			if err != nil {
+				return fmt.Errorf("failed to fetch images for %s: %w", ch.Label, err)
+			}
+
+			if len(images) == 0 {
+				fmt.Println("No images found.")
+			} else {
+				fmt.Printf("Found %d images:\n\n", len(images))
+				for i, u := range images {
+					fmt.Printf("%3d) %s\n", i+1, u)
+				}
+			}
+
+			fmt.Println()
+		}
+
 		return nil
 	}
 
