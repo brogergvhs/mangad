@@ -86,64 +86,119 @@ func parseChapterLabel(href, title string) (int, string, int, string, bool) {
 	h := strings.ToLower(href)
 	t := strings.ToLower(title)
 
-	hasKey :=
-		strings.Contains(h, "ch") ||
-			strings.Contains(h, "chapter") ||
-			strings.Contains(h, "vol") ||
-			strings.Contains(t, "ch") ||
-			strings.Contains(t, "chapter") ||
-			strings.Contains(t, "vol")
-
-	if !hasKey {
-		return 0, "", 0, "", false
-	}
-	if strings.Contains(h, "/u/") || strings.Contains(h, "batolists") {
+	if !hasChapterKeywords(h, t) || isExcluded(h) {
 		return 0, "", 0, "", false
 	}
 
+	// 1. Check for known URL patterns
+	if n, typ, sn, label, ok := matchChapterDash(h); ok {
+		return n, typ, sn, label, true
+	}
+	if n, typ, sn, label, ok := matchBatoVol(h); ok {
+		return n, typ, sn, label, true
+	}
+	if n, typ, sn, label, ok := matchBatoSimple(h); ok {
+		return n, typ, sn, label, true
+	}
+	if n, typ, sn, label, ok := matchBatoPlain(h); ok {
+		return n, typ, sn, label, true
+	}
+	if n, typ, sn, label, ok := matchTitlePrefix(title); ok {
+		return n, typ, sn, label, true
+	}
+	if n, typ, sn, label, ok := matchChapRe(title); ok {
+		return n, typ, sn, label, true
+	}
+
+	return 0, "", 0, "", false
+}
+
+func hasChapterKeywords(h, t string) bool {
+	return strings.Contains(h, "ch") ||
+		strings.Contains(h, "chapter") ||
+		strings.Contains(h, "vol") ||
+		strings.Contains(t, "ch") ||
+		strings.Contains(t, "chapter") ||
+		strings.Contains(t, "vol")
+}
+
+func isExcluded(h string) bool {
+	return strings.Contains(h, "/u/") || strings.Contains(h, "batolists")
+}
+
+func matchChapterDash(h string) (int, string, int, string, bool) {
 	if m := chapterDash.FindStringSubmatch(h); m != nil {
 		main, _ := strconv.Atoi(m[1])
 		if m[2] != "" {
 			sub, _ := strconv.Atoi(m[2])
+
 			return main, "-", sub, fmt.Sprintf("%d-%d", main, sub), true
 		}
+
 		return main, "", 0, fmt.Sprintf("%d", main), true
 	}
 
+	return 0, "", 0, "", false
+}
+
+func matchBatoVol(h string) (int, string, int, string, bool) {
 	if m := batoVol.FindStringSubmatch(h); m != nil {
 		vol, _ := strconv.Atoi(m[1])
 		ch, _ := strconv.Atoi(m[2])
+
 		return ch, ".", vol, fmt.Sprintf("%d.%d", vol, ch), true
 	}
 
+	return 0, "", 0, "", false
+}
+
+func matchBatoSimple(h string) (int, string, int, string, bool) {
 	if m := batoSimple.FindStringSubmatch(h); m != nil {
 		parts := strings.Split(m[1], ".")
 		main, _ := strconv.Atoi(parts[0])
 		if len(parts) == 2 {
 			sub, _ := strconv.Atoi(parts[1])
+
 			return main, ".", sub, fmt.Sprintf("%d.%d", main, sub), true
 		}
+
 		return main, "", 0, fmt.Sprintf("%d", main), true
 	}
 
+	return 0, "", 0, "", false
+}
+
+func matchBatoPlain(h string) (int, string, int, string, bool) {
 	if m := batoPlain.FindStringSubmatch(h); m != nil {
 		n, _ := strconv.Atoi(m[1])
+
 		return n, "", 0, m[1], true
 	}
 
+	return 0, "", 0, "", false
+}
+
+func matchTitlePrefix(title string) (int, string, int, string, bool) {
 	if m := titlePrefix.FindStringSubmatch(title); m != nil {
 		n, _ := strconv.Atoi(m[1])
+
 		return n, "", 0, m[1], true
 	}
 
+	return 0, "", 0, "", false
+}
+
+func matchChapRe(title string) (int, string, int, string, bool) {
 	if m := chapRe.FindStringSubmatch(title); m != nil {
 		main, _ := strconv.Atoi(m[1])
 		typ := m[2]
 		sub, _ := strconv.Atoi(m[3])
 		label := fmt.Sprintf("%d%s%d", main, typ, sub)
+
 		if typ == "" {
 			label = fmt.Sprintf("%d", main)
 		}
+
 		return main, typ, sub, label, true
 	}
 
@@ -155,7 +210,9 @@ func looksLikeChapterLink(href, title string) bool {
 	if reLikelyChapter.MatchString(h) || batoVol.MatchString(h) || batoSimple.MatchString(h) {
 		return true
 	}
+
 	t := strings.ToLower(title)
+
 	return strings.HasPrefix(t, "ch ") || strings.HasPrefix(t, "chapter ")
 }
 

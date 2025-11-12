@@ -308,13 +308,27 @@ func (c *imageCollector) Finalize() []string {
 		return nil
 	}
 
+	groups := groupCollectedItems(c.items)
+	chosenList := chooseBestImages(groups)
+	sortChosen(chosenList)
+
+	out := make([]string, len(chosenList))
+	for i := range chosenList {
+		out[i] = chosenList[i].URL
+	}
+
+	return out
+}
+
+// groupCollectedItems groups collected images by their normalized base URL.
+func groupCollectedItems(items []collectedItem) map[string][]collectedItem {
 	type grp struct {
 		firstOrder int
 		items      []collectedItem
 	}
 	groups := map[string]*grp{}
 
-	for _, it := range c.items {
+	for _, it := range items {
 		key := normalizeBase(it.URL)
 		g, ok := groups[key]
 		if !ok {
@@ -329,75 +343,95 @@ func (c *imageCollector) Finalize() []string {
 		g.items = append(g.items, it)
 	}
 
-	type chosen struct {
-		URL   string
-		Index int
-		Order int
+	out := make(map[string][]collectedItem, len(groups))
+	for k, g := range groups {
+		out[k] = g.items
 	}
 
-	chosenList := make([]chosen, 0, len(groups))
+	return out
+}
 
-	for _, g := range groups {
-		var noSuffix []collectedItem
-		var dimens []collectedItem
+// chooseBestImages selects the best candidate per group.
+func chooseBestImages(groups map[string][]collectedItem) []chosenItem {
+	chosenList := make([]chosenItem, 0, len(groups))
 
-		for _, it := range g.items {
-			if reSizeSuffix.MatchString(it.URL) {
-				dimens = append(dimens, it)
-			} else {
-				noSuffix = append(noSuffix, it)
-			}
-		}
+	for _, items := range groups {
+		picked := pickBestItem(items)
 
-		var picked collectedItem
-		if len(noSuffix) > 0 {
-			sort.SliceStable(noSuffix, func(i, j int) bool { return noSuffix[i].Order < noSuffix[j].Order })
-			picked = noSuffix[0]
-		} else if len(dimens) > 0 {
-			best := dimens[0]
-			bw, bh := parseWxH(best.URL)
-			bestArea := bw * bh
-
-			for _, it := range dimens[1:] {
-				w, h := parseWxH(it.URL)
-				if w*h > bestArea {
-					best = it
-					bestArea = w * h
-				}
-			}
-
-			picked = best
-		} else {
-			picked = g.items[0]
-		}
-
-		finalIdx := -1
-		minOrder := picked.Order
-		for _, it := range g.items {
-			if it.Index >= 0 {
-				if finalIdx < 0 || it.Index < finalIdx {
-					finalIdx = it.Index
-				}
-			}
-
-			if it.Order < minOrder {
-				minOrder = it.Order
-			}
-		}
-
-		chosenList = append(chosenList, chosen{
+		finalIdx, minOrder := deriveIndexAndOrder(items, picked)
+		chosenList = append(chosenList, chosenItem{
 			URL:   picked.URL,
 			Index: finalIdx,
 			Order: minOrder,
 		})
 	}
 
-	// Sort pages:
-	// 1) by data-index when present for both,
-	// 2) items with data-index come before those without,
-	// 3) fallback by discovery order.
-	sort.SliceStable(chosenList, func(i, j int) bool {
-		ai, aj := chosenList[i].Index, chosenList[j].Index
+	return chosenList
+}
+
+type chosenItem struct {
+	URL   string
+	Index int
+	Order int
+}
+
+// pickBestItem returns the preferred image within one group.
+func pickBestItem(items []collectedItem) collectedItem {
+	var noSuffix, dimens []collectedItem
+
+	for _, it := range items {
+		if reSizeSuffix.MatchString(it.URL) {
+			dimens = append(dimens, it)
+		} else {
+			noSuffix = append(noSuffix, it)
+		}
+	}
+
+	switch {
+	case len(noSuffix) > 0:
+		sort.SliceStable(noSuffix, func(i, j int) bool { return noSuffix[i].Order < noSuffix[j].Order })
+		return noSuffix[0]
+
+	case len(dimens) > 0:
+		best := dimens[0]
+		bw, bh := parseWxH(best.URL)
+		bestArea := bw * bh
+		for _, it := range dimens[1:] {
+			w, h := parseWxH(it.URL)
+			if w*h > bestArea {
+				best = it
+				bestArea = w * h
+			}
+		}
+		return best
+
+	default:
+		return items[0]
+	}
+}
+
+// deriveIndexAndOrder decides the final index and earliest discovery order.
+func deriveIndexAndOrder(items []collectedItem, picked collectedItem) (finalIdx, minOrder int) {
+	finalIdx = -1
+	minOrder = picked.Order
+
+	for _, it := range items {
+		if it.Index >= 0 && (finalIdx < 0 || it.Index < finalIdx) {
+			finalIdx = it.Index
+		}
+
+		if it.Order < minOrder {
+			minOrder = it.Order
+		}
+	}
+
+	return
+}
+
+// sortChosen sorts the chosen list according to the rules described.
+func sortChosen(list []chosenItem) {
+	sort.SliceStable(list, func(i, j int) bool {
+		ai, aj := list[i].Index, list[j].Index
 		if ai >= 0 && aj >= 0 && ai != aj {
 			return ai < aj
 		}
@@ -408,13 +442,6 @@ func (c *imageCollector) Finalize() []string {
 			return false
 		}
 
-		return chosenList[i].Order < chosenList[j].Order
+		return list[i].Order < list[j].Order
 	})
-
-	out := make([]string, len(chosenList))
-	for i := range chosenList {
-		out[i] = chosenList[i].URL
-	}
-
-	return out
 }
