@@ -46,7 +46,7 @@ func newImageCollector(allowed *regexp.Regexp, debug bool) *imageCollector {
 }
 
 func (c *imageCollector) add(url string, idx int) {
-	if url == "" {
+	if url == "" || strings.HasPrefix(url, "javascript:") {
 		return
 	}
 	lu := strings.ToLower(url)
@@ -95,16 +95,20 @@ func buildExtRegex(exts []string) *regexp.Regexp {
 
 func resolve(chapterURL, raw string) string {
 	u, err := url.Parse(raw)
-	if err == nil && u.IsAbs() {
+	if err != nil || u == nil {
+		return raw
+	}
+
+	if u.IsAbs() {
 		return u.String()
 	}
 
 	base, err := url.Parse(chapterURL)
-	if err == nil {
-		return base.ResolveReference(u).String()
+	if err != nil || base == nil {
+		return raw
 	}
 
-	return raw
+	return base.ResolveReference(u).String()
 }
 
 func normalizeBase(raw string) string {

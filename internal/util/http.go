@@ -15,6 +15,7 @@ type HTTPClientOptions struct {
 	UserAgent   string
 	Cookie      string
 	CookieFile  string
+	Transport   http.RoundTripper
 	DebugLogger interface {
 		Debugf(string, ...any)
 	}
@@ -23,20 +24,36 @@ type HTTPClientOptions struct {
 func NewHTTPClient(opts HTTPClientOptions) (*http.Client, error) {
 	jar, _ := cookiejar.New(nil)
 
-	tr := &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		DisableCompression:  false,
-		MaxIdleConns:        100,
-		MaxConnsPerHost:     100,
-		MaxIdleConnsPerHost: 100,
-		ForceAttemptHTTP2:   true,
+	var baseTransport http.RoundTripper
+	if opts.Transport != nil {
+		baseTransport = opts.Transport
+	} else {
+		baseTransport = &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			DisableCompression:  false,
+			MaxIdleConns:        100,
+			MaxConnsPerHost:     100,
+			MaxIdleConnsPerHost: 100,
+			ForceAttemptHTTP2:   true,
+		}
 	}
 
 	client := &http.Client{
-		Timeout:   opts.Timeout,
-		Transport: roundTripper{base: tr, ua: opts.UserAgent, cookieHeader: joinCookies(opts.Cookie, opts.CookieFile), log: opts.DebugLogger},
-		Jar:       jar,
+		Timeout: opts.Timeout,
+		Transport: roundTripper{
+			base:         baseTransport,
+			ua:           opts.UserAgent,
+			cookieHeader: joinCookies(opts.Cookie, opts.CookieFile),
+			log:          opts.DebugLogger,
+		},
+		Jar: jar,
 	}
+
+	if opts.DebugLogger != nil {
+		opts.DebugLogger.Debugf("HTTP client initialized (timeout=%s, ua=%q, cookieFile=%q)\n",
+			opts.Timeout, opts.UserAgent, opts.CookieFile)
+	}
+
 	return client, nil
 }
 

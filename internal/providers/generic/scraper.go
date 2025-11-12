@@ -1,12 +1,16 @@
 package generic
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
@@ -15,22 +19,28 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/mangad/internal/ui"
 	"github.com/brogergvhs/mangad/internal/util"
 )
 
+//go:embed selenium_fetch.py
+var embeddedSeleniumScript []byte
+
 type Scraper struct {
 	client  *http.Client
-	debug   bool
+	log     *ui.Logger
 	allowed *regexp.Regexp
 	checkJS bool
+	withCF  bool
 }
 
-func NewScraper(c *http.Client, debug bool, allowExt []string, checkJS bool) *Scraper {
+func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool, withCF bool) *Scraper {
 	return &Scraper{
 		client:  c,
-		debug:   debug,
+		log:     log,
 		allowed: buildExtRegex(normalizeExtList(allowExt)),
 		checkJS: checkJS,
+		withCF:  withCF,
 	}
 }
 
@@ -48,38 +58,91 @@ var (
 )
 
 func (s *Scraper) fetchDOM(ctx context.Context, target string) (*goquery.Document, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
+	s.log.Debugf("Fetching URL: %s\n", target)
+
+	body, err := s.fetchBody(ctx, target)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := util.DoWithRetry(s.client, req, 3, 500*time.Millisecond)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	return goquery.NewDocumentFromReader(resp.Body)
+	return goquery.NewDocumentFromReader(strings.NewReader(body))
 }
 
 func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) {
+	s.log.Debugf("Fetching body for URL: %s\n", target)
+
 	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
 	if err != nil {
 		return "", err
 	}
+	s.log.Debugf("HTTP Request: %s %s\n", req.Method, req.URL.String())
 
 	resp, err := util.DoWithRetry(s.client, req, 3, 500*time.Millisecond)
 	if err != nil {
 		return "", err
 	}
 	defer func() {
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			s.log.Debugf("Warning: failed to close response body: %v\n", cerr)
+		}
 	}()
 
+	s.log.Debugf("HTTP Response Status: %s\n", resp.Status)
+
 	data, err := io.ReadAll(resp.Body)
-	return string(data), err
+	if err != nil {
+		return "", err
+	}
+	body := string(data)
+
+	if resp.StatusCode == http.StatusForbidden || strings.Contains(body, "Just a moment") {
+		if !s.withCF {
+			s.log.Infof("Cloudflare protection detected for %s.\n", target)
+			s.log.Infof("Selenium fallback disabled. Re-run with --with-cf or enable with_cf in config to allow bypass.\n")
+			return "", fmt.Errorf("cloudflare challenge blocked (use --with-cf to allow bypass)")
+		}
+
+		tmpFile, err := os.CreateTemp("", "selenium_fetch_*.py")
+		if err != nil {
+			return "", fmt.Errorf("failed to create temp script: %w", err)
+		}
+		defer func() {
+			if err := os.Remove(tmpFile.Name()); err != nil {
+				s.log.Debugf("Warning: failed to remove temp file %s: %v\n", tmpFile.Name(), err)
+			}
+		}()
+
+		if _, err := tmpFile.Write(embeddedSeleniumScript); err != nil {
+			if cerr := tmpFile.Close(); cerr != nil {
+				s.log.Debugf("Warning: failed to close temp file: %v\n", cerr)
+			}
+			return "", fmt.Errorf("failed to write embedded selenium script: %w", err)
+		}
+		if err := tmpFile.Close(); err != nil {
+			s.log.Debugf("Warning: failed to close temp file: %v\n", err)
+		}
+
+		s.log.Debugf("Running embedded Selenium script for %s\n", target)
+		cmd := exec.CommandContext(ctx, "python3", tmpFile.Name(), target)
+
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &stderr
+
+		err = cmd.Run()
+		if err != nil {
+			s.log.Errorf("Selenium script failed: %v\nstderr: %s\n", err, stderr.String())
+			return "", err
+		}
+
+		html := out.String()
+		s.log.Debugf("Fetched body via embedded Selenium for %s\n", target)
+
+		return html, nil
+	}
+
+	return body, nil
 }
 
 func parseChapterLabel(href, title string) (int, string, int, string, bool) {
@@ -90,7 +153,6 @@ func parseChapterLabel(href, title string) (int, string, int, string, bool) {
 		return 0, "", 0, "", false
 	}
 
-	// 1. Check for known URL patterns
 	if n, typ, sn, label, ok := matchChapterDash(h); ok {
 		return n, typ, sn, label, true
 	}
@@ -296,35 +358,26 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 
 	body, _ := s.fetchBody(ctx, chapterURL)
 
-	if s.debug {
-		fmt.Println("\n======= DEBUG HTML START =======")
-		fmt.Println(body)
-		fmt.Println("======= DEBUG HTML END =======")
-		fmt.Println()
-	}
+	// s.log.Debugf("\n======= DEBUG HTML START =======\n%s\n======= DEBUG HTML END =======\n\n", body)
 
-	col := newImageCollector(s.allowed, s.debug)
+	col := newImageCollector(s.allowed, s.log.Debug)
 
-	if s.debug {
-		added := col.ScanIMGTags(doc, chapterURL)
-		debugAdded("IMG tags", added)
+	added := col.ScanIMGTags(doc, chapterURL)
+	s.log.Debugf("IMG tags: +%d candidates\n", added)
 
-		added = col.ScanPictureSources(doc, chapterURL)
-		debugAdded("PICTURE sources", added)
+	added = col.ScanPictureSources(doc, chapterURL)
+	s.log.Debugf("PICTURE sources: +%d candidates\n", added)
 
-		added = col.ScanAnchorImages(doc, chapterURL)
-		debugAdded("ANCHOR href", added)
+	added = col.ScanAnchorImages(doc, chapterURL)
+	s.log.Debugf("ANCHOR href: +%d candidates\n", added)
 
-		added = col.ScanBackgroundImages(doc, chapterURL)
-		debugAdded("CSS background", added)
-	}
+	added = col.ScanBackgroundImages(doc, chapterURL)
+	s.log.Debugf("CSS background: +%d candidates\n", added)
 
 	if match := reNuxt.FindStringSubmatch(body); len(match) > 1 {
 		var raw map[string]any
 		if json.Unmarshal([]byte(match[1]), &raw) == nil {
-			if s.debug {
-				fmt.Println("[debug] Found embedded Nuxt/SSR-style JSON")
-			}
+			s.log.Debugf("Found embedded Nuxt/SSR-style JSON\n")
 			col.ScanNuxt(raw, chapterURL)
 		}
 	}
@@ -332,10 +385,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	col.ScanLooseURLs(body)
 
 	if s.checkJS {
-
-		if s.debug {
-			fmt.Println("[debug] JS scraping enabled")
-		}
+		s.log.Debugf("JS scraping enabled\n")
 
 		var jsCode strings.Builder
 		doc.Find("script").Each(func(_ int, sc *goquery.Selection) {
@@ -347,18 +397,13 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 		})
 
 		jsAnalysis := ExtractJS(jsCode.String())
-
-		if s.debug {
-			fmt.Println("[debug] JS Vars:", jsAnalysis.Vars)
-			fmt.Println("[debug] JS URLs:", jsAnalysis.URLs)
-			fmt.Println("[debug] JS Calls:", jsAnalysis.Calls)
-		}
+		s.log.Debugf("JS Vars: %+v\n", jsAnalysis.Vars)
+		s.log.Debugf("JS URLs: %+v\n", jsAnalysis.URLs)
+		s.log.Debugf("JS Calls: %+v\n", jsAnalysis.Calls)
 
 		s.probeDynamicEndpoints(ctx, chapterURL, jsAnalysis, col)
 	} else {
-		if s.debug {
-			fmt.Println("[debug] JS scraping disabled (use --also-check-js to enable)")
-		}
+		s.log.Debugf("JS scraping disabled (use --check-js to enable)\n")
 	}
 
 	final := col.Finalize()
@@ -367,12 +412,4 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	}
 
 	return final, nil
-}
-
-func debugAdded(label string, n int) {
-	if n > 0 {
-		fmt.Printf("[debug] %s: +%d candidates\n", label, n)
-	} else {
-		fmt.Printf("[debug] %s: +0\n", label)
-	}
 }

@@ -3,7 +3,6 @@ package generic
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -32,6 +31,7 @@ func tryBuildDynamicURLs(js JSAnalysis) []string {
 			final = append(final, u)
 		}
 	}
+
 	return final
 }
 
@@ -43,16 +43,12 @@ func (s *Scraper) probeDynamicEndpoints(
 ) {
 
 	candidates := tryBuildDynamicURLs(js)
-	if s.debug {
-		fmt.Println("[debug] Dynamic endpoint candidates:", candidates)
-	}
+	s.log.Debugf("Dynamic endpoint candidates: %v\n", candidates)
 
 	for _, path := range candidates {
 		fullURL := resolve(chapterURL, path)
 
-		if s.debug {
-			fmt.Println("[debug] Probing dynamic:", fullURL)
-		}
+		s.log.Debugf("Probing dynamic:", fullURL)
 
 		html, ok := s.tryDynamicFetch(ctx, fullURL, "POST")
 		if !ok {
@@ -63,11 +59,12 @@ func (s *Scraper) probeDynamicEndpoints(
 			continue
 		}
 
-		var obj map[string]any
-		if json.Unmarshal([]byte(html), &obj) == nil {
-			col.ScanNuxt(obj, chapterURL)
+		if strings.HasPrefix(strings.TrimSpace(html), "{") {
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(html), &obj); err == nil {
+				col.ScanNuxt(obj, chapterURL)
+			}
 		}
-
 	}
 }
 
@@ -82,12 +79,31 @@ func (s *Scraper) tryDynamicFetch(
 	}
 
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+
 	resp, err := s.client.Do(req)
 	if err != nil {
+		select {
+		case <-ctx.Done():
+			return "", false
+		default:
+		}
 		return "", false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			s.log.Debugf("Warning: failed to close response body for %s: %v\n", url, cerr)
+		}
+	}()
 
-	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		s.log.Debugf("Warning: failed to read body from %s: %v\n", url, err)
+		return "", false
+	}
+
 	return string(b), true
 }

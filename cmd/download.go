@@ -18,6 +18,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/ui"
 	"github.com/brogergvhs/mangad/internal/util"
 
+	cloudflarebp "github.com/DaRealFreak/cloudflare-bp-go"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +40,7 @@ var (
 	flagDryRun         bool
 	flagSkipBroken     bool
 	flagCheckJS        bool
+	flagWithCF         bool
 
 	// headers/auth
 	flagCookie     string
@@ -70,6 +72,7 @@ func init() {
 	downloadCmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "show what would be downloaded, don’t download")
 	downloadCmd.Flags().BoolVar(&flagSkipBroken, "skip-broken", false, "skip failed images instead of failing the whole chapter")
 	downloadCmd.Flags().BoolVar(&flagCheckJS, "check-js", false, "Enable generic JS scanning & dynamic AJAX endpoint discovery")
+	downloadCmd.Flags().BoolVar(&flagWithCF, "with-cf", false, "Allow using embedded Selenium fallback when Cloudflare blocks requests. Requires a working 'python3' executable with SeleniumBase installed.")
 
 	// headers/auth
 	downloadCmd.Flags().StringVar(&flagCookie, "cookie", "", "cookie string, e.g. \"key=value; other=123\"")
@@ -125,6 +128,7 @@ func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, err
 		DefaultList:         flagList,
 		DefaultExcludeList:  flagExcludeList,
 		CheckJS:             flagCheckJS,
+		WithCF:              flagWithCF,
 		Cookie:              flagCookie,
 		CookieFile:          flagCookieFile,
 		UserAgent:           flagUserAgent,
@@ -173,6 +177,7 @@ func setupEnvironment(cfg *config.Config, logSvc *ui.Logger) (*http.Client, *gen
 		Timeout:     30 * time.Second,
 		UserAgent:   util.PickUserAgent(cfg.UserAgent),
 		Cookie:      cfg.Cookie,
+		Transport:   cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
 		CookieFile:  cfg.CookieFile,
 		DebugLogger: logSvc,
 	})
@@ -182,7 +187,7 @@ func setupEnvironment(cfg *config.Config, logSvc *ui.Logger) (*http.Client, *gen
 
 	ctx := context.Background()
 	util.SetupInterruptHandler(cfg.Output)
-	scr := generic.NewScraper(client, cfg.Debug, cfg.AllowExt, cfg.CheckJS)
+	scr := generic.NewScraper(client, logSvc, cfg.AllowExt, cfg.CheckJS, cfg.WithCF)
 
 	return client, scr, ctx, nil
 }
