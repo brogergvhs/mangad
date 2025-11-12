@@ -21,34 +21,46 @@ func Filter(
 	list string,
 	excludeList string,
 ) ([]Chapter, error) {
-
-	n := len(all)
-
 	if chapter != "" {
-
-		if byLabel := FilterChaptersByLabel(all, chapter); len(byLabel) > 0 {
-			return byLabel, nil
-		}
-
-		if idx, err := strconv.Atoi(strings.TrimSpace(chapter)); err == nil {
-			if idx <= 0 || idx > n {
-				return nil, fmt.Errorf("%w: chapter index %d out of range", ErrNotFound, idx)
-			}
-			return []Chapter{all[idx-1]}, nil
-		}
-
-		return nil, fmt.Errorf("%w: %q", ErrNotFound, chapter)
+		return filterSingle(all, chapter)
 	}
 
-	keep := make([]bool, n)
+	keep := make([]bool, len(all))
 	for i := range keep {
 		keep[i] = true
 	}
 
+	if err := applyRanges(keep, rng, excludeRng, len(all)); err != nil {
+		return nil, err
+	}
+	if err := applyLists(keep, list, excludeList, len(all)); err != nil {
+		return nil, err
+	}
+
+	return buildResult(all, keep), nil
+}
+
+func filterSingle(all []Chapter, chapter string) ([]Chapter, error) {
+	if byLabel := FilterChaptersByLabel(all, chapter); len(byLabel) > 0 {
+		return byLabel, nil
+	}
+
+	n := len(all)
+	if idx, err := strconv.Atoi(strings.TrimSpace(chapter)); err == nil {
+		if idx <= 0 || idx > n {
+			return nil, fmt.Errorf("%w: chapter index %d out of range", ErrNotFound, idx)
+		}
+		return []Chapter{all[idx-1]}, nil
+	}
+
+	return nil, fmt.Errorf("%w: %q", ErrNotFound, chapter)
+}
+
+func applyRanges(keep []bool, rng, excludeRng string, n int) error {
 	if rng != "" {
 		start, end, err := parseRange(rng, n)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		applyIncludeRange(keep, start, end)
 	}
@@ -56,15 +68,19 @@ func Filter(
 	if excludeRng != "" {
 		start, end, err := parseRange(excludeRng, n)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		applyExcludeRange(keep, start, end)
 	}
 
+	return nil
+}
+
+func applyLists(keep []bool, list, excludeList string, n int) error {
 	if list != "" {
 		indices, err := parseList(list, n)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		applyIncludeList(keep, indices)
 	}
@@ -72,19 +88,23 @@ func Filter(
 	if excludeList != "" {
 		indices, err := parseList(excludeList, n)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		applyExcludeList(keep, indices)
 	}
 
-	out := make([]Chapter, 0)
+	return nil
+}
+
+func buildResult(all []Chapter, keep []bool) []Chapter {
+	out := make([]Chapter, 0, len(all))
 	for i, ok := range keep {
 		if ok {
 			out = append(out, all[i])
 		}
 	}
 
-	return out, nil
+	return out
 }
 
 func FilterChaptersByLabel(all []Chapter, label string) []Chapter {
