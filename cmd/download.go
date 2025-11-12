@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -79,6 +80,38 @@ func init() {
 }
 
 func runDownload(cmd *cobra.Command, _ []string) error {
+	cfg, logSvc, err := prepareConfigAndLogger(cmd)
+	if err != nil {
+		return err
+	}
+
+	client, scr, ctx, err := setupEnvironment(cfg, logSvc)
+	if err != nil {
+		return err
+	}
+
+	allChapters, err := fetchAllChapters(ctx, scr, cfg)
+	if err != nil {
+		return err
+	}
+
+	selected, err := selectChapters(allChapters, cfg)
+	if err != nil {
+		return err
+	}
+
+	if len(selected) == 0 {
+		return fmt.Errorf("no chapters selected")
+	}
+
+	if flagDryRun {
+		return doDryRun(ctx, scr, selected)
+	}
+
+	return performDownloads(ctx, scr, client, cfg, logSvc, selected)
+}
+
+func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, error) {
 	cfg, usedPath, err := config.LoadMerged(config.Options{
 		IgnoreConfig:        flagIgnoreConfig,
 		Debug:               flagDebug,
@@ -97,6 +130,9 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		UserAgent:           flagUserAgent,
 		SkipBroken:          flagSkipBroken,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
 
 	if cmd.Flags().Changed("image-workers") {
 		cfg.ImageWorkers = flagImageWorkers
@@ -104,16 +140,12 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	if cmd.Flags().Changed("chapter-workers") {
 		cfg.ChapterWorkers = flagChapterWorkers
 	}
-
 	if flagAllowExt != "" {
 		cfg.AllowExt = splitExt(flagAllowExt)
 	}
 
-	if err != nil {
-		return err
-	}
-
 	logSvc := ui.NewLogger(cfg.Debug)
+
 	if usedPath != "" {
 		fmt.Printf("Config file: %s\n", usedPath)
 	}
@@ -122,7 +154,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		cfg.Output = "."
 	}
 	if err := os.MkdirAll(cfg.Output, 0755); err != nil {
-		return fmt.Errorf("cannot create output folder: %w", err)
+		return nil, nil, fmt.Errorf("cannot create output folder: %w", err)
 	}
 
 	fmt.Println("Full config:")
@@ -130,9 +162,13 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	if cfg.DefaultURL == "" {
-		return fmt.Errorf("missing --url and no default_url in config")
+		return nil, nil, fmt.Errorf("missing --url and no default_url in config")
 	}
 
+	return cfg, logSvc, nil
+}
+
+func setupEnvironment(cfg *config.Config, logSvc *ui.Logger) (*http.Client, *generic.Scraper, context.Context, error) {
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
 		Timeout:     30 * time.Second,
 		UserAgent:   util.PickUserAgent(cfg.UserAgent),
@@ -141,17 +177,20 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		DebugLogger: logSvc,
 	})
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 
 	ctx := context.Background()
 	util.SetupInterruptHandler(cfg.Output)
-
 	scr := generic.NewScraper(client, cfg.Debug, cfg.AllowExt, cfg.CheckJS)
 
+	return client, scr, ctx, nil
+}
+
+func fetchAllChapters(ctx context.Context, scr *generic.Scraper, cfg *config.Config) ([]chapters.Chapter, error) {
 	allChaptersRaw, err := scr.GetChapters(ctx, cfg.DefaultURL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	allChapters := make([]chapters.Chapter, len(allChaptersRaw))
@@ -164,85 +203,63 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("Found %d chapters on the site.\n\n", len(allChapters))
 	}
 
-	finalRange := flagRange
-	if finalRange == "" {
-		finalRange = cfg.DefaultRange
-	}
+	return allChapters, nil
+}
 
-	finalExcludeRange := flagExcludeRange
-	if finalExcludeRange == "" {
-		finalExcludeRange = cfg.DefaultExcludeRange
-	}
-
-	finalList := flagList
-	if finalList == "" {
-		finalList = cfg.DefaultList
-	}
-
-	finalExcludeList := flagExcludeList
-	if finalExcludeList == "" {
-		finalExcludeList = cfg.DefaultExcludeList
-	}
-
-	var selected []chapters.Chapter
+func selectChapters(all []chapters.Chapter, cfg *config.Config) ([]chapters.Chapter, error) {
+	finalRange := firstNonEmpty(flagRange, cfg.DefaultRange)
+	finalExcludeRange := firstNonEmpty(flagExcludeRange, cfg.DefaultExcludeRange)
+	finalList := firstNonEmpty(flagList, cfg.DefaultList)
+	finalExcludeList := firstNonEmpty(flagExcludeList, cfg.DefaultExcludeList)
 
 	if flagChapter != "" {
-		direct := chapters.FilterChaptersByLabel(allChapters, flagChapter)
-
+		direct := chapters.FilterChaptersByLabel(all, flagChapter)
 		if len(direct) > 0 {
-			selected = direct
-		} else {
-			var idx int
-			if _, err := fmt.Sscanf(flagChapter, "%d", &idx); err == nil && idx > 0 {
-				selected, err = chapters.Filter(allChapters, strconv.Itoa(idx), finalRange, finalExcludeRange, finalList, finalExcludeList)
-				if err != nil {
-					return err
-				}
-			} else {
-				return fmt.Errorf("chapter '%s' not found", flagChapter)
-			}
+			return direct, nil
 		}
-	} else {
-		selected, err = chapters.Filter(allChapters, "", finalRange, finalExcludeRange, finalList, finalExcludeList)
+
+		var idx int
+		if _, err := fmt.Sscanf(flagChapter, "%d", &idx); err == nil && idx > 0 {
+			return chapters.Filter(all, strconv.Itoa(idx), finalRange, finalExcludeRange, finalList, finalExcludeList)
+		}
+
+		return nil, fmt.Errorf("chapter '%s' not found", flagChapter)
+	}
+
+	return chapters.Filter(all, "", finalRange, finalExcludeRange, finalList, finalExcludeList)
+}
+
+func doDryRun(ctx context.Context, scr *generic.Scraper, selected []chapters.Chapter) error {
+	fmt.Printf("Dry-run: %d chapters selected.\n\n", len(selected))
+	for i, ch := range selected {
+		fmt.Printf("%3d) %s  [%s]\n    %s\n", i+1, ch.Title, ch.Label, ch.URL)
+	}
+
+	if len(selected) == 1 {
+		ch := selected[0]
+		fmt.Printf("\nFetching images for chapter %s (%s)...\n\n", ch.Title, ch.Label)
+
+		images, err := scr.GetImages(ctx, ch.URL)
 		if err != nil {
-			return err
-		}
-	}
-
-	if len(selected) == 0 {
-		return fmt.Errorf("no chapters selected")
-	}
-
-	if flagDryRun {
-		fmt.Printf("Dry-run: %d chapters selected.\n\n", len(selected))
-		for i, ch := range selected {
-			fmt.Printf("%3d) %s  [%s]\n    %s\n", i+1, ch.Title, ch.Label, ch.URL)
+			return fmt.Errorf("failed to fetch images for %s: %w", ch.Label, err)
 		}
 
-		if len(selected) == 1 {
-			ch := selected[0]
-			fmt.Printf("\nFetching images for chapter %s (%s)...\n\n", ch.Title, ch.Label)
-
-			images, err := scr.GetImages(ctx, ch.URL)
-			if err != nil {
-				return fmt.Errorf("failed to fetch images for %s: %w", ch.Label, err)
+		if len(images) == 0 {
+			fmt.Println("No images found.")
+		} else {
+			fmt.Printf("Found %d images:\n\n", len(images))
+			for i, u := range images {
+				fmt.Printf("%3d) %s\n", i+1, u)
 			}
-
-			if len(images) == 0 {
-				fmt.Println("No images found.")
-			} else {
-				fmt.Printf("Found %d images:\n\n", len(images))
-				for i, u := range images {
-					fmt.Printf("%3d) %s\n", i+1, u)
-				}
-			}
-
-			fmt.Println()
 		}
 
-		return nil
+		fmt.Println()
 	}
 
+	return nil
+}
+
+func performDownloads(ctx context.Context, scr *generic.Scraper, client *http.Client, cfg *config.Config, logSvc *ui.Logger, selected []chapters.Chapter) error {
 	pm := ui.NewProgressManager(cfg.ChapterWorkers)
 	defer pm.Close()
 
@@ -256,7 +273,8 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	for _, ch := range selected {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func() {
+
+		go func(ch chapters.Chapter) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
@@ -276,12 +294,14 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 			if err != nil {
 				logSvc.Errorf("Chapter %s failed: %v", ch.Label, err)
 				_ = os.RemoveAll(tmpFolder)
+
 				return
 			}
 
 			if err := util.CreateCBZ(files, cbzOut); err != nil {
 				logSvc.Errorf("CBZ for %s failed: %v", ch.Label, err)
 				_ = os.RemoveAll(tmpFolder)
+
 				return
 			}
 
@@ -293,7 +313,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 			stats.TotalChapters.Add(1)
 			stats.TotalImages.Add(int64(len(files)))
 			stats.TotalBytes.Add(bytes)
-		}()
+		}(ch)
 	}
 	wg.Wait()
 	pm.Close()
@@ -307,6 +327,14 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	fmt.Println("\nAll done.")
 
 	return nil
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+
+	return b
 }
 
 func splitExt(s string) []string {
