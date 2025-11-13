@@ -45,16 +45,16 @@ func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool,
 }
 
 var (
-	chapRe      = regexp.MustCompile(`(?i)(?:vol(?:ume)?[_\-\s]*\d+[_\-\s]*)?(?:chapter|ch)[_\-\s]*0*([0-9]+)(?:[_\-\s]*([.\-])[_\-\s]*([0-9]+))?`)
-	chapterDash = regexp.MustCompile(`chapter[_\-]?0*([0-9]+)[_\-]?([0-9]+)?`)
+	chapRe          = regexp.MustCompile(`(?i)(?:vol(?:ume)?[_\-\s]*\d+[_\-\s]*)?(?:chapter|ch)[_\-\s]*0*([0-9]+)(?:[_\-\s]*([.\-])[_\-\s]*([0-9]+))?`)
+	chapterDash     = regexp.MustCompile(`chapter[_\-]?0*([0-9]+)[_\-]?([0-9]+)?`)
+	reLikelyChapter = regexp.MustCompile(`(?i)(?:^|[-_/])(?:c|ch|chapter)[-_]?\d+`)
 
-	batoSimple  = regexp.MustCompile(`(?:^|[/\-_])ch[_\-]?(\d+(?:\.\d+)?)`)
+	batoSimple  = regexp.MustCompile(`(?:^|[/\-_])c[h]?[_\-]?(\d+(?:\.\d+)?)`)
 	batoVol     = regexp.MustCompile(`vol[_\-]?(\d+)[/_\-]ch[_\-]?(\d+(?:\.\d+)?)`)
 	batoPlain   = regexp.MustCompile(`[/\-](\d+(?:\.\d+)?)(?:$|[/\-_])`)
 	titlePrefix = regexp.MustCompile(`^\s*(\d+(?:\.\d+)?)\s*[.\- ]`)
 
-	reLikelyChapter = regexp.MustCompile(`(?i)(?:^|[-_/])(?:ch|chapter)[-_]?\d+`)
-	reNuxt          = regexp.MustCompile(`window\.__NUXT__\s*=\s*(\{.*?});`)
+	reNuxt = regexp.MustCompile(`window\.__NUXT__\s*=\s*(\{.*?});`)
 )
 
 func (s *Scraper) fetchDOM(ctx context.Context, target string) (*goquery.Document, error) {
@@ -145,9 +145,54 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 	return body, nil
 }
 
+// isLikelyChapterFromBase returns true if href looks like a chapter link derived from the same series URL.
+func isLikelyChapterFromBase(baseURL, href string) bool {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	h, err := url.Parse(href)
+	if err != nil {
+		return false
+	}
+
+	full := base.ResolveReference(h)
+
+	if full.Host != base.Host {
+		return false
+	}
+	if !strings.HasPrefix(full.Path, base.Path) {
+		return false
+	}
+
+	relPath := strings.TrimPrefix(full.Path, base.Path)
+	relPath = strings.Trim(relPath, "/")
+
+	if relPath == "" {
+		return false
+	}
+
+	return regexp.MustCompile(`[0-9]+`).MatchString(relPath)
+}
+
+func parseFromBaseLike(href string) (int, string, bool) {
+	re := regexp.MustCompile(`(?:/|^)c?0*([0-9]+)(?:/|$)`)
+	if m := re.FindStringSubmatch(href); m != nil {
+		n, _ := strconv.Atoi(m[1])
+
+		return n, fmt.Sprintf("%d", n), true
+	}
+
+	return 0, "", false
+}
+
 func parseChapterLabel(href, title string) (int, string, int, string, bool) {
 	h := strings.ToLower(href)
 	t := strings.ToLower(title)
+
+	if n, label, ok := parseFromBaseLike(h); ok {
+		return n, "", 0, label, true
+	}
 
 	if !hasChapterKeywords(h, t) || isExcluded(h) {
 		return 0, "", 0, "", false
@@ -299,6 +344,7 @@ func resolveURL(baseURL, href string) string {
 func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.Chapter, error) {
 	doc, err := s.fetchDOM(ctx, pageURL)
 	if err != nil {
+		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
 	}
 
@@ -307,9 +353,13 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 
 	doc.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
 		href, _ := a.Attr("href")
-		if !looksLikeChapterLink(href, a.Text()) {
+		s.log.Debugf("Found link: %s (text: %s)\n", href, strings.TrimSpace(a.Text()))
+
+		if !looksLikeChapterLink(href, a.Text()) && !isLikelyChapterFromBase(pageURL, href) {
 			return
 		}
+
+		s.log.Debugf("Link looks like chapter link: %s\n", href)
 
 		n, t, sn, label, ok := parseChapterLabel(strings.TrimSpace(href), strings.TrimSpace(a.Text()))
 		if !ok {
@@ -353,9 +403,11 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, error) {
 	doc, err := s.fetchDOM(ctx, chapterURL)
 	if err != nil {
+		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
 	}
 
+	s.log.Debugf("Fetched DOM for URL: %s\n", chapterURL)
 	body, _ := s.fetchBody(ctx, chapterURL)
 
 	// s.log.Debugf("\n======= DEBUG HTML START =======\n%s\n======= DEBUG HTML END =======\n\n", body)
