@@ -11,6 +11,7 @@ import (
 )
 
 func CreateCBZ(files []string, output string) error {
+	log.Printf("creating cbz file %s with %d files", output, len(files))
 	out, err := os.Create(output)
 	if err != nil {
 		return fmt.Errorf("cbz: %w", err)
@@ -32,7 +33,8 @@ func CreateCBZ(files []string, output string) error {
 	sort.Strings(files)
 	for _, file := range files {
 		if err := addFileToZip(z, file); err != nil {
-			return err
+			log.Printf("warning: skipping %s: %v", file, err)
+			continue
 		}
 	}
 

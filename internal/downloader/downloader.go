@@ -45,7 +45,6 @@ func (d *Downloader) DownloadImagesConcurrently(
 	maxParallel int,
 	ph *ui.ProgressHandle,
 ) ([]string, int64, error) {
-
 	if err := os.MkdirAll(folder, 0755); err != nil {
 		return nil, 0, err
 	}

@@ -292,20 +292,19 @@ func performDownloads(ctx context.Context, scr *generic.Scraper, client *http.Cl
 			handle := pm.Register("Ch." + ch.Label)
 			handle.SetTotal(len(images))
 
-			tmpFolder := filepath.Join(cfg.Output, ch.FolderName()+"_tmp")
+			tmpFolder := filepath.Join(cfg.Output, ch.FolderName())
+
 			cbzOut := filepath.Join(cfg.Output, ch.OutputCBZ())
 
 			files, bytes, err := dl.DownloadImagesConcurrently(ctx, images, tmpFolder, ch.URL, max(1, cfg.ImageWorkers), handle)
 			if err != nil {
 				logSvc.Errorf("Chapter %s failed: %v", ch.Label, err)
-				_ = os.RemoveAll(tmpFolder)
 
 				return
 			}
 
 			if err := util.CreateCBZ(files, cbzOut); err != nil {
 				logSvc.Errorf("CBZ for %s failed: %v", ch.Label, err)
-				_ = os.RemoveAll(tmpFolder)
 
 				return
 			}

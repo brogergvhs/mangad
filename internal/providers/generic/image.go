@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"fmt"
 	"net/url"
 	"path"
 	"regexp"
@@ -56,7 +57,15 @@ func (c *imageCollector) add(url string, idx int) {
 	if strings.HasPrefix(lu, "data:") {
 		return
 	}
-	if strings.Contains(lu, "logo") {
+	if strings.Contains(lu, "logo") ||
+		strings.Contains(lu, "cover") ||
+		strings.Contains(lu, "profile") ||
+		strings.Contains(lu, "avatar") ||
+		strings.Contains(lu, "banner") {
+		if c.debug {
+			fmt.Printf("Skipping non-page image: %s\n", url)
+		}
+
 		return
 	}
 	if c.seen[url] {
