@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Output         string   `yaml:"output"`
+	DownloadDir    string   `yaml:"download_dir"`
 	ImageWorkers   int      `yaml:"image_workers"`
 	ChapterWorkers int      `yaml:"chapter_workers"`
 	KeepFolders    bool     `yaml:"keep_folders"`
@@ -35,6 +36,7 @@ type Options struct {
 	IgnoreConfig        bool
 	Debug               bool
 	Output              string
+	DownloadDir         string
 	ImageWorkers        int
 	ChapterWorkers      int
 	KeepFolders         bool
@@ -54,6 +56,7 @@ type Options struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Output:              ".",
+		DownloadDir:         ".",
 		ImageWorkers:        5,
 		ChapterWorkers:      2,
 		KeepFolders:         false,
@@ -130,6 +133,12 @@ func mergeConfig(c *Config, o Options) {
 	if o.Output != "" {
 		c.Output = o.Output
 	}
+	if o.DownloadDir != "" {
+		c.DownloadDir = o.DownloadDir
+	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_DOWNLOAD_DIR")); env != "" {
+		c.DownloadDir = env
+	}
 	if o.ImageWorkers != 0 {
 		c.ImageWorkers = o.ImageWorkers
 	}
@@ -181,6 +190,9 @@ func normalizeDefaults(c *Config) {
 	if c.Output == "" {
 		c.Output = "."
 	}
+	if c.DownloadDir == "" {
+		c.DownloadDir = "."
+	}
 	if c.ImageWorkers == 0 {
 		c.ImageWorkers = 5
 	}
@@ -192,6 +204,9 @@ func normalizeDefaults(c *Config) {
 func (c *Config) Print() {
 	if c.Output != "" {
 		fmt.Printf(" -output: %s\n", c.Output)
+	}
+	if c.DownloadDir != "" {
+		fmt.Printf(" -download_dir: %s\n", c.DownloadDir)
 	}
 	fmt.Printf(" -image_workers: %d\n", c.ImageWorkers)
 	fmt.Printf(" -chapter_workers: %d\n", c.ChapterWorkers)

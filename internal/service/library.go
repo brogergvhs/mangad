@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -277,7 +278,7 @@ func configForTitle(cfg *config.Config, title library.Title) *config.Config {
 	if title.OutputPath != "" {
 		next.Output = title.OutputPath
 	} else {
-		next.Output = titleOutputDir(title)
+		next.Output = filepath.Join(next.DownloadDir, titleOutputDir(title))
 	}
 	return &next
 }

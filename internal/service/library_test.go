@@ -24,7 +24,7 @@ func TestConfigForTitleOutput(t *testing.T) {
 	}{
 		{
 			name: "explicit title output wins",
-			cfg:  &config.Config{Output: "Solo_leveling"},
+			cfg:  &config.Config{Output: "Solo_leveling", DownloadDir: "/downloads"},
 			title: library.Title{
 				ID:           2,
 				DisplayTitle: "Gachiakuta",
@@ -34,7 +34,7 @@ func TestConfigForTitleOutput(t *testing.T) {
 		},
 		{
 			name: "default output is title directory",
-			cfg:  &config.Config{Output: "Solo_leveling"},
+			cfg:  &config.Config{Output: "Solo_leveling", DownloadDir: "."},
 			title: library.Title{
 				ID:           2,
 				DisplayTitle: "Gachiakuta",
@@ -42,8 +42,17 @@ func TestConfigForTitleOutput(t *testing.T) {
 			want: "Gachiakuta",
 		},
 		{
+			name: "download dir prefixes title directory",
+			cfg:  &config.Config{Output: "Solo_leveling", DownloadDir: "/downloads"},
+			title: library.Title{
+				ID:           2,
+				DisplayTitle: "Gachiakuta",
+			},
+			want: "/downloads/Gachiakuta",
+		},
+		{
 			name: "display title is path safe",
-			cfg:  &config.Config{Output: "."},
+			cfg:  &config.Config{Output: ".", DownloadDir: "."},
 			title: library.Title{
 				ID:           3,
 				DisplayTitle: "Solo Leveling!",
@@ -52,7 +61,7 @@ func TestConfigForTitleOutput(t *testing.T) {
 		},
 		{
 			name: "empty title fallback",
-			cfg:  &config.Config{Output: "."},
+			cfg:  &config.Config{Output: ".", DownloadDir: "."},
 			title: library.Title{
 				ID: 4,
 			},
