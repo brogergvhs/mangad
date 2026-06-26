@@ -66,8 +66,11 @@ func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT id FROM chapters WHERE title_id = ? AND label = '1'`, title.ID).Scan(&chapterID); err != nil {
 		t.Fatalf("query chapter id error = %v", err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO downloads(chapter_id, status, completed_at) VALUES (?, 'completed', CURRENT_TIMESTAMP)`, chapterID); err != nil {
-		t.Fatalf("insert completed download error = %v", err)
+	if err := repo.MarkDownloadStarted(ctx, chapterID); err != nil {
+		t.Fatalf("MarkDownloadStarted() error = %v", err)
+	}
+	if err := repo.MarkDownloadCompleted(ctx, chapterID, "chapter-1.cbz", 123); err != nil {
+		t.Fatalf("MarkDownloadCompleted() error = %v", err)
 	}
 
 	missing, err := repo.ListMissingChapters(ctx, title.ID)
@@ -79,6 +82,17 @@ func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	}
 	if missing[0].Label != "2" {
 		t.Fatalf("ListMissingChapters()[0].Label = %q, want 2", missing[0].Label)
+	}
+
+	byLabel, err := repo.GetChapterByLabel(ctx, title.ID, "2")
+	if err != nil {
+		t.Fatalf("GetChapterByLabel() error = %v", err)
+	}
+	if byLabel.Label != "2" {
+		t.Fatalf("GetChapterByLabel().Label = %q, want 2", byLabel.Label)
+	}
+	if err := repo.MarkDownloadFailed(ctx, byLabel.ID, assertErr("boom")); err != nil {
+		t.Fatalf("MarkDownloadFailed() error = %v", err)
 	}
 
 	if err := repo.RemoveTitle(ctx, title.ID); err != nil {
@@ -99,4 +113,10 @@ func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	if chapterCount != 0 {
 		t.Fatalf("chapter count after remove = %d, want 0", chapterCount)
 	}
+}
+
+type assertErr string
+
+func (e assertErr) Error() string {
+	return string(e)
 }

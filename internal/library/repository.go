@@ -197,19 +197,7 @@ func (r *Repository) UpsertChapters(
 
 // ListMissingChapters returns discovered chapters without a completed download.
 func (r *Repository) ListMissingChapters(ctx context.Context, titleID int64) ([]Chapter, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT
-			c.id,
-			c.title_id,
-			c.label,
-			c.title,
-			c.url,
-			c.number_main,
-			c.suffix_type,
-			c.suffix_num,
-			c.discovered_at,
-			c.updated_at
-		FROM chapters c
+	rows, err := r.db.QueryContext(ctx, chapterSelectQuery()+`
 		LEFT JOIN downloads d
 			ON d.chapter_id = c.id
 			AND d.status = 'completed'
@@ -237,6 +225,67 @@ func (r *Repository) ListMissingChapters(ctx context.Context, titleID int64) ([]
 	return out, nil
 }
 
+// GetChapterByLabel returns one discovered chapter by title and label.
+func (r *Repository) GetChapterByLabel(ctx context.Context, titleID int64, label string) (Chapter, error) {
+	row := r.db.QueryRowContext(ctx, chapterSelectQuery()+` WHERE c.title_id = ? AND c.label = ?`, titleID, label)
+	chapter, err := scanChapter(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Chapter{}, fmt.Errorf("chapter %q not found", label)
+		}
+		return Chapter{}, fmt.Errorf("get chapter %q: %w", label, err)
+	}
+
+	return chapter, nil
+}
+
+// MarkDownloadStarted records that a chapter download started.
+func (r *Repository) MarkDownloadStarted(ctx context.Context, chapterID int64) error {
+	return r.markDownload(ctx, chapterID, "started", "", 0, "")
+}
+
+// MarkDownloadCompleted records that a chapter download completed.
+func (r *Repository) MarkDownloadCompleted(ctx context.Context, chapterID int64, outputFile string, bytes int64) error {
+	return r.markDownload(ctx, chapterID, "completed", outputFile, bytes, "")
+}
+
+// MarkDownloadFailed records that a chapter download failed.
+func (r *Repository) MarkDownloadFailed(ctx context.Context, chapterID int64, cause error) error {
+	msg := ""
+	if cause != nil {
+		msg = cause.Error()
+	}
+	return r.markDownload(ctx, chapterID, "failed", "", 0, msg)
+}
+
+func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, outputFile string, bytes int64, msg string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO downloads (
+			chapter_id,
+			status,
+			output_file,
+			bytes,
+			error,
+			started_at,
+			completed_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP END, CURRENT_TIMESTAMP)
+		ON CONFLICT(chapter_id) DO UPDATE SET
+			status = excluded.status,
+			output_file = excluded.output_file,
+			bytes = excluded.bytes,
+			error = excluded.error,
+			started_at = CASE WHEN excluded.status = 'started' THEN CURRENT_TIMESTAMP ELSE downloads.started_at END,
+			completed_at = CASE WHEN excluded.status = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
+			updated_at = CURRENT_TIMESTAMP
+	`, chapterID, status, outputFile, bytes, msg, status)
+	if err != nil {
+		return fmt.Errorf("mark download %s for chapter %d: %w", status, chapterID, err)
+	}
+
+	return nil
+}
+
 func normalizeTitleParams(params AddTitleParams) AddTitleParams {
 	params.SourceURL = strings.TrimSpace(params.SourceURL)
 	params.SourceID = strings.TrimSpace(params.SourceID)
@@ -252,6 +301,23 @@ func normalizeTitleParams(params AddTitleParams) AddTitleParams {
 	}
 
 	return params
+}
+
+func chapterSelectQuery() string {
+	return `
+		SELECT
+			c.id,
+			c.title_id,
+			c.label,
+			c.title,
+			c.url,
+			c.number_main,
+			c.suffix_type,
+			c.suffix_num,
+			c.discovered_at,
+			c.updated_at
+		FROM chapters c
+	`
 }
 
 func titleSelectQuery() string {

@@ -3,10 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
+	"unicode"
 
+	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/ui"
 )
 
@@ -125,4 +129,151 @@ func (s *LibraryService) RefreshMonitored(
 	}
 
 	return results, nil
+}
+
+// DownloadMissing downloads every missing chapter for a title.
+func (s *LibraryService) DownloadMissing(
+	ctx context.Context,
+	cfg *config.Config,
+	logSvc *ui.Logger,
+	titleID int64,
+) ([]ChapterDownloadResult, error) {
+	title, missing, err := s.MissingChapters(ctx, titleID)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg = configForTitle(cfg, title)
+	results := make([]ChapterDownloadResult, 0, len(missing))
+	for _, chapter := range missing {
+		result, err := s.downloadChapter(ctx, cfg, logSvc, chapter)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// DownloadMonitoredMissing downloads missing chapters for every monitored title.
+func (s *LibraryService) DownloadMonitoredMissing(
+	ctx context.Context,
+	cfg *config.Config,
+	logSvc *ui.Logger,
+) ([]ChapterDownloadResult, error) {
+	titles, err := s.repo.ListTitles(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []ChapterDownloadResult
+	for _, title := range titles {
+		if !title.Monitored {
+			continue
+		}
+		titleResults, err := s.DownloadMissing(ctx, cfg, logSvc, title.ID)
+		if err != nil {
+			return results, fmt.Errorf("download missing for %s: %w", title.DisplayTitle, err)
+		}
+		results = append(results, titleResults...)
+	}
+
+	return results, nil
+}
+
+// DownloadChapterLabel downloads one discovered chapter by label.
+func (s *LibraryService) DownloadChapterLabel(
+	ctx context.Context,
+	cfg *config.Config,
+	logSvc *ui.Logger,
+	titleID int64,
+	label string,
+) (ChapterDownloadResult, error) {
+	title, err := s.repo.GetTitle(ctx, titleID)
+	if err != nil {
+		return ChapterDownloadResult{}, err
+	}
+	chapter, err := s.repo.GetChapterByLabel(ctx, titleID, label)
+	if err != nil {
+		return ChapterDownloadResult{}, err
+	}
+
+	return s.downloadChapter(ctx, configForTitle(cfg, title), logSvc, chapter)
+}
+
+func (s *LibraryService) downloadChapter(
+	ctx context.Context,
+	cfg *config.Config,
+	logSvc *ui.Logger,
+	chapter library.Chapter,
+) (ChapterDownloadResult, error) {
+	if err := s.repo.MarkDownloadStarted(ctx, chapter.ID); err != nil {
+		return ChapterDownloadResult{}, err
+	}
+
+	downloadSvc, err := NewDefaultDownloadService(cfg, logSvc, nil)
+	if err != nil {
+		return ChapterDownloadResult{}, err
+	}
+
+	result, err := downloadSvc.DownloadChapter(ctx, serviceChapter(chapter))
+	if err != nil {
+		_ = s.repo.MarkDownloadFailed(ctx, chapter.ID, err)
+		return ChapterDownloadResult{}, err
+	}
+	if err := s.repo.MarkDownloadCompleted(ctx, chapter.ID, result.OutputFile, result.Bytes); err != nil {
+		return ChapterDownloadResult{}, err
+	}
+
+	return result, nil
+}
+
+func serviceChapter(chapter library.Chapter) chapters.Chapter {
+	return chapters.Chapter{Chapter: providers.Chapter{
+		URL:        chapter.URL,
+		Title:      chapter.Title,
+		NumMain:    chapter.NumberMain,
+		SuffixType: chapter.SuffixType,
+		SuffixNum:  chapter.SuffixNum,
+		Label:      chapter.Label,
+	}}
+}
+
+func configForTitle(cfg *config.Config, title library.Title) *config.Config {
+	next := *cfg
+	if title.OutputPath != "" {
+		next.Output = title.OutputPath
+	} else {
+		next.Output = titleOutputDir(title)
+	}
+	return &next
+}
+
+func titleOutputDir(title library.Title) string {
+	name := strings.TrimSpace(title.DisplayTitle)
+	if name == "" {
+		return fmt.Sprintf("title_%d", title.ID)
+	}
+
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+
+	out := strings.Trim(b.String(), "_")
+	if out == "" {
+		return fmt.Sprintf("title_%d", title.ID)
+	}
+
+	return out
 }

@@ -59,6 +59,14 @@ type DownloadSummary struct {
 	Duration       time.Duration
 }
 
+// ChapterDownloadResult describes one completed chapter download.
+type ChapterDownloadResult struct {
+	Chapter    chapters.Chapter
+	OutputFile string
+	Images     int
+	Bytes      int64
+}
+
 // DownloadService coordinates scraping, chapter selection, and CBZ downloads.
 type DownloadService struct {
 	cfg      *config.Config
@@ -194,7 +202,15 @@ schedule:
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			s.downloadChapter(ctx, dl, ch, &summary)
+			result, err := s.downloadChapter(ctx, dl, ch)
+			if err != nil {
+				s.log.Errorf("Chapter %s failed: %v", ch.Label, err)
+				summary.failedChapters.Add(1)
+				return
+			}
+			summary.chapters.Add(1)
+			summary.images.Add(int64(result.Images))
+			summary.bytes.Add(result.Bytes)
 		}(ch)
 	}
 
@@ -210,17 +226,22 @@ schedule:
 	return summary.toSummary(time.Since(start)), nil
 }
 
+// DownloadChapter downloads one chapter and writes its CBZ file.
+func (s *DownloadService) DownloadChapter(ctx context.Context, ch chapters.Chapter) (ChapterDownloadResult, error) {
+	return s.downloadChapter(ctx, downloader.New(s.client, s.cfg.Debug, s.cfg.Output, s.cfg.SkipBroken), ch)
+}
+
 func (s *DownloadService) downloadChapter(
 	ctx context.Context,
 	dl *downloader.Downloader,
 	ch chapters.Chapter,
-	summary *downloadCounters,
-) {
+) (ChapterDownloadResult, error) {
 	images, err := s.scraper.GetImages(ctx, ch.URL)
-	if err != nil || len(images) == 0 {
-		s.log.Errorf("No images for %s (%s): %v", ch.Title, ch.Label, err)
-		summary.failedChapters.Add(1)
-		return
+	if err != nil {
+		return ChapterDownloadResult{}, fmt.Errorf("fetch images for %s: %w", ch.Label, err)
+	}
+	if len(images) == 0 {
+		return ChapterDownloadResult{}, fmt.Errorf("no images for %s", ch.Label)
 	}
 
 	handle := s.progressHandle("Ch." + ch.Label)
@@ -231,15 +252,11 @@ func (s *DownloadService) downloadChapter(
 
 	files, bytes, err := dl.DownloadImagesConcurrently(ctx, images, tmpFolder, ch.URL, max(1, s.cfg.ImageWorkers), handle)
 	if err != nil {
-		s.log.Errorf("Chapter %s failed: %v", ch.Label, err)
-		summary.failedChapters.Add(1)
-		return
+		return ChapterDownloadResult{}, err
 	}
 
 	if err := util.CreateCBZ(files, cbzOut); err != nil {
-		s.log.Errorf("CBZ for %s failed: %v", ch.Label, err)
-		summary.failedChapters.Add(1)
-		return
+		return ChapterDownloadResult{}, fmt.Errorf("create cbz: %w", err)
 	}
 
 	if !s.cfg.KeepFolders {
@@ -247,9 +264,7 @@ func (s *DownloadService) downloadChapter(
 	}
 
 	handle.MarkDone()
-	summary.chapters.Add(1)
-	summary.images.Add(int64(len(files)))
-	summary.bytes.Add(bytes)
+	return ChapterDownloadResult{Chapter: ch, OutputFile: cbzOut, Images: len(files), Bytes: bytes}, nil
 }
 
 func (s *DownloadService) progressHandle(prefix string) ProgressHandle {

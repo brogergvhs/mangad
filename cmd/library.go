@@ -26,6 +26,8 @@ var (
 	flagLibraryRefreshInterval string
 	flagLibraryRefreshAfterAdd bool
 	flagLibraryRemoveForce     bool
+	flagLibraryDownloadChapter string
+	flagLibraryDownloadMissing bool
 )
 
 var libraryCmd = &cobra.Command{Use: "lib", Short: "Manage tracked manga titles"}
@@ -55,6 +57,13 @@ var libraryRemoveCmd = &cobra.Command{
 	RunE:  runLibraryRemove,
 }
 
+var libraryDownloadCmd = &cobra.Command{
+	Use:   "dl [title_id]",
+	Short: "Download library chapters",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  runLibraryDownload,
+}
+
 func init() {
 	libraryCmd.PersistentFlags().StringVar(&flagLibraryDB, "db", "", "path to MangaD SQLite database")
 	libraryAddCmd.Flags().StringVar(&flagLibraryAddURL, "url", "", "manga series page URL")
@@ -64,8 +73,10 @@ func init() {
 	libraryAddCmd.Flags().StringVar(&flagLibraryRefreshInterval, "refresh-interval", "24h", "refresh interval label, e.g. 24h")
 	libraryAddCmd.Flags().BoolVar(&flagLibraryRefreshAfterAdd, "refresh", false, "refresh chapters immediately after adding")
 	libraryRemoveCmd.Flags().BoolVarP(&flagLibraryRemoveForce, "force", "f", false, "remove without confirmation")
+	libraryDownloadCmd.Flags().StringVar(&flagLibraryDownloadChapter, "chapter", "", "download one chapter label instead of all missing")
+	libraryDownloadCmd.Flags().BoolVar(&flagLibraryDownloadMissing, "missing", false, "download missing chapters")
 
-	libraryCmd.AddCommand(libraryAddCmd, libraryListCmd, libraryRefreshCmd, libraryMissingCmd, libraryRemoveCmd)
+	libraryCmd.AddCommand(libraryAddCmd, libraryListCmd, libraryRefreshCmd, libraryMissingCmd, libraryRemoveCmd, libraryDownloadCmd)
 	rootCmd.AddCommand(libraryCmd)
 }
 
@@ -200,6 +211,42 @@ func runLibraryRemove(_ *cobra.Command, args []string) error {
 	})
 }
 
+func runLibraryDownload(_ *cobra.Command, args []string) error {
+	return withLibrary(func(ctx context.Context, lib *service.LibraryService) error {
+		cfg, logSvc, err := libraryRuntimeConfig()
+		if err != nil {
+			return err
+		}
+
+		if len(args) == 0 {
+			if flagLibraryDownloadChapter != "" {
+				return fmt.Errorf("--chapter requires a title_id")
+			}
+			if !flagLibraryDownloadMissing {
+				return fmt.Errorf("missing title_id; use --missing to download missing chapters for all monitored titles")
+			}
+			results, err := lib.DownloadMonitoredMissing(ctx, cfg, logSvc)
+			return printDownloads(results, err)
+		}
+
+		id, err := titleID(args[0])
+		if err != nil {
+			return err
+		}
+		if flagLibraryDownloadChapter != "" {
+			result, err := lib.DownloadChapterLabel(ctx, cfg, logSvc, id, flagLibraryDownloadChapter)
+			if err != nil {
+				return err
+			}
+			printDownload(result)
+			return nil
+		}
+
+		results, err := lib.DownloadMissing(ctx, cfg, logSvc, id)
+		return printDownloads(results, err)
+	})
+}
+
 func withLibrary(fn func(context.Context, *service.LibraryService) error) error {
 	ctx := context.Background()
 	lib, closeDB, err := service.OpenLibrary(ctx, flagLibraryDB)
@@ -240,6 +287,23 @@ func printTitle(title library.Title) {
 
 func printRefresh(result service.RefreshResult) {
 	fmt.Printf("Refreshed %s: %d chapters discovered\n", result.Title.DisplayTitle, result.Count)
+}
+
+func printDownload(result service.ChapterDownloadResult) {
+	fmt.Printf("Downloaded chapter %s: %s (%d pages)\n", result.Chapter.Label, result.OutputFile, result.Images)
+}
+
+func printDownloads(results []service.ChapterDownloadResult, err error) error {
+	if err != nil {
+		return err
+	}
+	if len(results) == 0 {
+		fmt.Println("No missing chapters.")
+	}
+	for _, result := range results {
+		printDownload(result)
+	}
+	return nil
 }
 
 func formatTime(value *time.Time) string {
