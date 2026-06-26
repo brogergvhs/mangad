@@ -9,10 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/service"
-	"github.com/brogergvhs/mangad/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -107,7 +105,7 @@ func runLibraryAdd(_ *cobra.Command, _ []string) error {
 			return nil
 		}
 
-		cfg, logSvc, err := libraryRuntimeConfig()
+		cfg, logSvc, err := runtimeConfig()
 		if err != nil {
 			return err
 		}
@@ -139,7 +137,7 @@ func runLibraryList(_ *cobra.Command, _ []string) error {
 
 func runLibraryRefresh(_ *cobra.Command, args []string) error {
 	return withLibrary(func(ctx context.Context, lib *service.LibraryService) error {
-		cfg, logSvc, err := libraryRuntimeConfig()
+		cfg, logSvc, err := runtimeConfig()
 		if err != nil {
 			return err
 		}
@@ -236,7 +234,7 @@ func runLibraryRemove(_ *cobra.Command, args []string) error {
 
 func runLibraryDownload(_ *cobra.Command, args []string) error {
 	return withLibrary(func(ctx context.Context, lib *service.LibraryService) error {
-		cfg, logSvc, err := libraryRuntimeConfig()
+		cfg, logSvc, err := runtimeConfig()
 		if err != nil {
 			return err
 		}
@@ -297,14 +295,6 @@ func withLibrary(fn func(context.Context, *service.LibraryService) error) error 
 	}
 	defer closeDB()
 	return fn(ctx, lib)
-}
-
-func libraryRuntimeConfig() (*config.Config, *ui.Logger, error) {
-	cfg, _, err := config.LoadMerged(config.Options{IgnoreConfig: flagIgnoreConfig, Debug: flagDebug})
-	if err != nil {
-		return nil, nil, err
-	}
-	return cfg, ui.NewLogger(cfg.Debug), nil
 }
 
 func titleID(value string) (int64, error) {
