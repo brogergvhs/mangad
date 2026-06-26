@@ -1,4 +1,4 @@
-MangaD 
+MangaD
 =============================================
 
 [![Go Report Card][go report card]][go report]
@@ -128,6 +128,7 @@ As you could see, there are quite a bunch of config sub-commands.
 That’s because, in my humble (and definitely not biased) opinion, managing configuration parameters through the CLI is both inefficient and unnecessarily painful.
 
 All the config files are by default `.yaml` and are saved into:
+
 - Linux/Mac: either `XDG_CONFIG_HOME/mangad/configs/` or `~/.config/mangad/configs/`
 - Windows: `APPDATA\mangad\configs`
 
@@ -164,8 +165,6 @@ Contributing
 PRs are always welcome :)
 
 Unless it's absolutely necessary, I want to avoid website-specific implementations, so those have a higher chance of being turned down.
-
-
 
 [go report]: https://goreportcard.com/report/github.com/brogergvhs/mangad
 [go report card]: https://goreportcard.com/badge/github.com/brogergvhs/mangad

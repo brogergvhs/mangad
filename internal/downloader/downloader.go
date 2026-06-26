@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/brogergvhs/mangad/internal/ui"
 )
 
 type Downloader struct {
@@ -19,6 +17,12 @@ type Downloader struct {
 	debug      bool
 	outputDir  string
 	skipBroken bool
+}
+
+// ProgressHandle receives image download progress updates.
+type ProgressHandle interface {
+	Update(done, total int, bytes int64)
+	MarkDone()
 }
 
 func New(c *http.Client, debug bool, outputDir string, skipBroken bool) *Downloader {
@@ -43,7 +47,7 @@ func (d *Downloader) DownloadImagesConcurrently(
 	folder string,
 	referer string,
 	maxParallel int,
-	ph *ui.ProgressHandle,
+	ph ProgressHandle,
 ) ([]string, int64, error) {
 	if err := os.MkdirAll(folder, 0755); err != nil {
 		return nil, 0, err

@@ -3,22 +3,16 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/downloader"
-	"github.com/brogergvhs/mangad/internal/providers/generic"
+	"github.com/brogergvhs/mangad/internal/service"
 	"github.com/brogergvhs/mangad/internal/ui"
 	"github.com/brogergvhs/mangad/internal/util"
 
-	cloudflarebp "github.com/DaRealFreak/cloudflare-bp-go"
 	"github.com/spf13/cobra"
 )
 
@@ -88,30 +82,40 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	client, scr, ctx, err := setupEnvironment(cfg, logSvc)
+	ctx := context.Background()
+	util.SetupInterruptHandler(cfg.Output)
+
+	downloadSvc, err := service.NewDefaultDownloadService(cfg, logSvc, nil)
 	if err != nil {
 		return err
 	}
 
-	allChapters, err := fetchAllChapters(ctx, scr, cfg)
+	allChapters, err := downloadSvc.FetchChapters(ctx, cfg.DefaultURL)
 	if err != nil {
 		return err
 	}
 
-	selected, err := selectChapters(allChapters, cfg)
-	if err != nil {
-		return err
+	if shouldPrintChapterCount(cfg) {
+		fmt.Printf("Found %d chapters on the site.\n\n", len(allChapters))
 	}
 
-	if len(selected) == 0 {
-		return fmt.Errorf("no chapters selected")
+	selected, err := downloadSvc.SelectChapters(allChapters, selectionFromConfig(cfg))
+	if err != nil {
+		return err
 	}
 
 	if flagDryRun {
-		return doDryRun(ctx, scr, selected)
+		return doDryRun(ctx, downloadSvc, selected)
 	}
 
-	return performDownloads(ctx, scr, client, cfg, logSvc, selected)
+	downloadSvc.SetProgressManager(service.NewTerminalProgressManager(cfg.ChapterWorkers))
+	summary, err := downloadSvc.Download(ctx, selected)
+	if err != nil {
+		return err
+	}
+
+	printDownloadSummary(summary)
+	return nil
 }
 
 func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, error) {
@@ -172,69 +176,7 @@ func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, err
 	return cfg, logSvc, nil
 }
 
-func setupEnvironment(cfg *config.Config, logSvc *ui.Logger) (*http.Client, *generic.Scraper, context.Context, error) {
-	client, err := util.NewHTTPClient(util.HTTPClientOptions{
-		Timeout:     30 * time.Second,
-		UserAgent:   util.PickUserAgent(cfg.UserAgent),
-		Cookie:      cfg.Cookie,
-		Transport:   cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
-		CookieFile:  cfg.CookieFile,
-		DebugLogger: logSvc,
-	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	ctx := context.Background()
-	util.SetupInterruptHandler(cfg.Output)
-	scr := generic.NewScraper(client, logSvc, cfg.AllowExt, cfg.CheckJS, cfg.WithCF)
-
-	return client, scr, ctx, nil
-}
-
-func fetchAllChapters(ctx context.Context, scr *generic.Scraper, cfg *config.Config) ([]chapters.Chapter, error) {
-	allChaptersRaw, err := scr.GetChapters(ctx, cfg.DefaultURL)
-	if err != nil {
-		return nil, err
-	}
-
-	allChapters := make([]chapters.Chapter, len(allChaptersRaw))
-	for i, c := range allChaptersRaw {
-		allChapters[i] = chapters.Chapter{Chapter: c}
-	}
-
-	if flagChapter == "" && flagRange == "" && flagList == "" &&
-		cfg.DefaultRange == "" && cfg.DefaultList == "" {
-		fmt.Printf("Found %d chapters on the site.\n\n", len(allChapters))
-	}
-
-	return allChapters, nil
-}
-
-func selectChapters(all []chapters.Chapter, cfg *config.Config) ([]chapters.Chapter, error) {
-	finalRange := firstNonEmpty(flagRange, cfg.DefaultRange)
-	finalExcludeRange := firstNonEmpty(flagExcludeRange, cfg.DefaultExcludeRange)
-	finalList := firstNonEmpty(flagList, cfg.DefaultList)
-	finalExcludeList := firstNonEmpty(flagExcludeList, cfg.DefaultExcludeList)
-
-	if flagChapter != "" {
-		direct := chapters.FilterChaptersByLabel(all, flagChapter)
-		if len(direct) > 0 {
-			return direct, nil
-		}
-
-		var idx int
-		if _, err := fmt.Sscanf(flagChapter, "%d", &idx); err == nil && idx > 0 {
-			return chapters.Filter(all, strconv.Itoa(idx), finalRange, finalExcludeRange, finalList, finalExcludeList)
-		}
-
-		return nil, fmt.Errorf("chapter '%s' not found", flagChapter)
-	}
-
-	return chapters.Filter(all, "", finalRange, finalExcludeRange, finalList, finalExcludeList)
-}
-
-func doDryRun(ctx context.Context, scr *generic.Scraper, selected []chapters.Chapter) error {
+func doDryRun(ctx context.Context, downloadSvc *service.DownloadService, selected []chapters.Chapter) error {
 	fmt.Printf("Dry-run: %d chapters selected.\n\n", len(selected))
 	for i, ch := range selected {
 		fmt.Printf("%3d) %s  [%s]\n    %s\n", i+1, ch.Title, ch.Label, ch.URL)
@@ -244,7 +186,7 @@ func doDryRun(ctx context.Context, scr *generic.Scraper, selected []chapters.Cha
 		ch := selected[0]
 		fmt.Printf("\nFetching images for chapter %s (%s)...\n\n", ch.Title, ch.Label)
 
-		images, err := scr.GetImages(ctx, ch.URL)
+		images, err := downloadSvc.FetchImages(ctx, ch)
 		if err != nil {
 			return fmt.Errorf("failed to fetch images for %s: %w", ch.Label, err)
 		}
@@ -264,73 +206,32 @@ func doDryRun(ctx context.Context, scr *generic.Scraper, selected []chapters.Cha
 	return nil
 }
 
-func performDownloads(ctx context.Context, scr *generic.Scraper, client *http.Client, cfg *config.Config, logSvc *ui.Logger, selected []chapters.Chapter) error {
-	pm := ui.NewProgressManager(cfg.ChapterWorkers)
-	defer pm.Close()
-
-	stats := &ui.Stats{}
-	dl := downloader.New(client, cfg.Debug, cfg.Output, cfg.SkipBroken)
-	start := time.Now()
-
-	sem := make(chan struct{}, max(1, cfg.ChapterWorkers))
-	var wg sync.WaitGroup
-
-	for _, ch := range selected {
-		wg.Add(1)
-		sem <- struct{}{}
-
-		go func(ch chapters.Chapter) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			images, err := scr.GetImages(ctx, ch.URL)
-			if err != nil || len(images) == 0 {
-				logSvc.Errorf("No images for %s (%s): %v", ch.Title, ch.Label, err)
-				return
-			}
-
-			handle := pm.Register("Ch." + ch.Label)
-			handle.SetTotal(len(images))
-
-			tmpFolder := filepath.Join(cfg.Output, ch.FolderName())
-
-			cbzOut := filepath.Join(cfg.Output, ch.OutputCBZ())
-
-			files, bytes, err := dl.DownloadImagesConcurrently(ctx, images, tmpFolder, ch.URL, max(1, cfg.ImageWorkers), handle)
-			if err != nil {
-				logSvc.Errorf("Chapter %s failed: %v", ch.Label, err)
-
-				return
-			}
-
-			if err := util.CreateCBZ(files, cbzOut); err != nil {
-				logSvc.Errorf("CBZ for %s failed: %v", ch.Label, err)
-
-				return
-			}
-
-			if !cfg.KeepFolders {
-				util.CleanupFolder(tmpFolder)
-			}
-
-			handle.MarkDone()
-			stats.TotalChapters.Add(1)
-			stats.TotalImages.Add(int64(len(files)))
-			stats.TotalBytes.Add(bytes)
-		}(ch)
-	}
-	wg.Wait()
-	pm.Close()
-
+func printDownloadSummary(summary service.DownloadSummary) {
 	fmt.Println()
 	fmt.Println("Download Summary:")
-	fmt.Printf("Chapters: %d\n", stats.TotalChapters.Load())
-	fmt.Printf("Images:   %d\n", stats.TotalImages.Load())
-	fmt.Printf("Data:     %s\n", util.Human(stats.TotalBytes.Load()))
-	fmt.Printf("Time:     %s\n", time.Since(start).Round(time.Second))
+	fmt.Printf("Chapters: %d\n", summary.Chapters)
+	if summary.FailedChapters > 0 {
+		fmt.Printf("Failed:   %d\n", summary.FailedChapters)
+	}
+	fmt.Printf("Images:   %d\n", summary.Images)
+	fmt.Printf("Data:     %s\n", util.Human(summary.Bytes))
+	fmt.Printf("Time:     %s\n", summary.Duration.Round(time.Second))
 	fmt.Println("\nAll done.")
+}
 
-	return nil
+func shouldPrintChapterCount(cfg *config.Config) bool {
+	return flagChapter == "" && flagRange == "" && flagList == "" &&
+		cfg.DefaultRange == "" && cfg.DefaultList == ""
+}
+
+func selectionFromConfig(cfg *config.Config) service.ChapterSelection {
+	return service.ChapterSelection{
+		Chapter:      flagChapter,
+		Range:        firstNonEmpty(flagRange, cfg.DefaultRange),
+		ExcludeRange: firstNonEmpty(flagExcludeRange, cfg.DefaultExcludeRange),
+		List:         firstNonEmpty(flagList, cfg.DefaultList),
+		ExcludeList:  firstNonEmpty(flagExcludeList, cfg.DefaultExcludeList),
+	}
 }
 
 func firstNonEmpty(a, b string) string {
