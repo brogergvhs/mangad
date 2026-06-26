@@ -9,12 +9,16 @@ GORUN           := $(GOCMD) run
 GOCLEAN         := $(GOCMD) clean
 GOFMT           := $(GOCMD) fmt
 GOVET           := $(GOCMD) vet
+GOTEST          := $(GOCMD) test
 STATICCHECK     := staticcheck
+GOCACHE         ?= $(CURDIR)/.cache/go-build
 
 VERSION         := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LD_FLAGS        := -X 'github.com/brogergvhs/mangad/cmd.Version=$(VERSION)'
 
-PHONY all: build
+.PHONY: all build install run fmt vet test test-race lint check clean package
+
+all: build
 
 build:
 	@echo "Building $(APP) (version: $(VERSION))..."
@@ -36,10 +40,18 @@ fmt:
 vet:
 	$(GOVET) ./...
 
+test:
+	@mkdir -p $(GOCACHE)
+	GOCACHE=$(GOCACHE) $(GOTEST) ./...
+
+test-race:
+	@mkdir -p $(GOCACHE)
+	GOCACHE=$(GOCACHE) $(GOTEST) -race ./...
+
 lint:
 	$(STATICCHECK) ./...
 
-PHONEY check: fmt vet lint
+check: fmt vet test lint
 
 clean:
 	@echo "Cleaning..."

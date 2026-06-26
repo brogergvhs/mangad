@@ -1,0 +1,102 @@
+package library
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/brogergvhs/mangad/internal/chapters"
+	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/mangad/internal/providers"
+)
+
+func TestRepositoryTitleAndMissingChapters(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	repo := NewRepository(db)
+	title, err := repo.AddTitle(ctx, AddTitleParams{
+		SourceURL:       "https://example.test/manga",
+		DisplayTitle:    "Example Manga",
+		Monitored:       true,
+		RefreshInterval: "12h",
+	})
+	if err != nil {
+		t.Fatalf("AddTitle() error = %v", err)
+	}
+	if title.ID == 0 {
+		t.Fatal("AddTitle() ID = 0")
+	}
+	if !title.Monitored {
+		t.Fatal("AddTitle() Monitored = false, want true")
+	}
+
+	inserted, err := repo.UpsertChapters(ctx, title.ID, []chapters.Chapter{
+		{Chapter: providers.Chapter{URL: "https://example.test/ch-1", Title: "Chapter 1", Label: "1", NumMain: 1}},
+		{Chapter: providers.Chapter{URL: "https://example.test/ch-2", Title: "Chapter 2", Label: "2", NumMain: 2}},
+	})
+	if err != nil {
+		t.Fatalf("UpsertChapters() error = %v", err)
+	}
+	if inserted != 2 {
+		t.Fatalf("UpsertChapters() = %d, want 2", inserted)
+	}
+
+	titles, err := repo.ListTitles(ctx)
+	if err != nil {
+		t.Fatalf("ListTitles() error = %v", err)
+	}
+	if len(titles) != 1 {
+		t.Fatalf("ListTitles() len = %d, want 1", len(titles))
+	}
+	if titles[0].DiscoveredCount != 2 || titles[0].MissingCount != 2 {
+		t.Fatalf("ListTitles() counts = discovered %d missing %d, want 2/2", titles[0].DiscoveredCount, titles[0].MissingCount)
+	}
+
+	var chapterID int64
+	if err := db.QueryRowContext(ctx, `SELECT id FROM chapters WHERE title_id = ? AND label = '1'`, title.ID).Scan(&chapterID); err != nil {
+		t.Fatalf("query chapter id error = %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO downloads(chapter_id, status, completed_at) VALUES (?, 'completed', CURRENT_TIMESTAMP)`, chapterID); err != nil {
+		t.Fatalf("insert completed download error = %v", err)
+	}
+
+	missing, err := repo.ListMissingChapters(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ListMissingChapters() error = %v", err)
+	}
+	if len(missing) != 1 {
+		t.Fatalf("ListMissingChapters() len = %d, want 1", len(missing))
+	}
+	if missing[0].Label != "2" {
+		t.Fatalf("ListMissingChapters()[0].Label = %q, want 2", missing[0].Label)
+	}
+
+	if err := repo.RemoveTitle(ctx, title.ID); err != nil {
+		t.Fatalf("RemoveTitle() error = %v", err)
+	}
+	titles, err = repo.ListTitles(ctx)
+	if err != nil {
+		t.Fatalf("ListTitles() after remove error = %v", err)
+	}
+	if len(titles) != 0 {
+		t.Fatalf("ListTitles() after remove len = %d, want 0", len(titles))
+	}
+
+	var chapterCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chapters WHERE title_id = ?`, title.ID).Scan(&chapterCount); err != nil {
+		t.Fatalf("query chapter count after remove error = %v", err)
+	}
+	if chapterCount != 0 {
+		t.Fatalf("chapter count after remove = %d, want 0", chapterCount)
+	}
+}
