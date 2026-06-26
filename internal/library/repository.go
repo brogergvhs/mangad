@@ -17,6 +17,14 @@ type Repository struct {
 	db *sql.DB
 }
 
+// CompletedDownload is a persisted completed download record.
+type CompletedDownload struct {
+	ChapterID  int64
+	TitleID    int64
+	Label      string
+	OutputFile string
+}
+
 // NewRepository creates a library repository.
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
@@ -256,6 +264,42 @@ func (r *Repository) MarkDownloadFailed(ctx context.Context, chapterID int64, ca
 		msg = cause.Error()
 	}
 	return r.markDownload(ctx, chapterID, "failed", "", 0, msg)
+}
+
+// ListCompletedDownloads returns completed downloads, optionally scoped to a title.
+func (r *Repository) ListCompletedDownloads(ctx context.Context, titleID int64) ([]CompletedDownload, error) {
+	q := `
+		SELECT c.id, c.title_id, c.label, d.output_file
+		FROM downloads d
+		JOIN chapters c ON c.id = d.chapter_id
+		WHERE d.status = 'completed'
+	`
+	args := []any{}
+	if titleID > 0 {
+		q += ` AND c.title_id = ?`
+		args = append(args, titleID)
+	}
+	q += ` ORDER BY c.title_id, c.number_main, c.suffix_type, c.suffix_num, c.label`
+
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list completed downloads: %w", err)
+	}
+	defer rows.Close()
+
+	var out []CompletedDownload
+	for rows.Next() {
+		var d CompletedDownload
+		if err := rows.Scan(&d.ChapterID, &d.TitleID, &d.Label, &d.OutputFile); err != nil {
+			return nil, fmt.Errorf("scan completed download: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate completed downloads: %w", err)
+	}
+
+	return out, nil
 }
 
 func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, outputFile string, bytes int64, msg string) error {

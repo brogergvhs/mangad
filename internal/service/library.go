@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"unicode"
 
@@ -23,6 +24,12 @@ type LibraryService struct {
 type RefreshResult struct {
 	Title library.Title
 	Count int
+}
+
+// ScanResult describes filesystem verification for completed downloads.
+type ScanResult struct {
+	Checked int
+	Missing int
 }
 
 // OpenLibrary opens the library database and applies migrations.
@@ -129,6 +136,31 @@ func (s *LibraryService) RefreshMonitored(
 	}
 
 	return results, nil
+}
+
+// ScanDownloads verifies completed download files still exist.
+func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (ScanResult, error) {
+	downloads, err := s.repo.ListCompletedDownloads(ctx, titleID)
+	if err != nil {
+		return ScanResult{}, err
+	}
+
+	var result ScanResult
+	for _, download := range downloads {
+		result.Checked++
+		if _, err := os.Stat(download.OutputFile); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return result, fmt.Errorf("check %s: %w", download.OutputFile, err)
+		}
+
+		result.Missing++
+		if err := s.repo.MarkDownloadFailed(ctx, download.ChapterID, fmt.Errorf("output file missing: %s", download.OutputFile)); err != nil {
+			return result, err
+		}
+	}
+
+	return result, nil
 }
 
 // DownloadMissing downloads every missing chapter for a title.

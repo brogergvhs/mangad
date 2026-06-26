@@ -28,6 +28,7 @@ var (
 	flagLibraryRemoveForce     bool
 	flagLibraryDownloadChapter string
 	flagLibraryDownloadMissing bool
+	flagLibraryRefreshScan     bool
 )
 
 var libraryCmd = &cobra.Command{Use: "lib", Short: "Manage tracked manga titles"}
@@ -41,6 +42,13 @@ var libraryRefreshCmd = &cobra.Command{
 	Short: "Refresh discovered chapters for one or all tracked titles",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runLibraryRefresh,
+}
+
+var libraryScanCmd = &cobra.Command{
+	Use:   "scan [title_id]",
+	Short: "Verify completed download files still exist",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  runLibraryScan,
 }
 
 var libraryMissingCmd = &cobra.Command{
@@ -72,11 +80,12 @@ func init() {
 	libraryAddCmd.Flags().BoolVar(&flagLibraryAddUnmonitored, "unmonitored", false, "add title without automatic monitoring")
 	libraryAddCmd.Flags().StringVar(&flagLibraryRefreshInterval, "refresh-interval", "24h", "refresh interval label, e.g. 24h")
 	libraryAddCmd.Flags().BoolVar(&flagLibraryRefreshAfterAdd, "refresh", false, "refresh chapters immediately after adding")
+	libraryRefreshCmd.Flags().BoolVar(&flagLibraryRefreshScan, "scan", false, "verify downloaded files after refresh")
 	libraryRemoveCmd.Flags().BoolVarP(&flagLibraryRemoveForce, "force", "f", false, "remove without confirmation")
 	libraryDownloadCmd.Flags().StringVar(&flagLibraryDownloadChapter, "chapter", "", "download one chapter label instead of all missing")
 	libraryDownloadCmd.Flags().BoolVar(&flagLibraryDownloadMissing, "missing", false, "download missing chapters")
 
-	libraryCmd.AddCommand(libraryAddCmd, libraryListCmd, libraryRefreshCmd, libraryMissingCmd, libraryRemoveCmd, libraryDownloadCmd)
+	libraryCmd.AddCommand(libraryAddCmd, libraryListCmd, libraryRefreshCmd, libraryMissingCmd, libraryRemoveCmd, libraryDownloadCmd, libraryScanCmd)
 	rootCmd.AddCommand(libraryCmd)
 }
 
@@ -148,6 +157,13 @@ func runLibraryRefresh(_ *cobra.Command, args []string) error {
 				return err
 			}
 			printRefresh(result)
+			if flagLibraryRefreshScan {
+				scan, err := lib.ScanDownloads(ctx, id)
+				if err != nil {
+					return err
+				}
+				printScan(scan)
+			}
 			return nil
 		}
 
@@ -157,6 +173,13 @@ func runLibraryRefresh(_ *cobra.Command, args []string) error {
 		}
 		for _, result := range results {
 			printRefresh(result)
+		}
+		if flagLibraryRefreshScan {
+			scan, err := lib.ScanDownloads(ctx, 0)
+			if err != nil {
+				return err
+			}
+			printScan(scan)
 		}
 		return nil
 	})
@@ -247,6 +270,25 @@ func runLibraryDownload(_ *cobra.Command, args []string) error {
 	})
 }
 
+func runLibraryScan(_ *cobra.Command, args []string) error {
+	return withLibrary(func(ctx context.Context, lib *service.LibraryService) error {
+		var id int64
+		var err error
+		if len(args) == 1 {
+			id, err = titleID(args[0])
+			if err != nil {
+				return err
+			}
+		}
+		result, err := lib.ScanDownloads(ctx, id)
+		if err != nil {
+			return err
+		}
+		printScan(result)
+		return nil
+	})
+}
+
 func withLibrary(fn func(context.Context, *service.LibraryService) error) error {
 	ctx := context.Background()
 	lib, closeDB, err := service.OpenLibrary(ctx, flagLibraryDB)
@@ -304,6 +346,10 @@ func printDownloads(results []service.ChapterDownloadResult, err error) error {
 		printDownload(result)
 	}
 	return nil
+}
+
+func printScan(result service.ScanResult) {
+	fmt.Printf("Scanned downloads: %d checked, %d missing\n", result.Checked, result.Missing)
 }
 
 func formatTime(value *time.Time) string {

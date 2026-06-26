@@ -72,6 +72,13 @@ func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	if err := repo.MarkDownloadCompleted(ctx, chapterID, "chapter-1.cbz", 123); err != nil {
 		t.Fatalf("MarkDownloadCompleted() error = %v", err)
 	}
+	completed, err := repo.ListCompletedDownloads(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ListCompletedDownloads() error = %v", err)
+	}
+	if len(completed) != 1 || completed[0].OutputFile != "chapter-1.cbz" {
+		t.Fatalf("ListCompletedDownloads() = %+v, want one chapter-1.cbz", completed)
+	}
 
 	missing, err := repo.ListMissingChapters(ctx, title.ID)
 	if err != nil {
