@@ -1,7 +1,6 @@
 package chapters
 
 import (
-	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
@@ -66,8 +65,4 @@ func (c Chapter) FolderName() string {
 
 func (c Chapter) OutputCBZ() string {
 	return c.baseName() + ".cbz"
-}
-
-func (c Chapter) OutputCBZPath(out string) string {
-	return filepath.Join(out, c.OutputCBZ())
 }

@@ -1,16 +1,12 @@
 package generic
 
 import (
-	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
@@ -23,24 +19,19 @@ import (
 	"github.com/brogergvhs/mangad/internal/util"
 )
 
-//go:embed selenium_fetch.py
-var embeddedSeleniumScript []byte
-
 type Scraper struct {
 	client  *http.Client
 	log     *ui.Logger
 	allowed *regexp.Regexp
 	checkJS bool
-	withCF  bool
 }
 
-func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool, withCF bool) *Scraper {
+func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool) *Scraper {
 	return &Scraper{
 		client:  c,
 		log:     log,
 		allowed: buildExtRegex(normalizeExtList(allowExt)),
 		checkJS: checkJS,
-		withCF:  withCF,
 	}
 }
 
@@ -96,50 +87,8 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 	body := string(data)
 
 	if resp.StatusCode == http.StatusForbidden || strings.Contains(body, "Just a moment") {
-		if !s.withCF {
-			s.log.Infof("Cloudflare protection detected for %s.\n", target)
-			s.log.Infof("Selenium fallback disabled. Re-run with --with-cf or enable with_cf in config to allow bypass.\n")
-			return "", fmt.Errorf("cloudflare challenge blocked (use --with-cf to allow bypass)")
-		}
-
-		tmpFile, err := os.CreateTemp("", "selenium_fetch_*.py")
-		if err != nil {
-			return "", fmt.Errorf("failed to create temp script: %w", err)
-		}
-		defer func() {
-			if err := os.Remove(tmpFile.Name()); err != nil {
-				s.log.Debugf("Warning: failed to remove temp file %s: %v\n", tmpFile.Name(), err)
-			}
-		}()
-
-		if _, err := tmpFile.Write(embeddedSeleniumScript); err != nil {
-			if cerr := tmpFile.Close(); cerr != nil {
-				s.log.Debugf("Warning: failed to close temp file: %v\n", cerr)
-			}
-			return "", fmt.Errorf("failed to write embedded selenium script: %w", err)
-		}
-		if err := tmpFile.Close(); err != nil {
-			s.log.Debugf("Warning: failed to close temp file: %v\n", err)
-		}
-
-		s.log.Debugf("Running embedded Selenium script for %s\n", target)
-		cmd := exec.CommandContext(ctx, "python3", tmpFile.Name(), target)
-
-		var out bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.Stdout = &out
-		cmd.Stderr = &stderr
-
-		err = cmd.Run()
-		if err != nil {
-			s.log.Errorf("Selenium script failed: %v\nstderr: %s\n", err, stderr.String())
-			return "", err
-		}
-
-		html := out.String()
-		s.log.Debugf("Fetched body via embedded Selenium for %s\n", target)
-
-		return html, nil
+		s.log.Infof("Cloudflare protection detected for %s.\n", target)
+		return "", fmt.Errorf("cloudflare challenge blocked")
 	}
 
 	return body, nil

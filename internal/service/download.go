@@ -120,7 +120,7 @@ func NewDefaultDownloadService(
 		return nil, fmt.Errorf("create HTTP client: %w", err)
 	}
 
-	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS, cfg.WithCF)
+	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS)
 
 	return NewDownloadService(cfg, client, scraper, log, progress), nil
 }

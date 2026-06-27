@@ -13,6 +13,7 @@ import (
 // New returns the HTTP API handler.
 func New(svc *service.JobService, runJobs func(context.Context) (service.RunSummary, error)) http.Handler {
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -38,6 +39,7 @@ func New(svc *service.JobService, runJobs func(context.Context) (service.RunSumm
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
+
 	mux.HandleFunc("/api/library", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -50,6 +52,7 @@ func New(svc *service.JobService, runJobs func(context.Context) (service.RunSumm
 		}
 		writeJSON(w, http.StatusOK, titles)
 	})
+
 	mux.HandleFunc("/api/jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -62,6 +65,7 @@ func New(svc *service.JobService, runJobs func(context.Context) (service.RunSumm
 		}
 		writeJSON(w, http.StatusOK, jobs)
 	})
+
 	mux.HandleFunc("/api/jobs/enqueue", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -92,6 +96,7 @@ func New(svc *service.JobService, runJobs func(context.Context) (service.RunSumm
 		}
 		writeJSON(w, http.StatusCreated, job)
 	})
+
 	mux.HandleFunc("/api/jobs/run", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -95,8 +95,6 @@ e.g. `mangad completion zsh`
 --image-workers   int    Amount of parallel images to download per chapter (default 5)
 --check-js               Tries a generic JS scanning & dynamic AJAX endpoint discovery
                          try if the images are loaded in a post-load script
---with-cf                Allow using embedded Selenium fallback when Cloudflare blocks requests
-                         requires a working 'python3' executable with SeleniumBase installed
 
 --keep-folders           Keep temporary folders with images that were used for CBZ conversion
 --skip-broken            Skip failed images instead of failing the whole chapter
@@ -138,10 +136,8 @@ After this is done, we can `switch` between configs, fully eliminating the CLI f
 
 Also helps with history to not spam that `up` key in searh of the needed command.
 
-Download --with-cf and --check-js flags
+Download --check-js flag
 -----
-
-These are the fun ones.
 
 `--check-js` came into existance after stumbling on some websites that would post-load the image urls after the initial HTML response from AJAX scripts.
 
@@ -149,15 +145,7 @@ It enables scanning all <script> tags for patterns like `fetch("/ajax/...")` or 
 
 It won’t handle obfuscated, dynamically built, or event-triggered scripts.
 
----
-
-`--with-cg` solves the CF guard on the protected pages.
-
-It is run with an embedded `python` script cause I couldn't be bothered (for now at least) to roll a proper solver in `go`.
-
-Inherently, to be able to use the feature you'll need a `python3` executable in your path and the `SeleniumBase` lib installed (`pip install seleniumbase`).
-
-In the future the plan is to add a `--force-cf` flag that will basically provide a much more robust `--check-js` behaviour by actually getting all the post-load scripts executed.
+Cloudflare-protected pages are not bypassed by the downloader right now. The planned solver path is FlareSolverr integration.
 
 Contributing
 ---

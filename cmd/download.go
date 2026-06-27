@@ -34,7 +34,6 @@ var (
 	flagDryRun         bool
 	flagSkipBroken     bool
 	flagCheckJS        bool
-	flagWithCF         bool
 
 	// headers/auth
 	flagCookie     string
@@ -66,7 +65,6 @@ func init() {
 	downloadCmd.Flags().BoolVar(&flagDryRun, "dry-run", false, "show what would be downloaded, don’t download")
 	downloadCmd.Flags().BoolVar(&flagSkipBroken, "skip-broken", false, "skip failed images instead of failing the whole chapter")
 	downloadCmd.Flags().BoolVar(&flagCheckJS, "check-js", false, "Enable generic JS scanning & dynamic AJAX endpoint discovery")
-	downloadCmd.Flags().BoolVar(&flagWithCF, "with-cf", false, "Allow using embedded Selenium fallback when Cloudflare blocks requests. Requires a working 'python3' executable with SeleniumBase installed.")
 
 	// headers/auth
 	downloadCmd.Flags().StringVar(&flagCookie, "cookie", "", "cookie string, e.g. \"key=value; other=123\"")
@@ -132,7 +130,6 @@ func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, err
 		DefaultList:         flagList,
 		DefaultExcludeList:  flagExcludeList,
 		CheckJS:             flagCheckJS,
-		WithCF:              flagWithCF,
 		Cookie:              flagCookie,
 		CookieFile:          flagCookieFile,
 		UserAgent:           flagUserAgent,
