@@ -16,6 +16,7 @@ import (
 
 // JobService enqueues and runs jobs.
 type JobService struct {
+	db   *sql.DB
 	jobs *jobs.Repository
 	lib  *LibraryService
 }
@@ -47,9 +48,31 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 
 func newJobService(db *sql.DB) *JobService {
 	return &JobService{
+		db:   db,
 		jobs: jobs.NewRepository(db),
 		lib:  &LibraryService{repo: library.NewRepository(db)},
 	}
+}
+
+// Setting returns an app setting or fallback.
+func (s *JobService) Setting(ctx context.Context, key, fallback string) string {
+	var value string
+	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&value); err != nil {
+		return fallback
+	}
+	return value
+}
+
+// SetSetting stores an app setting.
+func (s *JobService) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO settings(key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value
+	`, key, value)
+	if err != nil {
+		return fmt.Errorf("set setting %s: %w", key, err)
+	}
+	return nil
 }
 
 // Enqueue creates a job.

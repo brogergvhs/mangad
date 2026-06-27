@@ -15,6 +15,9 @@ import (
 
 // DefaultPath returns the default application database path.
 func DefaultPath() string {
+	if path := os.Getenv("MANGAD_DB"); path != "" {
+		return path
+	}
 	return filepath.Join(config.ConfigRoot(), "mangad.db")
 }
 
