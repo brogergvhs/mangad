@@ -32,6 +32,44 @@ type RunSummary struct {
 	Failed int
 }
 
+const (
+	SettingServeRefreshEvery  = "serve.refresh_every"
+	SettingServeScanEvery     = "serve.scan_every"
+	SettingServeDownloadEvery = "serve.download_every"
+	SettingServeRunEvery      = "serve.run_every"
+)
+
+// ServeSettingDefault returns the built-in value for a scheduler setting.
+func ServeSettingDefault(key string) string {
+	switch key {
+	case SettingServeRefreshEvery:
+		return "1h"
+	case SettingServeScanEvery:
+		return "30m"
+	case SettingServeDownloadEvery:
+		return "10m"
+	case SettingServeRunEvery:
+		return "5s"
+	default:
+		return ""
+	}
+}
+
+// ValidateServeSetting checks a scheduler setting update.
+func ValidateServeSetting(key, value string) error {
+	d, err := time.ParseDuration(value)
+	if err != nil || d < 0 {
+		return fmt.Errorf("invalid duration for %s", key)
+	}
+	if ServeSettingDefault(key) == "" {
+		return fmt.Errorf("unknown setting %q", key)
+	}
+	if key == SettingServeRunEvery && d == 0 {
+		return fmt.Errorf("%s cannot be 0", key)
+	}
+	return nil
+}
+
 // OpenJobs opens the app database for job processing.
 func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 	db, err := database.Open(ctx, dbPath)
@@ -73,6 +111,11 @@ func (s *JobService) SetSetting(ctx context.Context, key, value string) error {
 		return fmt.Errorf("set setting %s: %w", key, err)
 	}
 	return nil
+}
+
+// ListTitles returns tracked titles.
+func (s *JobService) ListTitles(ctx context.Context) ([]library.Title, error) {
+	return s.lib.ListTitles(ctx)
 }
 
 // Enqueue creates a job.

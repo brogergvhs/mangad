@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/jobs"
+	"github.com/brogergvhs/mangad/internal/server"
 	"github.com/brogergvhs/mangad/internal/service"
 
 	"github.com/spf13/cobra"
@@ -15,17 +18,11 @@ import (
 
 var (
 	flagServeDB            string
+	flagServeAddr          string
 	flagServeRefreshEvery  time.Duration
 	flagServeScanEvery     time.Duration
 	flagServeDownloadEvery time.Duration
 	flagServeRunEvery      time.Duration
-)
-
-const (
-	settingServeRefreshEvery  = "serve.refresh_every"
-	settingServeScanEvery     = "serve.scan_every"
-	settingServeDownloadEvery = "serve.download_every"
-	settingServeRunEvery      = "serve.run_every"
 )
 
 var serveCmd = &cobra.Command{
@@ -36,6 +33,7 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	serveCmd.Flags().StringVar(&flagServeDB, "db", "", "path to MangaD SQLite database")
+	serveCmd.Flags().StringVar(&flagServeAddr, "addr", ":8080", "HTTP API listen address")
 	serveCmd.Flags().DurationVar(&flagServeRefreshEvery, "refresh-every", 0, "refresh schedule, e.g. 1h; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeScanEvery, "scan-every", 0, "download file scan schedule, e.g. 30m; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeDownloadEvery, "download-every", 0, "missing download schedule, e.g. 10m; 0 disables")
@@ -53,18 +51,34 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer closeDB()
 
-	if err := seedServeSetting(cmd, svc, ctx, "refresh-every", settingServeRefreshEvery, flagServeRefreshEvery); err != nil {
+	if err := seedServeSetting(cmd, svc, ctx, "refresh-every", service.SettingServeRefreshEvery, flagServeRefreshEvery); err != nil {
 		return err
 	}
-	if err := seedServeSetting(cmd, svc, ctx, "scan-every", settingServeScanEvery, flagServeScanEvery); err != nil {
+	if err := seedServeSetting(cmd, svc, ctx, "scan-every", service.SettingServeScanEvery, flagServeScanEvery); err != nil {
 		return err
 	}
-	if err := seedServeSetting(cmd, svc, ctx, "download-every", settingServeDownloadEvery, flagServeDownloadEvery); err != nil {
+	if err := seedServeSetting(cmd, svc, ctx, "download-every", service.SettingServeDownloadEvery, flagServeDownloadEvery); err != nil {
 		return err
 	}
-	if err := seedServeSetting(cmd, svc, ctx, "run-every", settingServeRunEvery, flagServeRunEvery); err != nil {
+	if err := seedServeSetting(cmd, svc, ctx, "run-every", service.SettingServeRunEvery, flagServeRunEvery); err != nil {
 		return err
 	}
+
+	httpSrv := &http.Server{Addr: flagServeAddr, Handler: server.New(svc, func(ctx context.Context) (service.RunSummary, error) {
+		return runDue(ctx, svc)
+	})}
+	httpErr := make(chan error, 1)
+	go func() {
+		fmt.Printf("HTTP API listening on %s\n", flagServeAddr)
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			httpErr <- err
+		}
+	}()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
+	}()
 
 	nextRefresh := time.Now()
 	nextScan := time.Now()
@@ -73,12 +87,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	for {
 		oldRefresh, oldScan, oldDownload, oldRun := refreshEvery, scanEvery, downloadEvery, runEvery
-		refreshEvery = serveDuration(svc, ctx, settingServeRefreshEvery, "1h")
-		scanEvery = serveDuration(svc, ctx, settingServeScanEvery, "30m")
-		downloadEvery = serveDuration(svc, ctx, settingServeDownloadEvery, "10m")
-		runEvery = serveDuration(svc, ctx, settingServeRunEvery, "5s")
+		refreshEvery = serveDuration(svc, ctx, service.SettingServeRefreshEvery)
+		scanEvery = serveDuration(svc, ctx, service.SettingServeScanEvery)
+		downloadEvery = serveDuration(svc, ctx, service.SettingServeDownloadEvery)
+		runEvery = serveDuration(svc, ctx, service.SettingServeRunEvery)
 		if runEvery <= 0 {
-			runEvery = fallbackDuration("5s")
+			runEvery = fallbackDuration(service.ServeSettingDefault(service.SettingServeRunEvery))
 		}
 		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldRun != runEvery
 		if oldRefresh != refreshEvery {
@@ -97,7 +111,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery)); err != nil {
 			return err
 		}
-		if err := runDue(ctx, svc); err != nil {
+		if _, err := runDue(ctx, svc); err != nil {
 			return err
 		}
 
@@ -106,6 +120,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		case <-ctx.Done():
 			timer.Stop()
 			return nil
+		case err := <-httpErr:
+			timer.Stop()
+			return err
 		case <-timer.C:
 		}
 	}
@@ -131,19 +148,19 @@ func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, down
 	return nil
 }
 
-func runDue(ctx context.Context, svc *service.JobService) error {
+func runDue(ctx context.Context, svc *service.JobService) (service.RunSummary, error) {
 	cfg, logSvc, err := runtimeConfig()
 	if err != nil {
-		return err
+		return service.RunSummary{}, err
 	}
 	summary, err := svc.RunDue(ctx, cfg, logSvc)
 	if err != nil {
-		return err
+		return summary, err
 	}
 	if summary.Done != 0 || summary.Failed != 0 {
 		fmt.Printf("Jobs run: %d done, %d failed\n", summary.Done, summary.Failed)
 	}
-	return nil
+	return summary, nil
 }
 
 func seedServeSetting(cmd *cobra.Command, svc *service.JobService, ctx context.Context, flagName, key string, value time.Duration) error {
@@ -153,7 +170,8 @@ func seedServeSetting(cmd *cobra.Command, svc *service.JobService, ctx context.C
 	return svc.SetSetting(ctx, key, value.String())
 }
 
-func serveDuration(svc *service.JobService, ctx context.Context, key, fallback string) time.Duration {
+func serveDuration(svc *service.JobService, ctx context.Context, key string) time.Duration {
+	fallback := service.ServeSettingDefault(key)
 	value := svc.Setting(ctx, key, fallback)
 	d, err := time.ParseDuration(value)
 	if err != nil {
