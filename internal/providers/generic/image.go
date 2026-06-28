@@ -58,11 +58,7 @@ func (c *imageCollector) add(url string, idx int) {
 	if strings.HasPrefix(lu, "data:") {
 		return
 	}
-	if strings.Contains(lu, "logo") ||
-		strings.Contains(lu, "cover") ||
-		strings.Contains(lu, "profile") ||
-		strings.Contains(lu, "avatar") ||
-		strings.Contains(lu, "banner") {
+	if isNonPageImage(lu) {
 		if c.debug {
 			fmt.Printf("Skipping non-page image: %s\n", url)
 		}
@@ -79,6 +75,21 @@ func (c *imageCollector) add(url string, idx int) {
 		Index: idx,       // -1 if not known
 		Order: c.counter, // discovery sequence
 	})
+}
+
+func isNonPageImage(raw string) bool {
+	u, err := url.Parse(raw)
+	p := raw
+	if err == nil && u != nil {
+		p = u.Path
+	}
+	base := path.Base(strings.ToLower(p))
+	for _, token := range []string{"logo", "cover", "profile", "avatar", "banner", "fbshare", "share"} {
+		if strings.Contains(base, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeExtList(list []string) []string {

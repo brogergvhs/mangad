@@ -78,6 +78,50 @@ func TestGetImagesFetchesChapterPageOnce(t *testing.T) {
 	}
 }
 
+func TestGetImagesScansMultiPageChapter(t *testing.T) {
+	var calls []string
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls = append(calls, req.URL.Path)
+		body := map[string]string{
+			"/manga/title/c270/": `
+				<html><body>
+					<select>
+						<option value="/manga/title/c270/">1</option>
+						<option value="/manga/title/c270/2.html">2</option>
+						<option value="/manga/title/c270/3.html">3</option>
+					</select>
+					<img src="https://cdn.test/page-001.jpg">
+				</body></html>
+			`,
+			"/manga/title/c270/2.html": `<html><body><img src="https://cdn.test/page-002.jpg"></body></html>`,
+			"/manga/title/c270/3.html": `<html><body><img src="https://cdn.test/page-003.jpg"></body></html>`,
+		}[req.URL.Path]
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), []string{"jpg"}, false, nil)
+	images, err := scraper.GetImages(context.Background(), "http://manga.test/manga/title/c270/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(calls, ",") != "/manga/title/c270/,/manga/title/c270/2.html,/manga/title/c270/3.html" {
+		t.Fatalf("calls = %#v", calls)
+	}
+	want := []string{
+		"https://cdn.test/page-001.jpg",
+		"https://cdn.test/page-002.jpg",
+		"https://cdn.test/page-003.jpg",
+	}
+	if strings.Join(images, ",") != strings.Join(want, ",") {
+		t.Fatalf("images = %#v", images)
+	}
+}
+
 type fakeBrowserFetcher string
 
 func (f fakeBrowserFetcher) LoadCached(context.Context, string) {}

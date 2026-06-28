@@ -398,7 +398,31 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	// s.log.Debugf("\n======= DEBUG HTML START =======\n%s\n======= DEBUG HTML END =======\n\n", body)
 
 	col := newImageCollector(s.allowed, s.log.Debug)
+	visited := map[string]bool{chapterURL: true}
 
+	s.scanImages(ctx, col, doc, body, chapterURL)
+	for _, pageURL := range chapterPageURLs(doc, chapterURL) {
+		if visited[pageURL] {
+			continue
+		}
+		visited[pageURL] = true
+		nextDoc, nextBody, err := s.fetchDOMBody(ctx, pageURL)
+		if err != nil {
+			s.log.Debugf("Skipping chapter page %s: %v\n", pageURL, err)
+			continue
+		}
+		s.scanImages(ctx, col, nextDoc, nextBody, pageURL)
+	}
+
+	final := col.Finalize()
+	if len(final) == 0 {
+		return nil, fmt.Errorf("no usable images found")
+	}
+
+	return final, nil
+}
+
+func (s *Scraper) scanImages(ctx context.Context, col *imageCollector, doc *goquery.Document, body, chapterURL string) {
 	added := col.ScanIMGTags(doc, chapterURL)
 	s.log.Debugf("IMG tags: +%d candidates\n", added)
 
@@ -442,11 +466,78 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	} else {
 		s.log.Debugf("JS scraping disabled (use --check-js to enable)\n")
 	}
+}
 
-	final := col.Finalize()
-	if len(final) == 0 {
-		return nil, fmt.Errorf("no usable images found")
+func chapterPageURLs(doc *goquery.Document, chapterURL string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(raw string) {
+		u := resolveURL(chapterURL, strings.TrimSpace(raw))
+		n, ok := chapterPageNumber(chapterURL, u)
+		if u == "" || seen[u] || !ok || n == 1 {
+			return
+		}
+		seen[u] = true
+		out = append(out, u)
 	}
+	doc.Find("option[value]").Each(func(_ int, opt *goquery.Selection) {
+		if value, ok := opt.Attr("value"); ok {
+			add(value)
+		}
+	})
+	doc.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
+		if href, ok := a.Attr("href"); ok {
+			add(href)
+		}
+	})
+	sort.SliceStable(out, func(i, j int) bool {
+		ai, _ := chapterPageNumber(chapterURL, out[i])
+		aj, _ := chapterPageNumber(chapterURL, out[j])
+		return ai < aj
+	})
+	return out
+}
 
-	return final, nil
+func chapterPageNumber(chapterURL, candidate string) (int, bool) {
+	base, err := url.Parse(chapterURL)
+	if err != nil {
+		return 0, false
+	}
+	cand, err := url.Parse(candidate)
+	if err != nil {
+		return 0, false
+	}
+	if cand.Host != base.Host {
+		return 0, false
+	}
+	basePath := chapterPageBase(base.Path)
+	candPath := cand.EscapedPath()
+	if candPath == basePath {
+		return 1, true
+	}
+	if !strings.HasPrefix(candPath, basePath) {
+		return 0, false
+	}
+	leaf := strings.TrimPrefix(candPath, basePath)
+	if !strings.HasSuffix(leaf, ".html") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSuffix(leaf, ".html"))
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
+func chapterPageBase(p string) string {
+	p = strings.TrimSpace(p)
+	if strings.HasSuffix(p, ".html") {
+		if i := strings.LastIndex(p, "/"); i >= 0 {
+			p = p[:i+1]
+		}
+	}
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	return p
 }

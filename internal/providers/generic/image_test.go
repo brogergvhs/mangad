@@ -23,3 +23,14 @@ func TestImageCollectorAllowsQueryAfterExtension(t *testing.T) {
 		t.Fatalf("Finalize() = %#v", got)
 	}
 }
+
+func TestImageCollectorSkipsShareAssets(t *testing.T) {
+	col := newImageCollector(buildExtRegex([]string{"jpg"}), false)
+	col.add("https://zjcdn.mangahere.org/store/manga/29763/030.0/compressed/n000.jpg", -1)
+	col.add("http://www.mangatown.com/media/images/fbshare.jpg", -1)
+
+	got := col.Finalize()
+	if len(got) != 1 || got[0] != "https://zjcdn.mangahere.org/store/manga/29763/030.0/compressed/n000.jpg" {
+		t.Fatalf("Finalize() = %#v", got)
+	}
+}

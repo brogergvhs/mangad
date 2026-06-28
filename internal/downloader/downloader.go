@@ -111,6 +111,7 @@ func (d *Downloader) DownloadImagesConcurrently(
 			}
 
 			if err := d.downloadWithRetry(ctx, u, path, referer, progress); err != nil {
+				_ = os.Remove(path)
 				cs.mu.Lock()
 				errs = append(errs, fmt.Errorf("image %d: %v", i+1, err))
 				cs.doneImages++

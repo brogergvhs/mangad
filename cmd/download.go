@@ -213,6 +213,12 @@ func printDownloadSummary(summary service.DownloadSummary) {
 	fmt.Printf("Images:   %d\n", summary.Images)
 	fmt.Printf("Data:     %s\n", util.Human(summary.Bytes))
 	fmt.Printf("Time:     %s\n", summary.Duration.Round(time.Second))
+	if len(summary.Errors) > 0 {
+		fmt.Println("Errors:")
+		for _, msg := range summary.Errors {
+			fmt.Printf(" - %s\n", msg)
+		}
+	}
 	fmt.Println("\nAll done.")
 }
 

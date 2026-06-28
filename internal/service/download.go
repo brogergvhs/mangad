@@ -59,6 +59,7 @@ type DownloadSummary struct {
 	Images         int64
 	Bytes          int64
 	FailedChapters int64
+	Errors         []string
 	Duration       time.Duration
 }
 
@@ -314,7 +315,9 @@ schedule:
 
 			result, err := s.downloadChapter(ctx, dl, ch)
 			if err != nil {
-				s.log.Errorf("Chapter %s failed: %v", ch.Label, err)
+				msg := fmt.Sprintf("chapter %s: %v", ch.Label, err)
+				s.log.Errorf("%s\n", msg)
+				summary.addError(msg)
 				summary.failedChapters.Add(1)
 				return
 			}
@@ -390,16 +393,28 @@ type downloadCounters struct {
 	images         atomic.Int64
 	bytes          atomic.Int64
 	failedChapters atomic.Int64
+	mu             sync.Mutex
+	errors         []string
 }
 
 func (c *downloadCounters) toSummary(duration time.Duration) DownloadSummary {
+	c.mu.Lock()
+	errors := append([]string(nil), c.errors...)
+	c.mu.Unlock()
 	return DownloadSummary{
 		Chapters:       c.chapters.Load(),
 		Images:         c.images.Load(),
 		Bytes:          c.bytes.Load(),
 		FailedChapters: c.failedChapters.Load(),
+		Errors:         errors,
 		Duration:       duration,
 	}
+}
+
+func (c *downloadCounters) addError(msg string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.errors = append(c.errors, msg)
 }
 
 type noopProgressHandle struct{}
