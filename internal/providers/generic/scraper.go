@@ -55,14 +55,23 @@ var (
 )
 
 func (s *Scraper) fetchDOM(ctx context.Context, target string) (*goquery.Document, error) {
+	doc, _, err := s.fetchDOMBody(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Document, string, error) {
 	s.log.Debugf("Fetching URL: %s\n", target)
 
 	body, err := s.fetchBody(ctx, target)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return goquery.NewDocumentFromReader(strings.NewReader(body))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
+	return doc, body, err
 }
 
 func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) {
@@ -76,6 +85,10 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 
 	resp, err := util.DoWithRetry(s.client, req, 3, 500*time.Millisecond)
 	if err != nil {
+		if s.browser != nil {
+			s.log.Infof("Normal HTTP fetch failed for %s: %v\n", target, err)
+			return s.fetchViaBrowser(ctx, target)
+		}
 		return "", err
 	}
 	defer func() {
@@ -95,16 +108,23 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 	if resp.StatusCode == http.StatusForbidden || strings.Contains(body, "Just a moment") {
 		s.log.Infof("Cloudflare protection detected for %s.\n", target)
 		if s.browser != nil {
-			html, err := s.browser.Fetch(ctx, target)
-			if err != nil {
-				return "", fmt.Errorf("fetch via browser solver: %w", err)
-			}
-			return html, nil
+			return s.fetchViaBrowser(ctx, target)
 		}
-		return "", fmt.Errorf("cloudflare challenge blocked")
+		s.log.Infof("Browser solver is disabled. Enable FlareSolverr with browser_solver.enabled: true and browser_solver.endpoint: http://localhost:8191/v1.\n")
+		return "", fmt.Errorf("cloudflare challenge blocked; enable FlareSolverr with browser_solver.enabled: true")
 	}
 
 	return body, nil
+}
+
+func (s *Scraper) fetchViaBrowser(ctx context.Context, target string) (string, error) {
+	s.log.Infof("Using browser solver for %s.\n", target)
+	html, err := s.browser.Fetch(ctx, target)
+	if err != nil {
+		return "", fmt.Errorf("fetch via browser solver: %w", err)
+	}
+	s.log.Infof("Browser solver returned HTML for %s (%d bytes).\n", target, len(html))
+	return html, nil
 }
 
 // isLikelyChapterFromBase returns true if href looks like a chapter link derived from the same series URL.
@@ -363,14 +383,13 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 }
 
 func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, error) {
-	doc, err := s.fetchDOM(ctx, chapterURL)
+	doc, body, err := s.fetchDOMBody(ctx, chapterURL)
 	if err != nil {
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
 	}
 
 	s.log.Debugf("Fetched DOM for URL: %s\n", chapterURL)
-	body, _ := s.fetchBody(ctx, chapterURL)
 
 	// s.log.Debugf("\n======= DEBUG HTML START =======\n%s\n======= DEBUG HTML END =======\n\n", body)
 

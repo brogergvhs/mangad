@@ -22,6 +22,7 @@ type Result struct {
 	Status    int
 	HTML      string
 	UserAgent string
+	Cookies   []*http.Cookie
 }
 
 // FlareSolverr calls a FlareSolverr /v1 endpoint.
@@ -60,6 +61,7 @@ func (f *FlareSolverr) Fetch(ctx context.Context, target string) (Result, error)
 		Status:    resp.Solution.Status,
 		HTML:      resp.Solution.Response,
 		UserAgent: resp.Solution.UserAgent,
+		Cookies:   resp.httpCookies(),
 	}, nil
 }
 
@@ -112,5 +114,36 @@ type flaresolverrResponse struct {
 		Status    int    `json:"status"`
 		Response  string `json:"response"`
 		UserAgent string `json:"userAgent"`
+		Cookies   []struct {
+			Name     string  `json:"name"`
+			Value    string  `json:"value"`
+			Domain   string  `json:"domain"`
+			Path     string  `json:"path"`
+			Expires  float64 `json:"expires"`
+			HTTPOnly bool    `json:"httpOnly"`
+			Secure   bool    `json:"secure"`
+		} `json:"cookies"`
 	} `json:"solution"`
+}
+
+func (r flaresolverrResponse) httpCookies() []*http.Cookie {
+	out := make([]*http.Cookie, 0, len(r.Solution.Cookies))
+	for _, c := range r.Solution.Cookies {
+		if c.Name == "" {
+			continue
+		}
+		cookie := &http.Cookie{
+			Name:     c.Name,
+			Value:    c.Value,
+			Domain:   c.Domain,
+			Path:     c.Path,
+			HttpOnly: c.HTTPOnly,
+			Secure:   c.Secure,
+		}
+		if c.Expires > 0 {
+			cookie.Expires = time.Unix(int64(c.Expires), 0)
+		}
+		out = append(out, cookie)
+	}
+	return out
 }

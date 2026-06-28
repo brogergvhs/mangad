@@ -7,6 +7,7 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,9 +17,33 @@ type HTTPClientOptions struct {
 	Cookie      string
 	CookieFile  string
 	Transport   http.RoundTripper
+	State       *BrowserState
 	DebugLogger interface {
 		Debugf(string, ...any)
 	}
+}
+
+type BrowserState struct {
+	mu        sync.RWMutex
+	userAgent string
+}
+
+func (s *BrowserState) SetUserAgent(value string) {
+	if s == nil || strings.TrimSpace(value) == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.userAgent = value
+}
+
+func (s *BrowserState) UserAgent() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.userAgent
 }
 
 func NewHTTPClient(opts HTTPClientOptions) (*http.Client, error) {
@@ -44,6 +69,7 @@ func NewHTTPClient(opts HTTPClientOptions) (*http.Client, error) {
 			base:         baseTransport,
 			ua:           opts.UserAgent,
 			cookieHeader: joinCookies(opts.Cookie, opts.CookieFile),
+			state:        opts.State,
 			log:          opts.DebugLogger,
 		},
 		Jar: jar,
@@ -61,12 +87,19 @@ type roundTripper struct {
 	base         http.RoundTripper
 	ua           string
 	cookieHeader string
+	state        *BrowserState
 	log          interface{ Debugf(string, ...any) }
 }
 
 func (rt roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	if rt.ua != "" {
-		req.Header.Set("User-Agent", rt.ua)
+	ua := rt.ua
+	if rt.state != nil {
+		if stateUA := rt.state.UserAgent(); stateUA != "" {
+			ua = stateUA
+		}
+	}
+	if ua != "" {
+		req.Header.Set("User-Agent", ua)
 	}
 
 	if rt.cookieHeader != "" {
@@ -120,6 +153,9 @@ func DoWithRetry(c *http.Client, req *http.Request, attempts int, backoff time.D
 			_ = resp.Body.Close()
 		}
 
+		if i == attempts {
+			break
+		}
 		time.Sleep(backoff * time.Duration(i))
 	}
 

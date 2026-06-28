@@ -47,6 +47,7 @@ func newImageCollector(allowed *regexp.Regexp, debug bool) *imageCollector {
 }
 
 func (c *imageCollector) add(url string, idx int) {
+	url = strings.TrimSpace(url)
 	if url == "" || strings.HasPrefix(url, "javascript:") {
 		return
 	}

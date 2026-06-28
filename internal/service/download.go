@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -109,12 +110,14 @@ func NewDefaultDownloadService(
 	log *ui.Logger,
 	progress ProgressManager,
 ) (*DownloadService, error) {
+	browserState := &util.BrowserState{}
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
 		Timeout:     30 * time.Second,
 		UserAgent:   util.PickUserAgent(cfg.UserAgent),
 		Cookie:      cfg.Cookie,
 		Transport:   cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
 		CookieFile:  cfg.CookieFile,
+		State:       browserState,
 		DebugLogger: log,
 	})
 	if err != nil {
@@ -126,11 +129,15 @@ func NewDefaultDownloadService(
 		if cfg.BrowserSolver.Provider != browserfetch.ProviderFlareSolverr {
 			return nil, fmt.Errorf("unsupported browser solver provider %q", cfg.BrowserSolver.Provider)
 		}
-		browser = flaresolverrFetcher{client: browserfetch.NewFlareSolverr(
-			cfg.BrowserSolver.Endpoint,
-			time.Duration(cfg.BrowserSolver.TimeoutSeconds)*time.Second,
-			nil,
-		)}
+		timeout := time.Duration(cfg.BrowserSolver.TimeoutSeconds) * time.Second
+		browser = flaresolverrFetcher{
+			client:   browserfetch.NewFlareSolverr(cfg.BrowserSolver.Endpoint, timeout, nil),
+			http:     client,
+			state:    browserState,
+			endpoint: cfg.BrowserSolver.Endpoint,
+			timeout:  timeout,
+			log:      log,
+		}
 	}
 	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS, browser)
 
@@ -138,15 +145,55 @@ func NewDefaultDownloadService(
 }
 
 type flaresolverrFetcher struct {
-	client *browserfetch.FlareSolverr
+	client   *browserfetch.FlareSolverr
+	http     *http.Client
+	state    *util.BrowserState
+	endpoint string
+	timeout  time.Duration
+	log      *ui.Logger
 }
 
 func (f flaresolverrFetcher) Fetch(ctx context.Context, target string) (string, error) {
+	start := time.Now()
+	if f.log != nil {
+		f.log.Infof("FlareSolverr request.get %s via %s (timeout=%s).\n", target, f.endpoint, f.timeout)
+	}
 	result, err := f.client.Fetch(ctx, target)
 	if err != nil {
+		if f.log != nil {
+			f.log.Errorf("FlareSolverr failed for %s after %s: %v\n", target, time.Since(start).Round(time.Millisecond), err)
+		}
 		return "", err
 	}
+	if f.log != nil {
+		f.log.Infof("FlareSolverr solved %s with status %d in %s (%d bytes).\n", target, result.Status, time.Since(start).Round(time.Millisecond), len(result.HTML))
+	}
+	f.applySession(target, result)
 	return result.HTML, nil
+}
+
+func (f flaresolverrFetcher) applySession(target string, result browserfetch.Result) {
+	if result.UserAgent != "" {
+		f.state.SetUserAgent(result.UserAgent)
+		if f.log != nil {
+			f.log.Infof("Using FlareSolverr user-agent for follow-up requests.\n")
+		}
+	}
+	if f.http == nil || f.http.Jar == nil || len(result.Cookies) == 0 {
+		return
+	}
+	rawURL := result.URL
+	if rawURL == "" {
+		rawURL = target
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return
+	}
+	f.http.Jar.SetCookies(u, result.Cookies)
+	if f.log != nil {
+		f.log.Infof("Stored %d FlareSolverr cookies for follow-up requests.\n", len(result.Cookies))
+	}
 }
 
 // FetchChapters fetches and normalizes all chapters for a source URL.

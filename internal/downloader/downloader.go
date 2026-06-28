@@ -17,6 +17,7 @@ type Downloader struct {
 	debug      bool
 	outputDir  string
 	skipBroken bool
+	retryDelay time.Duration
 }
 
 // ProgressHandle receives image download progress updates.
@@ -31,6 +32,7 @@ func New(c *http.Client, debug bool, outputDir string, skipBroken bool) *Downloa
 		debug:      debug,
 		outputDir:  outputDir,
 		skipBroken: skipBroken,
+		retryDelay: time.Second,
 	}
 }
 
@@ -148,10 +150,30 @@ func (d *Downloader) DownloadImagesConcurrently(
 	ph.MarkDone()
 
 	if len(errs) > 0 && !d.skipBroken {
-		return files, cs.doneBytes, fmt.Errorf("failed %d/%d images (use --skip-broken to continue)", len(errs), total)
+		return files, cs.doneBytes, fmt.Errorf("failed %d/%d images: %s (use --skip-broken to continue)", len(errs), total, sampleErrors(errs, 3))
 	}
 
 	return files, cs.doneBytes, nil
+}
+
+func sampleErrors(errs []error, limit int) string {
+	if len(errs) == 0 {
+		return ""
+	}
+	if limit > len(errs) {
+		limit = len(errs)
+	}
+	var b strings.Builder
+	for i := range limit {
+		if i > 0 {
+			b.WriteString("; ")
+		}
+		b.WriteString(errs[i].Error())
+	}
+	if len(errs) > limit {
+		fmt.Fprintf(&b, "; ...")
+	}
+	return b.String()
 }
 
 func (d *Downloader) downloadWithRetry(
@@ -168,10 +190,17 @@ func (d *Downloader) downloadWithRetry(
 			return nil
 		}
 
+		if attempt == 3 {
+			break
+		}
+		delay := time.Duration(attempt) * d.retryDelay
+		if delay <= 0 {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(attempt) * time.Second):
+		case <-time.After(delay):
 		}
 	}
 

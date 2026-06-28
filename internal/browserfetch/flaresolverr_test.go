@@ -15,7 +15,7 @@ func TestFlareSolverrFetch(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatal(err)
 		}
-		return jsonResponse(`{"status":"ok","solution":{"url":"https://manga.test","status":200,"response":"<html>ok</html>","userAgent":"ua"}}`), nil
+		return jsonResponse(`{"status":"ok","solution":{"url":"https://manga.test","status":200,"response":"<html>ok</html>","userAgent":"ua","cookies":[{"name":"cf_clearance","value":"token","domain":".manga.test","path":"/","secure":true,"httpOnly":true}]}}`), nil
 	})}
 
 	result, err := NewFlareSolverr("http://solver.test/v1", time.Second, client).Fetch(t.Context(), "https://manga.test")
@@ -27,6 +27,9 @@ func TestFlareSolverrFetch(t *testing.T) {
 	}
 	if result.HTML != "<html>ok</html>" || result.UserAgent != "ua" {
 		t.Fatalf("result = %#v", result)
+	}
+	if len(result.Cookies) != 1 || result.Cookies[0].Name != "cf_clearance" || result.Cookies[0].Value != "token" {
+		t.Fatalf("cookies = %#v", result.Cookies)
 	}
 }
 
