@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -87,7 +89,7 @@ func (d *Downloader) DownloadImagesConcurrently(
 				continue
 			}
 
-			ext := filepath.Ext(u)
+			ext := imageExt(u)
 			if ext == "" {
 				ext = ".jpg"
 			}
@@ -245,7 +247,9 @@ func (d *Downloader) download(
 
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		if mt, _, _ := mime.ParseMediaType(ct); !strings.HasPrefix(mt, "image/") {
-			return fmt.Errorf("unexpected MIME: %s", ct)
+			if !genericBinaryMIME(mt) || imageExt(u) == "" {
+				return fmt.Errorf("unexpected MIME: %s", ct)
+			}
 		}
 	}
 
@@ -275,4 +279,31 @@ func (d *Downloader) download(
 	}
 
 	return bodyCloseErr
+}
+
+func imageExt(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err == nil && u != nil {
+		return cleanImageExt(path.Ext(u.Path))
+	}
+	return cleanImageExt(filepath.Ext(rawURL))
+}
+
+func cleanImageExt(ext string) string {
+	ext = strings.ToLower(strings.TrimSpace(ext))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp", ".gif":
+		return ext
+	default:
+		return ""
+	}
+}
+
+func genericBinaryMIME(mt string) bool {
+	switch strings.ToLower(mt) {
+	case "application/octet-stream", "binary/octet-stream", "application/x-download", "application/force-download":
+		return true
+	default:
+		return false
+	}
 }

@@ -1,0 +1,14 @@
+id: mangakatana
+name: MangaKatana
+domains:
+  - mangakatana.com
+  - i1.mangakatana.com
+base_url: https://mangakatana.com/
+sample_manga_url: https://mangakatana.com/manga/the-mochi-i-drew-is-tasty-today-too.26697
+scraper: generic
+allowed_extensions:
+  - jpg
+min_chapters: 50
+requires_browser_solver: false
+enabled: true
+version: "2026-06-28"
