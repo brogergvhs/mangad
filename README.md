@@ -145,7 +145,33 @@ It enables scanning all <script> tags for patterns like `fetch("/ajax/...")` or 
 
 It won’t handle obfuscated, dynamically built, or event-triggered scripts.
 
-Cloudflare-protected pages are not bypassed by the downloader right now. The planned solver path is FlareSolverr integration.
+Cloudflare-protected pages require an external solver. MangaD supports FlareSolverr for that path.
+
+Browser solver / FlareSolverr
+-----
+
+Cloudflare-protected pages can be fetched through an external FlareSolverr service:
+
+```yaml
+browser_solver:
+  enabled: true
+  provider: flaresolverr
+  endpoint: http://localhost:8191/v1
+  timeout_seconds: 60
+```
+
+The downloader still tries normal HTTP first. FlareSolverr is only called after a Cloudflare-style challenge is detected.
+
+When running `mangad serve`, the same values can be managed through `/api/settings`:
+
+```text
+browser_solver.enabled
+browser_solver.provider
+browser_solver.endpoint
+browser_solver.timeout_seconds
+```
+
+`GET /api/solver/health` checks the configured FlareSolverr endpoint.
 
 Contributing
 ---

@@ -25,7 +25,7 @@ func New(svc *service.JobService, runJobs func(context.Context) (service.RunSumm
 				return
 			}
 			for key, value := range values {
-				if err := service.ValidateServeSetting(key, value); err != nil {
+				if err := service.ValidateSetting(key, value); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
 				}
@@ -109,20 +109,35 @@ func New(svc *service.JobService, runJobs func(context.Context) (service.RunSumm
 		}
 		writeJSON(w, http.StatusOK, summary)
 	})
+
+	mux.HandleFunc("/api/solver/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		ok, err := svc.BrowserSolverHealth(r.Context())
+		status := http.StatusOK
+		if err != nil {
+			status = http.StatusBadGateway
+		}
+		writeJSON(w, status, map[string]any{"ok": ok, "error": errorString(err)})
+	})
 	return mux
 }
 
 func serveSettings(r *http.Request, svc *service.JobService) map[string]string {
 	out := map[string]string{}
-	for _, key := range []string{
-		service.SettingServeRefreshEvery,
-		service.SettingServeScanEvery,
-		service.SettingServeDownloadEvery,
-		service.SettingServeRunEvery,
-	} {
-		out[key] = svc.Setting(r.Context(), key, service.ServeSettingDefault(key))
+	for _, key := range service.SettingKeys() {
+		out[key] = svc.Setting(r.Context(), key, service.SettingDefault(key))
 	}
 	return out
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

@@ -24,14 +24,20 @@ type Scraper struct {
 	log     *ui.Logger
 	allowed *regexp.Regexp
 	checkJS bool
+	browser BrowserFetcher
 }
 
-func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool) *Scraper {
+type BrowserFetcher interface {
+	Fetch(ctx context.Context, target string) (string, error)
+}
+
+func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool, browser BrowserFetcher) *Scraper {
 	return &Scraper{
 		client:  c,
 		log:     log,
 		allowed: buildExtRegex(normalizeExtList(allowExt)),
 		checkJS: checkJS,
+		browser: browser,
 	}
 }
 
@@ -88,6 +94,13 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 
 	if resp.StatusCode == http.StatusForbidden || strings.Contains(body, "Just a moment") {
 		s.log.Infof("Cloudflare protection detected for %s.\n", target)
+		if s.browser != nil {
+			html, err := s.browser.Fetch(ctx, target)
+			if err != nil {
+				return "", fmt.Errorf("fetch via browser solver: %w", err)
+			}
+			return html, nil
+		}
 		return "", fmt.Errorf("cloudflare challenge blocked")
 	}
 

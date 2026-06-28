@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strconv"
 	"time"
 
+	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/jobs"
@@ -37,10 +40,15 @@ const (
 	SettingServeScanEvery     = "serve.scan_every"
 	SettingServeDownloadEvery = "serve.download_every"
 	SettingServeRunEvery      = "serve.run_every"
+
+	SettingBrowserSolverEnabled        = "browser_solver.enabled"
+	SettingBrowserSolverProvider       = "browser_solver.provider"
+	SettingBrowserSolverEndpoint       = "browser_solver.endpoint"
+	SettingBrowserSolverTimeoutSeconds = "browser_solver.timeout_seconds"
 )
 
-// ServeSettingDefault returns the built-in value for a scheduler setting.
-func ServeSettingDefault(key string) string {
+// SettingDefault returns the built-in value for an app setting.
+func SettingDefault(key string) string {
 	switch key {
 	case SettingServeRefreshEvery:
 		return "1h"
@@ -50,19 +58,68 @@ func ServeSettingDefault(key string) string {
 		return "10m"
 	case SettingServeRunEvery:
 		return "5s"
+	case SettingBrowserSolverEnabled:
+		return "false"
+	case SettingBrowserSolverProvider:
+		return browserfetch.ProviderFlareSolverr
+	case SettingBrowserSolverEndpoint:
+		return browserfetch.DefaultFlareSolverrEndpoint
+	case SettingBrowserSolverTimeoutSeconds:
+		return "60"
 	default:
 		return ""
 	}
 }
 
-// ValidateServeSetting checks a scheduler setting update.
-func ValidateServeSetting(key, value string) error {
+// SettingKeys returns settings exposed through the API.
+func SettingKeys() []string {
+	return []string{
+		SettingServeRefreshEvery,
+		SettingServeScanEvery,
+		SettingServeDownloadEvery,
+		SettingServeRunEvery,
+		SettingBrowserSolverEnabled,
+		SettingBrowserSolverProvider,
+		SettingBrowserSolverEndpoint,
+		SettingBrowserSolverTimeoutSeconds,
+	}
+}
+
+// ValidateSetting checks an app setting update.
+func ValidateSetting(key, value string) error {
+	if SettingDefault(key) == "" {
+		return fmt.Errorf("unknown setting %q", key)
+	}
+
+	switch key {
+	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery:
+		return validateDurationSetting(key, value)
+	case SettingBrowserSolverEnabled:
+		if _, err := strconv.ParseBool(value); err != nil {
+			return fmt.Errorf("invalid bool for %s", key)
+		}
+	case SettingBrowserSolverProvider:
+		if value != browserfetch.ProviderFlareSolverr {
+			return fmt.Errorf("unsupported provider %q", value)
+		}
+	case SettingBrowserSolverEndpoint:
+		u, err := url.ParseRequestURI(value)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return fmt.Errorf("invalid endpoint for %s", key)
+		}
+	case SettingBrowserSolverTimeoutSeconds:
+		seconds, err := strconv.Atoi(value)
+		if err != nil || seconds <= 0 {
+			return fmt.Errorf("invalid timeout seconds for %s", key)
+		}
+	}
+	return nil
+}
+
+func validateDurationSetting(key, value string) error {
 	d, err := time.ParseDuration(value)
 	if err != nil || d < 0 {
 		return fmt.Errorf("invalid duration for %s", key)
-	}
-	if ServeSettingDefault(key) == "" {
-		return fmt.Errorf("unknown setting %q", key)
 	}
 	if key == SettingServeRunEvery && d == 0 {
 		return fmt.Errorf("%s cannot be 0", key)
@@ -111,6 +168,48 @@ func (s *JobService) SetSetting(ctx context.Context, key, value string) error {
 		return fmt.Errorf("set setting %s: %w", key, err)
 	}
 	return nil
+}
+
+// ApplySettings overlays DB-backed app settings onto cfg.
+func (s *JobService) ApplySettings(ctx context.Context, cfg *config.Config) {
+	if value := s.Setting(ctx, SettingBrowserSolverEnabled, ""); value != "" {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.BrowserSolver.Enabled = enabled
+		}
+	}
+	if value := s.Setting(ctx, SettingBrowserSolverProvider, ""); value != "" {
+		cfg.BrowserSolver.Provider = value
+	}
+	if value := s.Setting(ctx, SettingBrowserSolverEndpoint, ""); value != "" {
+		cfg.BrowserSolver.Endpoint = value
+	}
+	if value := s.Setting(ctx, SettingBrowserSolverTimeoutSeconds, ""); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil {
+			cfg.BrowserSolver.TimeoutSeconds = seconds
+		}
+	}
+}
+
+// BrowserSolverHealth checks the configured browser solver endpoint.
+func (s *JobService) BrowserSolverHealth(ctx context.Context) (bool, error) {
+	enabled, _ := strconv.ParseBool(s.Setting(ctx, SettingBrowserSolverEnabled, SettingDefault(SettingBrowserSolverEnabled)))
+	if !enabled {
+		return false, nil
+	}
+	if provider := s.Setting(ctx, SettingBrowserSolverProvider, SettingDefault(SettingBrowserSolverProvider)); provider != browserfetch.ProviderFlareSolverr {
+		return false, fmt.Errorf("unsupported browser solver provider %q", provider)
+	}
+
+	timeoutSeconds, _ := strconv.Atoi(s.Setting(ctx, SettingBrowserSolverTimeoutSeconds, SettingDefault(SettingBrowserSolverTimeoutSeconds)))
+	client := browserfetch.NewFlareSolverr(
+		s.Setting(ctx, SettingBrowserSolverEndpoint, SettingDefault(SettingBrowserSolverEndpoint)),
+		time.Duration(timeoutSeconds)*time.Second,
+		nil,
+	)
+	if err := client.Health(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ListTitles returns tracked titles.

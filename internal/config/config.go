@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/brogergvhs/mangad/internal/browserfetch"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,6 +31,15 @@ type Config struct {
 	UserAgent  string `yaml:"user_agent"`
 
 	SkipBroken bool `yaml:"skip_broken"`
+
+	BrowserSolver BrowserSolverConfig `yaml:"browser_solver"`
+}
+
+type BrowserSolverConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	Provider       string `yaml:"provider"`
+	Endpoint       string `yaml:"endpoint"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
 
 type Options struct {
@@ -49,6 +60,7 @@ type Options struct {
 	CookieFile          string
 	UserAgent           string
 	SkipBroken          bool
+	BrowserSolver       BrowserSolverConfig
 }
 
 func DefaultConfig() *Config {
@@ -70,6 +82,12 @@ func DefaultConfig() *Config {
 		CheckJS:             false,
 		SkipBroken:          false,
 		AllowExt:            []string{"jpg", "jpeg", "png", "webp"},
+		BrowserSolver: BrowserSolverConfig{
+			Enabled:        false,
+			Provider:       browserfetch.ProviderFlareSolverr,
+			Endpoint:       browserfetch.DefaultFlareSolverrEndpoint,
+			TimeoutSeconds: 60,
+		},
 	}
 }
 
@@ -178,6 +196,18 @@ func mergeConfig(c *Config, o Options) {
 	if o.SkipBroken {
 		c.SkipBroken = true
 	}
+	if o.BrowserSolver.Enabled {
+		c.BrowserSolver.Enabled = true
+	}
+	if o.BrowserSolver.Provider != "" {
+		c.BrowserSolver.Provider = o.BrowserSolver.Provider
+	}
+	if o.BrowserSolver.Endpoint != "" {
+		c.BrowserSolver.Endpoint = o.BrowserSolver.Endpoint
+	}
+	if o.BrowserSolver.TimeoutSeconds != 0 {
+		c.BrowserSolver.TimeoutSeconds = o.BrowserSolver.TimeoutSeconds
+	}
 }
 
 func normalizeDefaults(c *Config) {
@@ -192,6 +222,15 @@ func normalizeDefaults(c *Config) {
 	}
 	if c.ChapterWorkers == 0 {
 		c.ChapterWorkers = 2
+	}
+	if c.BrowserSolver.Provider == "" {
+		c.BrowserSolver.Provider = browserfetch.ProviderFlareSolverr
+	}
+	if c.BrowserSolver.Endpoint == "" {
+		c.BrowserSolver.Endpoint = browserfetch.DefaultFlareSolverrEndpoint
+	}
+	if c.BrowserSolver.TimeoutSeconds == 0 {
+		c.BrowserSolver.TimeoutSeconds = 60
 	}
 }
 
@@ -239,5 +278,8 @@ func (c *Config) Print() {
 	}
 	if len(c.AllowExt) > 0 {
 		fmt.Printf(" -allow_ext: %s\n", strings.Join(c.AllowExt, ", "))
+	}
+	if c.BrowserSolver.Enabled {
+		fmt.Printf(" -browser_solver: %s %s timeout=%ds\n", c.BrowserSolver.Provider, c.BrowserSolver.Endpoint, c.BrowserSolver.TimeoutSeconds)
 	}
 }

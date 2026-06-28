@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/downloader"
@@ -120,9 +121,32 @@ func NewDefaultDownloadService(
 		return nil, fmt.Errorf("create HTTP client: %w", err)
 	}
 
-	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS)
+	var browser generic.BrowserFetcher
+	if cfg.BrowserSolver.Enabled {
+		if cfg.BrowserSolver.Provider != browserfetch.ProviderFlareSolverr {
+			return nil, fmt.Errorf("unsupported browser solver provider %q", cfg.BrowserSolver.Provider)
+		}
+		browser = flaresolverrFetcher{client: browserfetch.NewFlareSolverr(
+			cfg.BrowserSolver.Endpoint,
+			time.Duration(cfg.BrowserSolver.TimeoutSeconds)*time.Second,
+			nil,
+		)}
+	}
+	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS, browser)
 
 	return NewDownloadService(cfg, client, scraper, log, progress), nil
+}
+
+type flaresolverrFetcher struct {
+	client *browserfetch.FlareSolverr
+}
+
+func (f flaresolverrFetcher) Fetch(ctx context.Context, target string) (string, error) {
+	result, err := f.client.Fetch(ctx, target)
+	if err != nil {
+		return "", err
+	}
+	return result.HTML, nil
 }
 
 // FetchChapters fetches and normalizes all chapters for a source URL.

@@ -22,6 +22,9 @@ func TestAPISettings(t *testing.T) {
 	if got[service.SettingServeRefreshEvery] != "1h" || got[service.SettingServeRunEvery] != "5s" {
 		t.Fatalf("default settings = %#v", got)
 	}
+	if got[service.SettingBrowserSolverEnabled] != "false" || got[service.SettingBrowserSolverEndpoint] == "" {
+		t.Fatalf("solver settings = %#v", got)
+	}
 
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingServeDownloadEvery: "15m"}, http.StatusOK, &got)
 	if got[service.SettingServeDownloadEvery] != "15m" {
@@ -29,6 +32,7 @@ func TestAPISettings(t *testing.T) {
 	}
 
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingServeRunEvery: "0s"}, http.StatusBadRequest, nil)
+	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingBrowserSolverTimeoutSeconds: "0"}, http.StatusBadRequest, nil)
 }
 
 func TestAPIJobs(t *testing.T) {
@@ -45,6 +49,17 @@ func TestAPIJobs(t *testing.T) {
 	requestJSON(t, api, http.MethodGet, "/api/jobs", nil, http.StatusOK, &all)
 	if len(all) != 1 || all[0].ID != job.ID {
 		t.Fatalf("jobs = %#v", all)
+	}
+}
+
+func TestAPISolverHealthDisabled(t *testing.T) {
+	api, closeDB := testAPI(t)
+	defer closeDB()
+
+	var got map[string]any
+	requestJSON(t, api, http.MethodGet, "/api/solver/health", nil, http.StatusOK, &got)
+	if got["ok"] != false {
+		t.Fatalf("health = %#v", got)
 	}
 }
 

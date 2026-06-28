@@ -92,7 +92,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		downloadEvery = serveDuration(svc, ctx, service.SettingServeDownloadEvery)
 		runEvery = serveDuration(svc, ctx, service.SettingServeRunEvery)
 		if runEvery <= 0 {
-			runEvery = fallbackDuration(service.ServeSettingDefault(service.SettingServeRunEvery))
+			runEvery = fallbackDuration(service.SettingDefault(service.SettingServeRunEvery))
 		}
 		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldRun != runEvery
 		if oldRefresh != refreshEvery {
@@ -153,6 +153,7 @@ func runDue(ctx context.Context, svc *service.JobService) (service.RunSummary, e
 	if err != nil {
 		return service.RunSummary{}, err
 	}
+	svc.ApplySettings(ctx, cfg)
 	summary, err := svc.RunDue(ctx, cfg, logSvc)
 	if err != nil {
 		return summary, err
@@ -171,7 +172,7 @@ func seedServeSetting(cmd *cobra.Command, svc *service.JobService, ctx context.C
 }
 
 func serveDuration(svc *service.JobService, ctx context.Context, key string) time.Duration {
-	fallback := service.ServeSettingDefault(key)
+	fallback := service.SettingDefault(key)
 	value := svc.Setting(ctx, key, fallback)
 	d, err := time.ParseDuration(value)
 	if err != nil {
