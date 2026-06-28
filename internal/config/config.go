@@ -33,6 +33,7 @@ type Config struct {
 	SkipBroken bool `yaml:"skip_broken"`
 
 	BrowserSolver BrowserSolverConfig `yaml:"browser_solver"`
+	CookieDBPath  string              `yaml:"-"`
 }
 
 type BrowserSolverConfig struct {

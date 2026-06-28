@@ -28,6 +28,7 @@ type Scraper struct {
 }
 
 type BrowserFetcher interface {
+	LoadCached(ctx context.Context, target string)
 	Fetch(ctx context.Context, target string) (string, error)
 }
 
@@ -76,6 +77,9 @@ func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Doc
 
 func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) {
 	s.log.Debugf("Fetching body for URL: %s\n", target)
+	if s.browser != nil {
+		s.browser.LoadCached(ctx, target)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
 	if err != nil {

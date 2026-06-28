@@ -15,6 +15,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/config"
+	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/downloader"
 	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/providers/generic"
@@ -134,6 +135,7 @@ func NewDefaultDownloadService(
 			client:   browserfetch.NewFlareSolverr(cfg.BrowserSolver.Endpoint, timeout, nil),
 			http:     client,
 			state:    browserState,
+			cache:    browserCookieCache{dbPath: cookieDBPath(cfg)},
 			endpoint: cfg.BrowserSolver.Endpoint,
 			timeout:  timeout,
 			log:      log,
@@ -144,13 +146,43 @@ func NewDefaultDownloadService(
 	return NewDownloadService(cfg, client, scraper, log, progress), nil
 }
 
+func cookieDBPath(cfg *config.Config) string {
+	if cfg.CookieDBPath != "" {
+		return cfg.CookieDBPath
+	}
+	return database.DefaultPath()
+}
+
 type flaresolverrFetcher struct {
 	client   *browserfetch.FlareSolverr
 	http     *http.Client
 	state    *util.BrowserState
+	cache    browserCookieCache
 	endpoint string
 	timeout  time.Duration
 	log      *ui.Logger
+}
+
+func (f flaresolverrFetcher) LoadCached(ctx context.Context, target string) {
+	session, err := f.cache.load(ctx, target)
+	if err != nil {
+		if f.log != nil {
+			f.log.Debugf("Browser cookie cache load failed for %s: %v\n", target, err)
+		}
+		return
+	}
+	if session.userAgent != "" {
+		f.state.SetUserAgent(session.userAgent)
+	}
+	if f.http != nil && f.http.Jar != nil && len(session.cookies) > 0 {
+		u, err := url.Parse(target)
+		if err == nil {
+			f.http.Jar.SetCookies(u, session.cookies)
+		}
+	}
+	if f.log != nil && len(session.cookies) > 0 {
+		f.log.Infof("Loaded %d cached browser cookies for %s.\n", len(session.cookies), target)
+	}
 }
 
 func (f flaresolverrFetcher) Fetch(ctx context.Context, target string) (string, error) {
@@ -168,11 +200,11 @@ func (f flaresolverrFetcher) Fetch(ctx context.Context, target string) (string, 
 	if f.log != nil {
 		f.log.Infof("FlareSolverr solved %s with status %d in %s (%d bytes).\n", target, result.Status, time.Since(start).Round(time.Millisecond), len(result.HTML))
 	}
-	f.applySession(target, result)
+	f.applySession(ctx, target, result)
 	return result.HTML, nil
 }
 
-func (f flaresolverrFetcher) applySession(target string, result browserfetch.Result) {
+func (f flaresolverrFetcher) applySession(ctx context.Context, target string, result browserfetch.Result) {
 	if result.UserAgent != "" {
 		f.state.SetUserAgent(result.UserAgent)
 		if f.log != nil {
@@ -193,6 +225,13 @@ func (f flaresolverrFetcher) applySession(target string, result browserfetch.Res
 	f.http.Jar.SetCookies(u, result.Cookies)
 	if f.log != nil {
 		f.log.Infof("Stored %d FlareSolverr cookies for follow-up requests.\n", len(result.Cookies))
+	}
+	if err := f.cache.save(ctx, rawURL, result.UserAgent, result.Cookies); err != nil {
+		if f.log != nil {
+			f.log.Debugf("Browser cookie cache save failed for %s: %v\n", rawURL, err)
+		}
+	} else if f.log != nil {
+		f.log.Infof("Cached %d FlareSolverr cookies for future runs.\n", len(result.Cookies))
 	}
 }
 

@@ -111,10 +111,24 @@ CREATE TABLE IF NOT EXISTS settings (
 	value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS browser_cookies (
+	domain TEXT NOT NULL,
+	path TEXT NOT NULL DEFAULT '/',
+	name TEXT NOT NULL,
+	value TEXT NOT NULL,
+	expires_at TEXT NOT NULL,
+	secure INTEGER NOT NULL DEFAULT 0,
+	http_only INTEGER NOT NULL DEFAULT 0,
+	user_agent TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(domain, path, name)
+);
+
 CREATE INDEX IF NOT EXISTS idx_titles_monitored ON titles(monitored);
 CREATE INDEX IF NOT EXISTS idx_chapters_title_id ON chapters(title_id);
 CREATE INDEX IF NOT EXISTS idx_downloads_chapter_id ON downloads(chapter_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status_run_after ON jobs(status, run_after);
+CREATE INDEX IF NOT EXISTS idx_browser_cookies_expires_at ON browser_cookies(expires_at);
 
 INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
 `

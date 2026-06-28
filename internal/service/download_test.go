@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/brogergvhs/mangad/internal/browserfetch"
@@ -24,7 +26,11 @@ func TestFlareSolverrFetcherAppliesSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	flaresolverrFetcher{http: client, state: state}.applySession("https://manga.test/chapter", browserfetch.Result{
+	flaresolverrFetcher{
+		http:  client,
+		state: state,
+		cache: browserCookieCache{dbPath: filepath.Join(t.TempDir(), "mangad.db")},
+	}.applySession(context.Background(), "https://manga.test/chapter", browserfetch.Result{
 		URL:       "https://manga.test/chapter",
 		UserAgent: "solver",
 		Cookies: []*http.Cookie{{

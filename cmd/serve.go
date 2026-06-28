@@ -153,6 +153,7 @@ func runDue(ctx context.Context, svc *service.JobService) (service.RunSummary, e
 	if err != nil {
 		return service.RunSummary{}, err
 	}
+	cfg.CookieDBPath = flagServeDB
 	svc.ApplySettings(ctx, cfg)
 	summary, err := svc.RunDue(ctx, cfg, logSvc)
 	if err != nil {

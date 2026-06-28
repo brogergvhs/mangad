@@ -80,6 +80,8 @@ func TestGetImagesFetchesChapterPageOnce(t *testing.T) {
 
 type fakeBrowserFetcher string
 
+func (f fakeBrowserFetcher) LoadCached(context.Context, string) {}
+
 func (f fakeBrowserFetcher) Fetch(context.Context, string) (string, error) {
 	return string(f), nil
 }

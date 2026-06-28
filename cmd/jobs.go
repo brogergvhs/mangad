@@ -74,6 +74,7 @@ func runJobsRun(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
+		cfg.CookieDBPath = flagJobsDB
 		summary, err := svc.RunDue(ctx, cfg, logSvc)
 		if err != nil {
 			return err

@@ -109,6 +109,7 @@ func runLibraryAdd(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
+		cfg.CookieDBPath = flagLibraryDB
 		result, err := lib.RefreshTitle(ctx, cfg, logSvc, title)
 		if err != nil {
 			return err
@@ -141,6 +142,7 @@ func runLibraryRefresh(_ *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		cfg.CookieDBPath = flagLibraryDB
 		if len(args) == 1 {
 			id, err := titleID(args[0])
 			if err != nil {
@@ -238,6 +240,7 @@ func runLibraryDownload(_ *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		cfg.CookieDBPath = flagLibraryDB
 
 		if len(args) == 0 {
 			if flagLibraryDownloadChapter != "" {
