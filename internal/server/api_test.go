@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brogergvhs/mangad/internal/jobs"
@@ -63,13 +64,56 @@ func TestAPISolverHealthDisabled(t *testing.T) {
 	}
 }
 
+func TestAPISourcesList(t *testing.T) {
+	api, closeDB := testAPI(t)
+	defer closeDB()
+
+	var got []map[string]any
+	requestJSON(t, api, http.MethodGet, "/api/sources", nil, http.StatusOK, &got)
+	if len(got) == 0 || got[0]["id"] == "" {
+		t.Fatalf("sources = %#v", got)
+	}
+}
+
+func TestAPISourcesLocal(t *testing.T) {
+	api, closeDB := testAPI(t)
+	defer closeDB()
+
+	profile := map[string]any{
+		"id":               "localdemo",
+		"name":             "Local Demo",
+		"base_url":         "https://local.test/",
+		"sample_manga_url": "https://local.test/manga/demo/",
+		"enabled":          true,
+	}
+	requestJSON(t, api, http.MethodPost, "/api/sources/local", profile, http.StatusOK, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sources/export?id=localdemo", nil)
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "id: localdemo") {
+		t.Fatalf("export body = %s", rec.Body.String())
+	}
+
+	requestJSON(t, api, http.MethodDelete, "/api/sources/local?id=localdemo", nil, http.StatusNoContent, nil)
+}
+
 func testAPI(t *testing.T) (http.Handler, func()) {
 	t.Helper()
 	svc, closeDB, err := service.OpenJobs(context.Background(), filepath.Join(t.TempDir(), "mangad.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(svc, func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil }), closeDB
+	return New(
+		svc,
+		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
+	), closeDB
 }
 
 func requestJSON(t *testing.T, handler http.Handler, method, path string, body any, wantStatus int, out any) {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/browserfetch"
@@ -14,6 +15,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/mangad/internal/sources"
 	"github.com/brogergvhs/mangad/internal/ui"
 )
 
@@ -22,11 +24,13 @@ type JobService struct {
 	db   *sql.DB
 	jobs *jobs.Repository
 	lib  *LibraryService
+	src  *sourceService
 }
 
-// JobPayload is the common payload for title-scoped jobs.
+// JobPayload is the common payload for background jobs.
 type JobPayload struct {
-	TitleID int64 `json:"title_id,omitempty"`
+	TitleID  int64  `json:"title_id,omitempty"`
+	SourceID string `json:"source_id,omitempty"`
 }
 
 // RunSummary describes one queue drain.
@@ -45,6 +49,7 @@ const (
 	SettingBrowserSolverProvider       = "browser_solver.provider"
 	SettingBrowserSolverEndpoint       = "browser_solver.endpoint"
 	SettingBrowserSolverTimeoutSeconds = "browser_solver.timeout_seconds"
+	SettingSourceRegistryURL           = "sources.registry_url"
 )
 
 // SettingDefault returns the built-in value for an app setting.
@@ -66,6 +71,8 @@ func SettingDefault(key string) string {
 		return browserfetch.DefaultFlareSolverrEndpoint
 	case SettingBrowserSolverTimeoutSeconds:
 		return "60"
+	case SettingSourceRegistryURL:
+		return ""
 	default:
 		return ""
 	}
@@ -82,12 +89,13 @@ func SettingKeys() []string {
 		SettingBrowserSolverProvider,
 		SettingBrowserSolverEndpoint,
 		SettingBrowserSolverTimeoutSeconds,
+		SettingSourceRegistryURL,
 	}
 }
 
 // ValidateSetting checks an app setting update.
 func ValidateSetting(key, value string) error {
-	if SettingDefault(key) == "" {
+	if !isSettingKey(key) {
 		return fmt.Errorf("unknown setting %q", key)
 	}
 
@@ -112,8 +120,25 @@ func ValidateSetting(key, value string) error {
 		if err != nil || seconds <= 0 {
 			return fmt.Errorf("invalid timeout seconds for %s", key)
 		}
+	case SettingSourceRegistryURL:
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		u, err := url.ParseRequestURI(value)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return fmt.Errorf("invalid registry url for %s", key)
+		}
 	}
 	return nil
+}
+
+func isSettingKey(key string) bool {
+	for _, known := range SettingKeys() {
+		if key == known {
+			return true
+		}
+	}
+	return false
 }
 
 func validateDurationSetting(key, value string) error {
@@ -146,6 +171,7 @@ func newJobService(db *sql.DB) *JobService {
 		db:   db,
 		jobs: jobs.NewRepository(db),
 		lib:  &LibraryService{repo: library.NewRepository(db)},
+		src:  newSourceService(db),
 	}
 }
 
@@ -217,18 +243,63 @@ func (s *JobService) ListTitles(ctx context.Context) ([]library.Title, error) {
 	return s.lib.ListTitles(ctx)
 }
 
+// SyncSources stores bundled profiles and, when set, a remote registry.
+func (s *JobService) SyncSources(ctx context.Context, registryURL string) error {
+	if err := s.src.SyncBuiltIn(ctx); err != nil {
+		return err
+	}
+	if strings.TrimSpace(registryURL) == "" {
+		return nil
+	}
+	return s.src.SyncRegistry(ctx, registryURL)
+}
+
+// ListSources returns known source profiles.
+func (s *JobService) ListSources(ctx context.Context) ([]sources.Source, error) {
+	return s.src.ListSources(ctx)
+}
+
+// ImportLocalSource stores a local DB-backed source profile.
+func (s *JobService) ImportLocalSource(ctx context.Context, profile sources.Profile) error {
+	return s.src.ImportLocal(ctx, profile)
+}
+
+// RemoveLocalSource removes a local DB-backed source profile.
+func (s *JobService) RemoveLocalSource(ctx context.Context, sourceID string) error {
+	return s.src.RemoveLocal(ctx, sourceID)
+}
+
+// ExportSource returns one source profile as YAML.
+func (s *JobService) ExportSource(ctx context.Context, sourceID string) ([]byte, error) {
+	return s.src.ExportSource(ctx, sourceID)
+}
+
+// VerifySource checks one source profile.
+func (s *JobService) VerifySource(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, sourceID string) (SourceVerifyResult, error) {
+	return s.src.VerifySource(ctx, cfg, logSvc, sourceID)
+}
+
 // Enqueue creates a job.
 func (s *JobService) Enqueue(ctx context.Context, typ string, titleID int64, runAfter time.Time) (jobs.Job, error) {
-	if err := validateJob(typ, titleID); err != nil {
+	return s.enqueue(ctx, typ, JobPayload{TitleID: titleID}, runAfter)
+}
+
+// EnqueueSource creates a source-scoped job.
+func (s *JobService) EnqueueSource(ctx context.Context, sourceID string, runAfter time.Time) (jobs.Job, error) {
+	return s.enqueue(ctx, jobs.TypeVerifySource, JobPayload{SourceID: strings.TrimSpace(sourceID)}, runAfter)
+}
+
+func (s *JobService) enqueue(ctx context.Context, typ string, payload JobPayload, runAfter time.Time) (jobs.Job, error) {
+	if err := validateJob(typ, payload); err != nil {
 		return jobs.Job{}, err
 	}
 
-	payload, err := json.Marshal(JobPayload{TitleID: titleID})
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return jobs.Job{}, fmt.Errorf("encode job payload: %w", err)
 	}
 
-	return s.jobs.Enqueue(ctx, typ, string(payload), runAfter)
+	return s.jobs.Enqueue(ctx, typ, string(data), runAfter)
 }
 
 // List returns recent jobs.
@@ -287,19 +358,26 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc *ui.Log
 		}
 		_, err := s.lib.DownloadMonitoredMissing(ctx, cfg, logSvc)
 		return err
+	case jobs.TypeVerifySource:
+		_, err := s.VerifySource(ctx, cfg, logSvc, payload.SourceID)
+		return err
 	default:
 		return fmt.Errorf("unknown job type %q", job.Type)
 	}
 }
 
-func validateJob(typ string, titleID int64) error {
+func validateJob(typ string, payload JobPayload) error {
 	switch typ {
 	case jobs.TypeRefreshTitle, jobs.TypeScanDownloads, jobs.TypeDownloadMissing:
+		if payload.TitleID < 0 {
+			return fmt.Errorf("invalid title id %d", payload.TitleID)
+		}
+	case jobs.TypeVerifySource:
+		if strings.TrimSpace(payload.SourceID) == "" {
+			return fmt.Errorf("source id is required")
+		}
 	default:
 		return fmt.Errorf("unknown job type %q", typ)
-	}
-	if titleID < 0 {
-		return fmt.Errorf("invalid title id %d", titleID)
 	}
 
 	return nil

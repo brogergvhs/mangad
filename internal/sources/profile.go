@@ -1,0 +1,114 @@
+// Package sources stores scraper source profiles and verification results.
+package sources
+
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
+
+const (
+	StatusHealthy = "healthy"
+	StatusBroken  = "broken"
+
+	OriginBuiltin  = "builtin"
+	OriginRegistry = "registry"
+	OriginLocal    = "local"
+)
+
+// Profile describes a supported manga website.
+type Profile struct {
+	ID                    string   `json:"id" yaml:"id"`
+	Name                  string   `json:"name" yaml:"name"`
+	Domains               []string `json:"domains" yaml:"domains"`
+	BaseURL               string   `json:"base_url" yaml:"base_url"`
+	SampleMangaURL        string   `json:"sample_manga_url" yaml:"sample_manga_url"`
+	Scraper               string   `json:"scraper" yaml:"scraper"`
+	AllowedExtensions     []string `json:"allowed_extensions" yaml:"allowed_extensions"`
+	MinChapters           int      `json:"min_chapters" yaml:"min_chapters"`
+	RequiresBrowserSolver bool     `json:"requires_browser_solver" yaml:"requires_browser_solver"`
+	Enabled               bool     `json:"enabled" yaml:"enabled"`
+	Version               string   `json:"version" yaml:"version"`
+}
+
+// Source is a persisted profile plus its latest verification result.
+type Source struct {
+	Profile
+	Origin            string   `json:"origin"`
+	Status            string   `json:"status"`
+	LastCheckedAt     string   `json:"last_checked_at,omitempty"`
+	LastError         string   `json:"last_error,omitempty"`
+	ChaptersFound     int      `json:"chapters_found"`
+	SampleImagesFound int      `json:"sample_images_found"`
+	ImageExtensions   []string `json:"image_extensions"`
+}
+
+// TemplateProfile returns a starter profile for local editing.
+func TemplateProfile(id string) Profile {
+	id = strings.ToLower(strings.TrimSpace(id))
+	return Profile{
+		ID:                id,
+		Name:              id,
+		BaseURL:           "https://example.com/",
+		SampleMangaURL:    "https://example.com/manga/sample/",
+		Scraper:           "generic",
+		AllowedExtensions: []string{"jpg", "jpeg", "png", "webp"},
+		MinChapters:       1,
+		Enabled:           true,
+	}
+}
+
+func normalizeProfile(p Profile) (Profile, error) {
+	p.ID = strings.ToLower(strings.TrimSpace(p.ID))
+	p.Name = strings.TrimSpace(p.Name)
+	p.BaseURL = strings.TrimSpace(p.BaseURL)
+	p.SampleMangaURL = strings.TrimSpace(p.SampleMangaURL)
+	p.Scraper = strings.TrimSpace(p.Scraper)
+	p.Version = strings.TrimSpace(p.Version)
+	if p.Scraper == "" {
+		p.Scraper = "generic"
+	}
+	if p.Name == "" {
+		p.Name = p.ID
+	}
+	p.Domains = cleanStrings(p.Domains)
+	p.AllowedExtensions = cleanExtensions(p.AllowedExtensions)
+	if p.ID == "" {
+		return Profile{}, fmt.Errorf("source id is required")
+	}
+	if _, err := url.ParseRequestURI(p.BaseURL); err != nil {
+		return Profile{}, fmt.Errorf("invalid base_url for %s: %w", p.ID, err)
+	}
+	if _, err := url.ParseRequestURI(p.SampleMangaURL); err != nil {
+		return Profile{}, fmt.Errorf("invalid sample_manga_url for %s: %w", p.ID, err)
+	}
+	if p.Scraper != "generic" {
+		return Profile{}, fmt.Errorf("unsupported scraper %q for %s", p.Scraper, p.ID)
+	}
+	if p.MinChapters < 0 {
+		p.MinChapters = 0
+	}
+	return p, nil
+}
+
+func cleanStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(strings.ToLower(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func cleanExtensions(values []string) []string {
+	out := cleanStrings(values)
+	for i := range out {
+		out[i] = strings.TrimPrefix(out[i], ".")
+	}
+	return out
+}

@@ -64,9 +64,21 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	httpSrv := &http.Server{Addr: flagServeAddr, Handler: server.New(svc, func(ctx context.Context) (service.RunSummary, error) {
-		return runDue(ctx, svc)
-	})}
+	httpSrv := &http.Server{Addr: flagServeAddr, Handler: server.New(
+		svc,
+		func(ctx context.Context) (service.RunSummary, error) {
+			return runDue(ctx, svc)
+		},
+		func(ctx context.Context, sourceID string) (service.SourceVerifyResult, error) {
+			cfg, logSvc, err := runtimeConfig()
+			if err != nil {
+				return service.SourceVerifyResult{}, err
+			}
+			cfg.CookieDBPath = flagServeDB
+			svc.ApplySettings(ctx, cfg)
+			return svc.VerifySource(ctx, cfg, logSvc, sourceID)
+		},
+	)}
 	httpErr := make(chan error, 1)
 	go func() {
 		fmt.Printf("HTTP API listening on %s\n", flagServeAddr)
