@@ -98,7 +98,7 @@ func buildExtRegex(exts []string) *regexp.Regexp {
 	if len(exts) == 0 {
 		return regexp.MustCompile(`$a`)
 	}
-	pattern := `(?i)\.(` + strings.Join(exts, "|") + `)$`
+	pattern := `(?i)\.(` + strings.Join(exts, "|") + `)(?:[?#].*)?$`
 
 	return regexp.MustCompile(pattern)
 }

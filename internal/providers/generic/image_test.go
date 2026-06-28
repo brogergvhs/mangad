@@ -12,3 +12,14 @@ func TestImageCollectorTrimsAndDedupes(t *testing.T) {
 		t.Fatalf("Finalize() = %#v", got)
 	}
 }
+
+func TestImageCollectorAllowsQueryAfterExtension(t *testing.T) {
+	col := newImageCollector(buildExtRegex([]string{"webp"}), false)
+	image := "https://cdn.asurascans.com/asura-images/chapters/academys-genius-swordmaster/140/567e52.webp?v=1781373584"
+	col.add(image, -1)
+
+	got := col.Finalize()
+	if len(got) != 1 || got[0] != image {
+		t.Fatalf("Finalize() = %#v", got)
+	}
+}
