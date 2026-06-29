@@ -434,10 +434,27 @@ func sameSeriesChapterLink(pageURL, href string) bool {
 	if len(baseParts) < 2 || len(candidateParts) < 2 {
 		return strings.HasPrefix(candidate.Path, chapterPageBase(base.Path))
 	}
+	if sameSeriesID(baseParts, candidateParts) {
+		return true
+	}
 	if baseParts[0] != candidateParts[0] {
 		return false
 	}
 	return baseParts[1] == candidateParts[1]
+}
+
+func sameSeriesID(baseParts, candidateParts []string) bool {
+	for _, basePart := range baseParts {
+		if _, err := strconv.Atoi(basePart); err != nil {
+			continue
+		}
+		for _, candidatePart := range candidateParts {
+			if candidatePart == basePart || strings.HasPrefix(candidatePart, basePart+"-") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func pathParts(p string) []string {

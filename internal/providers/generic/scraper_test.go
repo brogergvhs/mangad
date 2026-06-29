@@ -216,6 +216,31 @@ func TestGetChaptersUsesBrowserRenderedHTML(t *testing.T) {
 	}
 }
 
+func TestGetChaptersAllowsSharedSeriesIDChapterPath(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body: io.NopCloser(bytes.NewBufferString(`
+				<html><body>
+					<a href="/chapters/5281-10265000/sakamoto-days-chapter-265">Chapter 265</a>
+					<a href="/chapters/9999-10264000/other-title-chapter-264">Chapter 264</a>
+				</body></html>
+			`)),
+			Header: http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
+	chapters, err := scraper.GetChapters(context.Background(), "https://mangapill.com/manga/5281/sakamoto-days")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chapters) != 1 || chapters[0].Label != "265" {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+}
+
 func TestGetChaptersDynamicAppNeedsBrowser(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
