@@ -384,6 +384,9 @@ func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []p
 		seenLabel[label] = true
 
 		title := strings.TrimSpace(a.Text())
+		if before, _, ok := strings.Cut(title, "\n"); ok {
+			title = strings.TrimSpace(before)
+		}
 		if title == "" {
 			title = "Chapter " + label
 		}
@@ -474,6 +477,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
 	}
+	usedBrowser := false
 	if looksDynamicApp(body) && s.browser != nil {
 		s.log.Infof("JS-rendered chapter page detected for %s; trying browser-rendered HTML.\n", chapterURL)
 		body, err = s.fetchViaBrowser(ctx, chapterURL)
@@ -484,6 +488,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 		if err != nil {
 			return nil, err
 		}
+		usedBrowser = true
 	}
 
 	s.log.Debugf("Fetched DOM for URL: %s\n", chapterURL)
@@ -508,6 +513,20 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	}
 
 	final := col.Finalize()
+	if len(final) == 0 && s.browser != nil && !usedBrowser {
+		s.log.Infof("No static reader images found for %s; trying browser-rendered HTML.\n", chapterURL)
+		body, err = s.fetchViaBrowser(ctx, chapterURL)
+		if err != nil {
+			return nil, err
+		}
+		doc, err = goquery.NewDocumentFromReader(strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		col = newImageCollector(s.allowed, s.log.Debug)
+		s.scanImages(ctx, col, doc, body, chapterURL)
+		final = col.Finalize()
+	}
 	if len(final) == 0 {
 		return nil, fmt.Errorf("no usable images found")
 	}

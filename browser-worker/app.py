@@ -15,8 +15,8 @@ from selenium.webdriver.chrome.options import Options
 
 
 IMAGE_MIME = ("image/jpeg", "image/png", "image/webp", "image/gif", "image/avif")
-SKIP_TOKENS = ("/thumb/", "/banner/", "/avatar/", "/logo/", "/background", "fbshare", "share")
-CHAPTER_PATH = re.compile(r"(?:^|/)(?:c|ch|chapter)[-_]?\d", re.I)
+SKIP_TOKENS = ("/thumb/", "/banner/", "/avatar/", "/logo/", "/background", "fbshare", "share", "search")
+CHAPTER_PATH = re.compile(r"(?:^|[/_-])(?:c|ch|chapter)[-_.]?\d", re.I)
 
 
 def env(name, default):
@@ -221,10 +221,22 @@ def has_chapter_links(driver):
     )
 
 
+def reader_image_count(driver):
+    return driver.execute_script(
+        """
+        return Array.from(document.images).filter(img => {
+            const url = img.currentSrc || img.src || img.getAttribute("data-src") ||
+                img.getAttribute("data-lazy-src") || img.getAttribute("data-original") || "";
+            return url && !/(\\/ads\\/|\\/covers\\/|\\/thumb\\/|logo|avatar|banner|fbshare|share|background)/i.test(url);
+        }).length;
+        """
+    )
+
+
 def wait_for_render(driver, page_url, pause):
     deadline = time.time() + int_env("BROWSER_WORKER_RENDER_WAIT_MS", 6000) / 1000
     while time.time() < deadline:
-        ready = driver.execute_script("return document.images.length > 0") if looks_like_reader_url(page_url) else has_chapter_links(driver)
+        ready = reader_image_count(driver) > 0 if looks_like_reader_url(page_url) else has_chapter_links(driver)
         if ready:
             return
         time.sleep(pause)

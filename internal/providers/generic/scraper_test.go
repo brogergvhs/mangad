@@ -154,6 +154,41 @@ func TestGetImagesUsesBrowserRenderedHTMLForDynamicApp(t *testing.T) {
 	}
 }
 
+func TestGetImagesUsesBrowserRenderedHTMLWhenStaticHasOnlyChromeAssets(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body: io.NopCloser(bytes.NewBufferString(`
+				<html><body>
+					<img src="https://comickz.co.uk/images/ads/ori-expand.png">
+					<img src="https://cdn1.comicknew.pictures/title/covers/cover.webp">
+				</body></html>
+			`)),
+			Header: http.Header{},
+		}, nil
+	})}
+	browser := fakeBrowserFetcher(`
+		<html><body>
+			<img src="https://cdn1.comicknew.pictures/title/chapter-30/001.webp" data-mangad-page-image="1">
+			<img src="https://cdn1.comicknew.pictures/title/chapter-30/002.webp" data-mangad-page-image="1">
+		</body></html>
+	`)
+
+	scraper := NewScraper(client, ui.NewLogger(false), []string{"webp", "png"}, false, browser)
+	images, err := scraper.GetImages(context.Background(), "https://comickz.co.uk/comic/title/hash-chapter-30-en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"https://cdn1.comicknew.pictures/title/chapter-30/001.webp",
+		"https://cdn1.comicknew.pictures/title/chapter-30/002.webp",
+	}
+	if strings.Join(images, ",") != strings.Join(want, ",") {
+		t.Fatalf("images = %#v", images)
+	}
+}
+
 func TestGetChaptersSkipsOtherSeriesLinks(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{

@@ -1,0 +1,14 @@
+id: comickz
+name:
+domains:
+  - comickz.co.uk
+base_url: https://comickz.co.uk/
+sample_manga_url: https://comickz.co.uk/comic/the-demonic-supreme-sword
+scraper: generic
+allowed_extensions:
+  - webp
+min_chapters: 40
+requires_browser_solver: false
+requires_browser_downloader: true
+enabled: true
+version: "2026-06-29"

@@ -43,7 +43,9 @@ func TestImageCollectorSkipsShareAssets(t *testing.T) {
 func TestImageCollectorSkipsSiteChromeAssets(t *testing.T) {
 	col := newImageCollector(buildExtRegex([]string{"png", "webp"}), false)
 	col.add("https://www.zazamanga.com/banner/zazamanga-manga-online-official.png", -1)
+	col.add("https://comickz.co.uk/images/ads/ori-expand.png", -1)
 	col.add("https://cdn4.zinmanga1.com/thumb/tales-of-demons-and-gods.webp", -1)
+	col.add("https://cdn1.comicknew.pictures/the-demonic-supreme-sword/covers/488d339c.webp", -1)
 	col.add("https://www.zazamanga.com/image/background-report.png", -1)
 	col.add("https://img-r1.2xstorage.com/the-demonic-supreme-sword/30/0.webp", -1)
 
