@@ -1,6 +1,11 @@
 package generic
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/PuerkitoBio/goquery"
+)
 
 func TestImageCollectorTrimsAndDedupes(t *testing.T) {
 	col := newImageCollector(buildExtRegex([]string{"webp"}), false)
@@ -44,6 +49,25 @@ func TestImageCollectorSkipsSiteChromeAssets(t *testing.T) {
 
 	got := col.Finalize()
 	if len(got) != 1 || got[0] != "https://img-r1.2xstorage.com/the-demonic-supreme-sword/30/0.webp" {
+		t.Fatalf("Finalize() = %#v", got)
+	}
+}
+
+func TestImageCollectorAllowsMarkedExtensionlessPageImages(t *testing.T) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`
+		<html><body>
+			<img src="https://80pd.wowpic2.store/i5/bEqPbYfoMT0Gm1HlZjqfoA5s5rEBevqi3R0Vvq7I6y4AiVMhaGDNl_Pk4wkijRuo" data-mangad-page-image="1">
+			<img src="https://static.comix.to/poster">
+		</body></html>
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	col := newImageCollector(buildExtRegex([]string{"webp", "jpg"}), false)
+	col.ScanIMGTags(doc, "https://comix.to/title/vyd0/7266081-chapter-30")
+
+	got := col.Finalize()
+	if len(got) != 1 || !strings.Contains(got[0], "wowpic2.store") {
 		t.Fatalf("Finalize() = %#v", got)
 	}
 }

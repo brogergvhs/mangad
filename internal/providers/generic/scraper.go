@@ -28,8 +28,11 @@ type Scraper struct {
 }
 
 type BrowserFetcher interface {
-	LoadCached(ctx context.Context, target string)
 	Fetch(ctx context.Context, target string) (string, error)
+}
+
+type BrowserCacheLoader interface {
+	LoadCached(ctx context.Context, target string)
 }
 
 func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool, browser BrowserFetcher) *Scraper {
@@ -55,14 +58,6 @@ var (
 	reNuxt = regexp.MustCompile(`window\.__NUXT__\s*=\s*(\{.*?});`)
 )
 
-func (s *Scraper) fetchDOM(ctx context.Context, target string) (*goquery.Document, error) {
-	doc, _, err := s.fetchDOMBody(ctx, target)
-	if err != nil {
-		return nil, err
-	}
-	return doc, nil
-}
-
 func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Document, string, error) {
 	s.log.Debugf("Fetching URL: %s\n", target)
 
@@ -77,8 +72,8 @@ func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Doc
 
 func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) {
 	s.log.Debugf("Fetching body for URL: %s\n", target)
-	if s.browser != nil {
-		s.browser.LoadCached(ctx, target)
+	if loader, ok := s.browser.(BrowserCacheLoader); ok {
+		loader.LoadCached(ctx, target)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
@@ -122,12 +117,12 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 }
 
 func (s *Scraper) fetchViaBrowser(ctx context.Context, target string) (string, error) {
-	s.log.Infof("Using browser solver for %s.\n", target)
+	s.log.Infof("Using browser fetcher for %s.\n", target)
 	html, err := s.browser.Fetch(ctx, target)
 	if err != nil {
-		return "", fmt.Errorf("fetch via browser solver: %w", err)
+		return "", fmt.Errorf("fetch via browser: %w", err)
 	}
-	s.log.Infof("Browser solver returned HTML for %s (%d bytes).\n", target, len(html))
+	s.log.Infof("Browser fetcher returned HTML for %s (%d bytes).\n", target, len(html))
 	return html, nil
 }
 
@@ -328,18 +323,40 @@ func resolveURL(baseURL, href string) string {
 }
 
 func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.Chapter, error) {
-	doc, err := s.fetchDOM(ctx, pageURL)
+	doc, body, err := s.fetchDOMBody(ctx, pageURL)
 	if err != nil {
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
 	}
 
+	out := scanChapterLinks(doc, pageURL, s.log)
+	if len(out) == 0 && s.browser != nil {
+		s.log.Infof("No static chapter links found for %s; trying browser-rendered HTML.\n", pageURL)
+		body, err = s.fetchViaBrowser(ctx, pageURL)
+		if err != nil {
+			return nil, err
+		}
+		doc, err = goquery.NewDocumentFromReader(strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		out = scanChapterLinks(doc, pageURL, s.log)
+	}
+	if len(out) == 0 && looksDynamicApp(body) {
+		return nil, fmt.Errorf("no static chapter links found; enable browser_downloader.enabled or browser_solver.enabled for JS-rendered chapter lists")
+	}
+
+	return out, nil
+}
+
+func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []providers.Chapter {
 	var out []providers.Chapter
 	seen := map[string]bool{}
+	seenLabel := map[string]bool{}
 
 	doc.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
 		href, _ := a.Attr("href")
-		s.log.Debugf("Found link: %s (text: %s)\n", href, strings.TrimSpace(a.Text()))
+		log.Debugf("Found link: %s (text: %s)\n", href, strings.TrimSpace(a.Text()))
 
 		if !looksLikeChapterLink(href, a.Text()) && !isLikelyChapterFromBase(pageURL, href) {
 			return
@@ -349,10 +366,13 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 			return
 		}
 
-		s.log.Debugf("Link looks like chapter link: %s\n", href)
+		log.Debugf("Link looks like chapter link: %s\n", href)
 
 		n, t, sn, label, ok := parseChapterLabel(strings.TrimSpace(href), strings.TrimSpace(a.Text()))
 		if !ok {
+			return
+		}
+		if seenLabel[label] {
 			return
 		}
 
@@ -361,6 +381,7 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 			return
 		}
 		seen[u] = true
+		seenLabel[label] = true
 
 		title := strings.TrimSpace(a.Text())
 		if title == "" {
@@ -387,7 +408,12 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 		return out[i].SuffixNum < out[j].SuffixNum
 	})
 
-	return out, nil
+	return out
+}
+
+func looksDynamicApp(body string) bool {
+	return strings.Contains(body, `id="app-root"`) || strings.Contains(body, `id='app-root'`) ||
+		strings.Contains(body, `id="initial-data"`) || strings.Contains(body, `id='initial-data'`)
 }
 
 func sameSeriesChapterLink(pageURL, href string) bool {
@@ -430,6 +456,17 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	if err != nil {
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
+	}
+	if looksDynamicApp(body) && s.browser != nil {
+		s.log.Infof("JS-rendered chapter page detected for %s; trying browser-rendered HTML.\n", chapterURL)
+		body, err = s.fetchViaBrowser(ctx, chapterURL)
+		if err != nil {
+			return nil, err
+		}
+		doc, err = goquery.NewDocumentFromReader(strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	s.log.Debugf("Fetched DOM for URL: %s\n", chapterURL)

@@ -79,7 +79,7 @@ type DownloadService struct {
 	scraper  providers.Scraper
 	log      Logger
 	progress ProgressManager
-	browser  generic.BrowserFetcher
+	browser  downloader.BrowserFetcher
 }
 
 // NewDownloadService creates a service from explicit dependencies.
@@ -129,12 +129,13 @@ func NewDefaultDownloadService(
 	}
 
 	var browser generic.BrowserFetcher
+	var downloadBrowser downloader.BrowserFetcher
 	if cfg.BrowserSolver.Enabled {
 		if cfg.BrowserSolver.Provider != browserfetch.ProviderFlareSolverr {
 			return nil, fmt.Errorf("unsupported browser solver provider %q", cfg.BrowserSolver.Provider)
 		}
 		timeout := time.Duration(cfg.BrowserSolver.TimeoutSeconds) * time.Second
-		browser = flaresolverrFetcher{
+		solver := flaresolverrFetcher{
 			client:   browserfetch.NewFlareSolverr(cfg.BrowserSolver.Endpoint, timeout, nil),
 			http:     client,
 			state:    browserState,
@@ -143,11 +144,17 @@ func NewDefaultDownloadService(
 			timeout:  timeout,
 			log:      log,
 		}
+		browser = solver
+		downloadBrowser = solver
+	}
+	if browser == nil && cfg.BrowserDownload.Enabled {
+		timeout := time.Duration(cfg.BrowserDownload.TimeoutSeconds) * time.Second
+		browser = browserdownload.New(cfg.BrowserDownload.Endpoint, timeout, nil)
 	}
 	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS, browser)
 
 	svc := NewDownloadService(cfg, client, scraper, log, progress)
-	svc.browser = browser
+	svc.browser = downloadBrowser
 	return svc, nil
 }
 

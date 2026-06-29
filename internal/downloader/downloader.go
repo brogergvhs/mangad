@@ -309,7 +309,7 @@ func (d *Downloader) download(
 
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		if mt, _, _ := mime.ParseMediaType(ct); !strings.HasPrefix(mt, "image/") {
-			if !genericBinaryMIME(mt) || imageExt(u) == "" {
+			if !genericBinaryMIME(mt) {
 				return fmt.Errorf("unexpected MIME: %s", ct)
 			}
 		}

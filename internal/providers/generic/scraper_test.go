@@ -122,6 +122,38 @@ func TestGetImagesScansMultiPageChapter(t *testing.T) {
 	}
 }
 
+func TestGetImagesUsesBrowserRenderedHTMLForDynamicApp(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body: io.NopCloser(bytes.NewBufferString(`
+				<html><body>
+					<div id="app-root"></div>
+					<script id="initial-data" type="application/json">{"poster":"https://static.test/poster.jpg"}</script>
+				</body></html>
+			`)),
+			Header: http.Header{},
+		}, nil
+	})}
+	browser := fakeBrowserFetcher(`
+		<html><body>
+			<img src="https://cdn.test/page-001.webp">
+			<img src="https://cdn.test/page-002.webp">
+		</body></html>
+	`)
+
+	scraper := NewScraper(client, ui.NewLogger(false), []string{"webp", "jpg"}, false, browser)
+	images, err := scraper.GetImages(context.Background(), "https://comix.to/title/vyd0/7266081-chapter-30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://cdn.test/page-001.webp", "https://cdn.test/page-002.webp"}
+	if strings.Join(images, ",") != strings.Join(want, ",") {
+		t.Fatalf("images = %#v", images)
+	}
+}
+
 func TestGetChaptersSkipsOtherSeriesLinks(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -152,9 +184,57 @@ func TestGetChaptersSkipsOtherSeriesLinks(t *testing.T) {
 	}
 }
 
-type fakeBrowserFetcher string
+func TestGetChaptersUsesBrowserRenderedHTML(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body: io.NopCloser(bytes.NewBufferString(`
+				<html><body><div id="app-root"></div><script id="initial-data" type="application/json">{}</script></body></html>
+			`)),
+			Header: http.Header{},
+		}, nil
+	})}
+	browser := fakeBrowserFetcher(`
+		<section class="mpage__chapters">
+			<a href="/title/vyd0-the-returned-c-rank-tank-wont-die/10293037-chapter-60">Ch.60</a>
+			<a href="/title/vyd0-the-returned-c-rank-tank-wont-die/10234746-chapter-59">Ch.59</a>
+			<a href="/title/vyd0-the-returned-c-rank-tank-wont-die/10275554-chapter-59">Ch.59</a>
+		</section>
+	`)
 
-func (f fakeBrowserFetcher) LoadCached(context.Context, string) {}
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, browser)
+	chapters, err := scraper.GetChapters(context.Background(), "https://comix.to/title/vyd0-the-returned-c-rank-tank-wont-die")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chapters) != 2 {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+	if chapters[0].Label != "59" || chapters[1].Label != "60" {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+}
+
+func TestGetChaptersDynamicAppNeedsBrowser(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(bytes.NewBufferString(`<html><body><div id="app-root"></div></body></html>`)),
+			Header:     http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
+	if _, err := scraper.GetChapters(context.Background(), "https://comix.to/title/vyd0-title"); err == nil {
+		t.Fatal("GetChapters() error = nil")
+	} else if !strings.Contains(err.Error(), "browser_downloader.enabled") {
+		t.Fatalf("GetChapters() error = %v", err)
+	}
+}
+
+type fakeBrowserFetcher string
 
 func (f fakeBrowserFetcher) Fetch(context.Context, string) (string, error) {
 	return string(f), nil

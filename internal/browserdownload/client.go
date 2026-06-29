@@ -22,6 +22,10 @@ type Request struct {
 	AllowedExtensions []string `json:"allowed_extensions,omitempty"`
 }
 
+type htmlRequest struct {
+	PageURL string `json:"page_url"`
+}
+
 type Result struct {
 	Images int
 	Bytes  int64
@@ -91,4 +95,30 @@ func (c *Client) DownloadCBZ(ctx context.Context, req Request, output string) (R
 
 	images, _ := strconv.Atoi(resp.Header.Get("X-Mangad-Images"))
 	return Result{Images: images, Bytes: bytesWritten}, nil
+}
+
+func (c *Client) Fetch(ctx context.Context, target string) (string, error) {
+	body, err := json.Marshal(htmlRequest{PageURL: target})
+	if err != nil {
+		return "", err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/html", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("call browser renderer: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("browser renderer status %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	return string(data), nil
 }

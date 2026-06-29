@@ -47,12 +47,20 @@ func newImageCollector(allowed *regexp.Regexp, debug bool) *imageCollector {
 }
 
 func (c *imageCollector) add(url string, idx int) {
+	c.addURL(url, idx, false)
+}
+
+func (c *imageCollector) addPageImage(url string, idx int) {
+	c.addURL(url, idx, true)
+}
+
+func (c *imageCollector) addURL(url string, idx int, allowExtensionless bool) {
 	url = strings.TrimSpace(url)
 	if url == "" || strings.HasPrefix(url, "javascript:") {
 		return
 	}
 	lu := strings.ToLower(url)
-	if !c.allowed.MatchString(lu) {
+	if !c.allowed.MatchString(lu) && (!allowExtensionless || hasPathExtension(lu)) {
 		return
 	}
 	if strings.HasPrefix(lu, "data:") {
@@ -75,6 +83,14 @@ func (c *imageCollector) add(url string, idx int) {
 		Index: idx,       // -1 if not known
 		Order: c.counter, // discovery sequence
 	})
+}
+
+func hasPathExtension(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u == nil {
+		return path.Ext(raw) != ""
+	}
+	return path.Ext(u.Path) != ""
 }
 
 func isNonPageImage(raw string) bool {
@@ -210,7 +226,11 @@ func (c *imageCollector) ScanIMGTags(doc *goquery.Document, chapterURL string) i
 
 		for _, k := range []string{"src", "data-src", "data-lazy-src", "data-original"} {
 			if v, ok := img.Attr(k); ok && strings.TrimSpace(v) != "" {
-				c.add(resolve(chapterURL, v), idx)
+				if _, marked := img.Attr("data-mangad-page-image"); marked {
+					c.addPageImage(resolve(chapterURL, v), idx)
+				} else {
+					c.add(resolve(chapterURL, v), idx)
+				}
 			}
 		}
 	})

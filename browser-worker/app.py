@@ -1,4 +1,5 @@
 import base64
+import html
 import io
 import json
 import os
@@ -187,6 +188,93 @@ def scroll_and_capture(chapter_url, allowed):
         driver.quit()
 
 
+def rendered_html(page_url):
+    driver = open_driver()
+    try:
+        driver.get(page_url)
+        pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
+        time.sleep(pause)
+        if driver.execute_script('return !!document.querySelector(".mpage__chapters,.mchap-list");'):
+            return rendered_chapter_links(driver, pause)
+        return rendered_images(driver, pause)
+    finally:
+        driver.quit()
+
+
+def rendered_chapter_links(driver, pause):
+    links = []
+    seen = set()
+    max_pages = int_env("BROWSER_WORKER_MAX_HTML_PAGES", 40)
+
+    for _ in range(max_pages):
+        time.sleep(pause)
+        for item in driver.execute_script(
+            """
+            const root = document.querySelector(".mpage__chapters,.mchap-list") || document;
+            return Array.from(root.querySelectorAll("a[href]")).map(a => ({
+                href: a.href || a.getAttribute("href"),
+                text: a.innerText || a.textContent || ""
+            }));
+            """
+        ):
+            key = (item.get("href", ""), item.get("text", "").strip())
+            if key[0] and key not in seen:
+                seen.add(key)
+                links.append(key)
+        clicked = driver.execute_script(
+            """
+            const next = Array.from(document.querySelectorAll("button[aria-label],a[aria-label]"))
+                .find(el => /next page/i.test(el.getAttribute("aria-label") || "")
+                    && !el.disabled
+                    && el.getAttribute("aria-disabled") !== "true");
+            if (!next) return false;
+            next.click();
+            return true;
+            """
+        )
+        if not clicked:
+            break
+
+    return "<html><body>" + "".join(
+        f'<a href="{html.escape(href, quote=True)}">{html.escape(text)}</a>'
+        for href, text in links
+    ) + "</body></html>"
+
+
+def rendered_images(driver, pause):
+    images = []
+    seen = set()
+    max_scrolls = int_env("BROWSER_WORKER_MAX_SCROLLS", 80)
+    idle_rounds = int_env("BROWSER_WORKER_IDLE_ROUNDS", 4)
+    stable = 0
+    last_count = -1
+
+    for _ in range(max_scrolls):
+        time.sleep(pause)
+        for url in driver.execute_script(
+            """
+            return Array.from(document.images).map(img =>
+                img.currentSrc || img.src || img.getAttribute("data-src") ||
+                img.getAttribute("data-lazy-src") || img.getAttribute("data-original") || ""
+            );
+            """
+        ):
+            if url and url not in seen:
+                seen.add(url)
+                images.append(url)
+        stable = stable + 1 if len(images) == last_count else 0
+        last_count = len(images)
+        at_bottom = driver.execute_script("return window.innerHeight + window.scrollY >= document.body.scrollHeight - 4")
+        if at_bottom and stable >= idle_rounds:
+            break
+        driver.execute_script("window.scrollBy(0, Math.max(window.innerHeight, 900));")
+
+    return "<html><body>" + "".join(
+        f'<img src="{html.escape(url, quote=True)}" data-mangad-page-image="1">'
+        for url in images
+    ) + "</body></html>"
+
+
 def make_cbz(images):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -209,18 +297,33 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        if self.path != "/download":
+        if self.path not in ("/download", "/html"):
             self.send_error(404)
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length))
+            if self.path == "/html":
+                started = time.time()
+                page_url = payload["page_url"]
+                print(f"render html {page_url}", flush=True)
+                data = rendered_html(page_url).encode()
+                print(f"render html done {page_url} bytes={len(data)} elapsed={time.time() - started:.1f}s", flush=True)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+
             chapter_url = payload["chapter_url"]
             allowed = {ext.lower().lstrip(".") for ext in payload.get("allowed_extensions", [])}
             images = scroll_and_capture(chapter_url, allowed)
             if not images:
                 raise RuntimeError("no browser-loaded images captured")
             cbz = make_cbz(images)
+        except BrokenPipeError:
+            return
         except Exception as exc:
             data = json.dumps({"error": str(exc)}).encode()
             self.send_response(502)
