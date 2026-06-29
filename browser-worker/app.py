@@ -4,6 +4,7 @@ import io
 import json
 import os
 import posixpath
+import re
 import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +16,7 @@ from selenium.webdriver.chrome.options import Options
 
 IMAGE_MIME = ("image/jpeg", "image/png", "image/webp", "image/gif", "image/avif")
 SKIP_TOKENS = ("/thumb/", "/banner/", "/avatar/", "/logo/", "/background", "fbshare", "share")
+CHAPTER_PATH = re.compile(r"(?:^|/)(?:c|ch|chapter)[-_]?\d", re.I)
 
 
 def env(name, default):
@@ -193,12 +195,39 @@ def rendered_html(page_url):
     try:
         driver.get(page_url)
         pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
-        time.sleep(pause)
-        if driver.execute_script('return !!document.querySelector(".mpage__chapters,.mchap-list");'):
+        wait_for_render(driver, page_url, pause)
+        if not looks_like_reader_url(page_url) and has_chapter_links(driver):
             return rendered_chapter_links(driver, pause)
         return rendered_images(driver, pause)
     finally:
         driver.quit()
+
+
+def looks_like_reader_url(page_url):
+    return bool(CHAPTER_PATH.search(urlparse(page_url).path))
+
+
+def has_chapter_links(driver):
+    return driver.execute_script(
+        """
+        const roots = document.querySelectorAll(
+            ".mpage__chapters,.mchap-list,.listing-chapters_wrap,.version-chap,.wp-manga-chapter,.chapter-list,.chapters,.eplister"
+        );
+        if (roots.length) return true;
+        return Array.from(document.querySelectorAll("a[href]")).some(a =>
+            /(chapter|\\bch\\.?\\s*\\d|\\/c\\d|chapter[-_]\\d)/i.test((a.href || "") + " " + (a.innerText || a.textContent || ""))
+        );
+        """
+    )
+
+
+def wait_for_render(driver, page_url, pause):
+    deadline = time.time() + int_env("BROWSER_WORKER_RENDER_WAIT_MS", 6000) / 1000
+    while time.time() < deadline:
+        ready = driver.execute_script("return document.images.length > 0") if looks_like_reader_url(page_url) else has_chapter_links(driver)
+        if ready:
+            return
+        time.sleep(pause)
 
 
 def rendered_chapter_links(driver, pause):
@@ -210,11 +239,13 @@ def rendered_chapter_links(driver, pause):
         time.sleep(pause)
         for item in driver.execute_script(
             """
-            const root = document.querySelector(".mpage__chapters,.mchap-list") || document;
-            return Array.from(root.querySelectorAll("a[href]")).map(a => ({
+            const roots = Array.from(document.querySelectorAll(
+                ".mpage__chapters,.mchap-list,.listing-chapters_wrap,.version-chap,.chapter-list,.chapters,.eplister"
+            ));
+            return (roots.length ? roots : [document]).flatMap(root => Array.from(root.querySelectorAll("a[href]")).map(a => ({
                 href: a.href || a.getAttribute("href"),
                 text: a.innerText || a.textContent || ""
-            }));
+            })));
             """
         ):
             key = (item.get("href", ""), item.get("text", "").strip())

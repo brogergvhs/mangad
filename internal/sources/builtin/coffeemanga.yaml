@@ -1,0 +1,14 @@
+id: coffeemanga
+name: CoffeeManga
+domains:
+  - coffeemanga.net
+base_url: https://coffeemanga.net/
+sample_manga_url: https://coffeemanga.net/manga/im-being-raised-by-villains/
+scraper: generic
+allowed_extensions:
+  - jpg
+min_chapters: 150
+requires_browser_solver: false
+requires_browser_downloader: true
+enabled: true
+version: "2026-06-29"
