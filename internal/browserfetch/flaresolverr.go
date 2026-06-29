@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -91,6 +92,11 @@ func (f *FlareSolverr) call(ctx context.Context, payload map[string]any, out *fl
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		msg := strings.TrimSpace(readSnippet(resp.Body, 512))
+		if msg != "" {
+			msg = flaresolverrMessage(msg)
+			return fmt.Errorf("flaresolverr http status %s: %s", resp.Status, msg)
+		}
 		return fmt.Errorf("flaresolverr http status %s", resp.Status)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
@@ -104,6 +110,24 @@ func (f *FlareSolverr) call(ctx context.Context, payload map[string]any, out *fl
 		return fmt.Errorf("flaresolverr: %s", msg)
 	}
 	return nil
+}
+
+func readSnippet(r io.Reader, limit int64) string {
+	if r == nil || limit <= 0 {
+		return ""
+	}
+	data, _ := io.ReadAll(io.LimitReader(r, limit))
+	return string(data)
+}
+
+func flaresolverrMessage(body string) string {
+	var resp struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err == nil && strings.TrimSpace(resp.Message) != "" {
+		return strings.TrimSpace(resp.Message)
+	}
+	return body
 }
 
 type flaresolverrResponse struct {

@@ -82,7 +82,7 @@ func runSourcesList(_ *cobra.Command, _ []string) error {
 			return nil
 		}
 		for _, src := range all {
-			fmt.Printf("%-14s %-10s %-20s %s\n", src.ID, src.Origin, src.Status, src.Name)
+			fmt.Printf("%-s  |  %-s  |  %-s  |  %s\n", src.ID, src.Origin, src.Status, src.Name)
 			fmt.Printf("  base:       %s\n", src.BaseURL)
 			fmt.Printf("  sample:     %s\n", src.SampleMangaURL)
 			fmt.Printf("  extensions: %s\n", strings.Join(src.AllowedExtensions, ", "))

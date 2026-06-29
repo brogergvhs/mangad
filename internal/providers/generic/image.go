@@ -83,8 +83,14 @@ func isNonPageImage(raw string) bool {
 	if err == nil && u != nil {
 		p = u.Path
 	}
-	base := path.Base(strings.ToLower(p))
-	for _, token := range []string{"logo", "cover", "profile", "avatar", "banner", "fbshare", "share"} {
+	p = strings.ToLower(p)
+	for _, token := range []string{"/banner/", "/thumb/", "/media/images/", "/image/background"} {
+		if strings.Contains(p, token) {
+			return true
+		}
+	}
+	base := path.Base(p)
+	for _, token := range []string{"logo", "cover", "profile", "avatar", "banner", "fbshare", "share", "background"} {
 		if strings.Contains(base, token) {
 			return true
 		}

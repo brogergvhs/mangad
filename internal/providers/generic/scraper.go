@@ -345,6 +345,10 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 			return
 		}
 
+		if !sameSeriesChapterLink(pageURL, href) {
+			return
+		}
+
 		s.log.Debugf("Link looks like chapter link: %s\n", href)
 
 		n, t, sn, label, ok := parseChapterLabel(strings.TrimSpace(href), strings.TrimSpace(a.Text()))
@@ -384,6 +388,41 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 	})
 
 	return out, nil
+}
+
+func sameSeriesChapterLink(pageURL, href string) bool {
+	base, err := url.Parse(pageURL)
+	if err != nil {
+		return false
+	}
+	candidate, err := url.Parse(resolveURL(pageURL, href))
+	if err != nil {
+		return false
+	}
+	if candidate.Host != base.Host {
+		return false
+	}
+
+	baseParts := pathParts(base.Path)
+	candidateParts := pathParts(candidate.Path)
+	if len(baseParts) < 2 || len(candidateParts) < 2 {
+		return strings.HasPrefix(candidate.Path, chapterPageBase(base.Path))
+	}
+	if baseParts[0] != candidateParts[0] {
+		return false
+	}
+	return baseParts[1] == candidateParts[1]
+}
+
+func pathParts(p string) []string {
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	out := parts[:0]
+	for _, part := range parts {
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, error) {

@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -20,6 +21,17 @@ type Downloader struct {
 	outputDir  string
 	skipBroken bool
 	retryDelay time.Duration
+	browser    BrowserFetcher
+	warmed     map[string]int
+	warmFailed map[string]error
+	loaded     map[string]bool
+	warmMu     sync.Mutex
+}
+
+// BrowserFetcher warms browser-solved sessions for protected image hosts.
+type BrowserFetcher interface {
+	LoadCached(ctx context.Context, target string)
+	Fetch(ctx context.Context, target string) (string, error)
 }
 
 // ProgressHandle receives image download progress updates.
@@ -35,7 +47,15 @@ func New(c *http.Client, debug bool, outputDir string, skipBroken bool) *Downloa
 		outputDir:  outputDir,
 		skipBroken: skipBroken,
 		retryDelay: time.Second,
+		warmed:     map[string]int{},
+		warmFailed: map[string]error{},
+		loaded:     map[string]bool{},
 	}
+}
+
+// SetBrowserFetcher enables browser-solver cookie warming for image downloads.
+func (d *Downloader) SetBrowserFetcher(browser BrowserFetcher) {
+	d.browser = browser
 }
 
 type chapterState struct {
@@ -163,20 +183,37 @@ func sampleErrors(errs []error, limit int) string {
 	if len(errs) == 0 {
 		return ""
 	}
-	if limit > len(errs) {
-		limit = len(errs)
-	}
+	seen := map[string]bool{}
 	var b strings.Builder
-	for i := range limit {
-		if i > 0 {
+	written := 0
+	for _, err := range errs {
+		text := err.Error()
+		key := sampleErrorKey(text)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if written > 0 {
 			b.WriteString("; ")
 		}
-		b.WriteString(errs[i].Error())
+		b.WriteString(text)
+		written++
+		if written == limit {
+			break
+		}
 	}
-	if len(errs) > limit {
+	if written < len(errs) {
 		fmt.Fprintf(&b, "; ...")
 	}
 	return b.String()
+}
+
+func sampleErrorKey(text string) string {
+	prefix, suffix, ok := strings.Cut(text, ": ")
+	if ok && strings.HasPrefix(prefix, "image ") {
+		return suffix
+	}
+	return text
 }
 
 func (d *Downloader) downloadWithRetry(
@@ -187,13 +224,30 @@ func (d *Downloader) downloadWithRetry(
 	progress func(done int64),
 ) error {
 	var err error
-	for attempt := 1; attempt <= 3; attempt++ {
+	d.loadCached(ctx, url)
+	host := targetHost(url)
+	if warmErr := d.warmFailure(host); warmErr != nil {
+		return fmt.Errorf("HTTP 403 (browser warm failed for %s: %w)", host, warmErr)
+	}
+	maxAttempts := 3
+	if d.browser != nil {
+		maxAttempts = 4
+	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		err = d.download(ctx, url, output, referer, progress)
 		if err == nil {
 			return nil
 		}
+		var statusErr statusError
+		if d.browser != nil && asStatusError(err, &statusErr) && statusErr.Code == http.StatusForbidden {
+			if warmErr := d.warmNextBrowser(ctx, host, referer, imageOrigin(url)); warmErr == nil {
+				continue
+			} else {
+				return fmt.Errorf("%w (browser warm failed for %s: %w)", err, host, warmErr)
+			}
+		}
 
-		if attempt == 3 {
+		if attempt == maxAttempts {
 			break
 		}
 		delay := time.Duration(attempt) * d.retryDelay
@@ -207,6 +261,10 @@ func (d *Downloader) downloadWithRetry(
 		}
 	}
 
+	var statusErr statusError
+	if d.browser == nil && asStatusError(err, &statusErr) && statusErr.Code == http.StatusForbidden {
+		return fmt.Errorf("%w (image host blocked; enable browser_solver.enabled to warm CDN cookies)", err)
+	}
 	return err
 }
 
@@ -229,6 +287,9 @@ func (d *Downloader) download(
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Sec-Fetch-Dest", "image")
+	req.Header.Set("Sec-Fetch-Mode", "no-cors")
+	req.Header.Set("Sec-Fetch-Site", fetchSite(referer, u))
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -243,7 +304,7 @@ func (d *Downloader) download(
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return statusError{Code: resp.StatusCode}
 	}
 
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
@@ -280,6 +341,118 @@ func (d *Downloader) download(
 	}
 
 	return bodyCloseErr
+}
+
+type statusError struct {
+	Code int
+}
+
+func (e statusError) Error() string {
+	return fmt.Sprintf("HTTP %d", e.Code)
+}
+
+func asStatusError(err error, out *statusError) bool {
+	return errors.As(err, out)
+}
+
+func (d *Downloader) loadCached(ctx context.Context, target string) {
+	if d.browser == nil {
+		return
+	}
+	key := targetHost(target)
+	if key == "" {
+		key = target
+	}
+	d.warmMu.Lock()
+	if d.loaded[key] {
+		d.warmMu.Unlock()
+		return
+	}
+	d.loaded[key] = true
+	d.warmMu.Unlock()
+	d.browser.LoadCached(ctx, target)
+}
+
+func (d *Downloader) warmNextBrowser(ctx context.Context, key string, targets ...string) error {
+	if key == "" {
+		key = firstNonEmpty(targets...)
+	}
+	d.warmMu.Lock()
+	defer d.warmMu.Unlock()
+	if err := d.warmFailed[key]; err != nil {
+		return err
+	}
+	var lastErr error
+	seen := map[string]bool{}
+	for d.warmed[key] < len(targets) {
+		target := targets[d.warmed[key]]
+		d.warmed[key]++
+		target = strings.TrimSpace(target)
+		if target == "" || seen[target] {
+			continue
+		}
+		seen[target] = true
+		_, err := d.browser.Fetch(ctx, target)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+	}
+	err := lastErr
+	if err == nil {
+		err = fmt.Errorf("browser warm targets exhausted for %s", key)
+	}
+	d.warmFailed[key] = err
+	return err
+}
+
+func (d *Downloader) warmFailure(key string) error {
+	if key == "" {
+		return nil
+	}
+	d.warmMu.Lock()
+	defer d.warmMu.Unlock()
+	return d.warmFailed[key]
+}
+
+func targetHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u == nil {
+		return ""
+	}
+	return u.Host
+}
+
+func imageOrigin(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u == nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host + "/"
+}
+
+func fetchSite(referer, target string) string {
+	ref, err := url.Parse(referer)
+	if err != nil || ref == nil {
+		return "cross-site"
+	}
+	dst, err := url.Parse(target)
+	if err != nil || dst == nil {
+		return "cross-site"
+	}
+	if ref.Host == dst.Host {
+		return "same-origin"
+	}
+	return "cross-site"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func imageExt(rawURL string) string {

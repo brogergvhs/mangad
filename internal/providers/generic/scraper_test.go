@@ -122,6 +122,36 @@ func TestGetImagesScansMultiPageChapter(t *testing.T) {
 	}
 }
 
+func TestGetChaptersSkipsOtherSeriesLinks(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body: io.NopCloser(bytes.NewBufferString(`
+				<html><body>
+					<a href="/manga/the-demonic-supreme-sword/chapter-1">Chapter 1</a>
+					<a href="/manga/the-demonic-supreme-sword/chapter-18-1">Chapter 18.1</a>
+					<a href="/manga/solo-leveling/chapter-200">Chapter 200</a>
+					<a href="/manga/one-piece/chapter-1186">Chapter 1186</a>
+				</body></html>
+			`)),
+			Header: http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
+	chapters, err := scraper.GetChapters(context.Background(), "https://www.zazamanga.com/manga/the-demonic-supreme-sword")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chapters) != 2 {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+	if chapters[0].Label != "1" || chapters[1].Label != "18-1" {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+}
+
 type fakeBrowserFetcher string
 
 func (f fakeBrowserFetcher) LoadCached(context.Context, string) {}

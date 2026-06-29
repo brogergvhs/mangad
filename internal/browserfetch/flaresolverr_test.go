@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -57,6 +58,36 @@ func TestFlareSolverrError(t *testing.T) {
 
 	if _, err := NewFlareSolverr("http://solver.test/v1", time.Second, client).Fetch(t.Context(), "https://manga.test"); err == nil {
 		t.Fatal("Fetch() error = nil")
+	}
+}
+
+func TestFlareSolverrHTTPErrorIncludesBody(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(bytes.NewBufferString("solver details")),
+		}, nil
+	})}
+
+	_, err := NewFlareSolverr("http://solver.test/v1", time.Second, client).Fetch(t.Context(), "https://manga.test")
+	if err == nil || !strings.Contains(err.Error(), "solver details") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestFlareSolverrHTTPErrorUsesJSONMessage(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(bytes.NewBufferString(`{"status":"error","message":"blocked by cloudflare","version":"3.5.0"}`)),
+		}, nil
+	})}
+
+	_, err := NewFlareSolverr("http://solver.test/v1", time.Second, client).Fetch(t.Context(), "https://manga.test")
+	if err == nil || !strings.Contains(err.Error(), "blocked by cloudflare") || strings.Contains(err.Error(), "version") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

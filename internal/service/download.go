@@ -78,6 +78,7 @@ type DownloadService struct {
 	scraper  providers.Scraper
 	log      Logger
 	progress ProgressManager
+	browser  generic.BrowserFetcher
 }
 
 // NewDownloadService creates a service from explicit dependencies.
@@ -144,7 +145,9 @@ func NewDefaultDownloadService(
 	}
 	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS, browser)
 
-	return NewDownloadService(cfg, client, scraper, log, progress), nil
+	svc := NewDownloadService(cfg, client, scraper, log, progress)
+	svc.browser = browser
+	return svc, nil
 }
 
 func cookieDBPath(cfg *config.Config) string {
@@ -294,7 +297,7 @@ func (s *DownloadService) Download(
 	}
 
 	start := time.Now()
-	dl := downloader.New(s.client, s.cfg.Debug, s.cfg.Output, s.cfg.SkipBroken)
+	dl := s.downloader()
 
 	var summary downloadCounters
 	sem := make(chan struct{}, max(1, s.cfg.ChapterWorkers))
@@ -341,7 +344,13 @@ schedule:
 
 // DownloadChapter downloads one chapter and writes its CBZ file.
 func (s *DownloadService) DownloadChapter(ctx context.Context, ch chapters.Chapter) (ChapterDownloadResult, error) {
-	return s.downloadChapter(ctx, downloader.New(s.client, s.cfg.Debug, s.cfg.Output, s.cfg.SkipBroken), ch)
+	return s.downloadChapter(ctx, s.downloader(), ch)
+}
+
+func (s *DownloadService) downloader() *downloader.Downloader {
+	dl := downloader.New(s.client, s.cfg.Debug, s.cfg.Output, s.cfg.SkipBroken)
+	dl.SetBrowserFetcher(s.browser)
+	return dl
 }
 
 func (s *DownloadService) downloadChapter(
