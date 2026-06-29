@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	flagJobsDB       string
-	flagJobsTitleID  int64
-	flagJobsSourceID string
-	flagJobsDelay    time.Duration
+	flagJobsDB        string
+	flagJobsTitleID   int64
+	flagJobsSourceID  string
+	flagJobsCatalogID int64
+	flagJobsDelay     time.Duration
 )
 
 var jobsCmd = &cobra.Command{Use: "jobs", Short: "Manage background jobs"}
@@ -26,7 +27,7 @@ var jobsListCmd = &cobra.Command{Use: "list", Short: "List recent jobs", RunE: r
 var jobsRunCmd = &cobra.Command{Use: "run", Short: "Run due jobs until the queue is empty", RunE: runJobsRun}
 
 var jobsEnqueueCmd = &cobra.Command{
-	Use:   "enqueue <refresh_title|scan_downloads|download_missing|verify_source>",
+	Use:   "enqueue <refresh_title|scan_downloads|download_missing|verify_source|match_sources>",
 	Short: "Enqueue a background job",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runJobsEnqueue,
@@ -36,6 +37,7 @@ func init() {
 	jobsCmd.PersistentFlags().StringVar(&flagJobsDB, "db", "", "path to MangaD SQLite database")
 	jobsEnqueueCmd.Flags().Int64Var(&flagJobsTitleID, "title", 0, "title id; omit or use 0 for all monitored titles")
 	jobsEnqueueCmd.Flags().StringVar(&flagJobsSourceID, "source", "", "source id for verify_source jobs")
+	jobsEnqueueCmd.Flags().Int64Var(&flagJobsCatalogID, "catalog", 0, "catalog manga id for match_sources jobs")
 	jobsEnqueueCmd.Flags().DurationVar(&flagJobsDelay, "delay", 0, "delay before the job becomes due")
 
 	jobsCmd.AddCommand(jobsListCmd, jobsRunCmd, jobsEnqueueCmd)
@@ -48,9 +50,12 @@ func runJobsEnqueue(_ *cobra.Command, args []string) error {
 			job jobs.Job
 			err error
 		)
-		if args[0] == jobs.TypeVerifySource {
+		switch args[0] {
+		case jobs.TypeVerifySource:
 			job, err = svc.EnqueueSource(ctx, flagJobsSourceID, time.Now().Add(flagJobsDelay))
-		} else {
+		case jobs.TypeMatchSources:
+			job, err = svc.EnqueueCatalog(ctx, args[0], flagJobsCatalogID, time.Now().Add(flagJobsDelay))
+		default:
 			job, err = svc.Enqueue(ctx, args[0], flagJobsTitleID, time.Now().Add(flagJobsDelay))
 		}
 		if err != nil {
@@ -112,10 +117,19 @@ func printJob(job jobs.Job) {
 	if sourceID := payloadSourceID(job.Payload); sourceID != "" {
 		fmt.Printf(" source=%s", sourceID)
 	}
+	if catalogID := payloadCatalogID(job.Payload); catalogID > 0 {
+		fmt.Printf(" catalog=%d", catalogID)
+	}
 	if job.LastError != "" {
 		fmt.Printf(" error=%q", job.LastError)
 	}
 	fmt.Println()
+}
+
+func payloadCatalogID(payload string) int64 {
+	var p service.JobPayload
+	_ = json.Unmarshal([]byte(payload), &p)
+	return p.CatalogID
 }
 
 func payloadSourceID(payload string) string {

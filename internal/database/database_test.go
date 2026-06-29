@@ -34,6 +34,23 @@ func TestOpenAndMigrate(t *testing.T) {
 	if !exists || !ok {
 		t.Fatalf("sources.requires_browser_downloader exists=%t ok=%t", exists, ok)
 	}
+	for _, tc := range []struct {
+		table  string
+		column string
+	}{
+		{"catalog_manga", "wanted"},
+		{"catalog_manga", "synonyms_json"},
+		{"title_source_matches", "chapters_found"},
+		{"title_source_matches", "updated_at"},
+	} {
+		ok, exists, err := tableHasColumn(ctx, db, tc.table, tc.column)
+		if err != nil {
+			t.Fatalf("tableHasColumn(%s.%s) error = %v", tc.table, tc.column, err)
+		}
+		if !exists || !ok {
+			t.Fatalf("%s.%s exists=%t ok=%t", tc.table, tc.column, exists, ok)
+		}
+	}
 }
 
 func TestMigrateRecreatesObsoleteSourcesTable(t *testing.T) {

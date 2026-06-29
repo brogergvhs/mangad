@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS catalog_manga (
 	status TEXT NOT NULL DEFAULT '',
 	format TEXT NOT NULL DEFAULT '',
 	chapters INTEGER,
+	synonyms_json TEXT NOT NULL DEFAULT '[]',
+	wanted INTEGER NOT NULL DEFAULT 0,
 	raw_json TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(provider, provider_id)
@@ -75,9 +77,14 @@ CREATE TABLE IF NOT EXISTS title_source_matches (
 	catalog_manga_id INTEGER NOT NULL REFERENCES catalog_manga(id) ON DELETE CASCADE,
 	source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
 	source_url TEXT NOT NULL,
+	title TEXT NOT NULL DEFAULT '',
 	confidence REAL NOT NULL DEFAULT 0,
 	match_method TEXT NOT NULL DEFAULT 'manual',
+	chapters_found INTEGER NOT NULL DEFAULT 0,
+	sample_images_found INTEGER NOT NULL DEFAULT 0,
+	error TEXT NOT NULL DEFAULT '',
 	verified_at TEXT,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(catalog_manga_id, source_url)
 );
 
@@ -170,6 +177,19 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}
 	if err = ensureColumn(ctx, tx, "sources", "requires_browser_downloader", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return fmt.Errorf("migrate sources.requires_browser_downloader: %w", err)
+	}
+	for _, col := range []struct{ table, name, def string }{
+		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},
+		{"title_source_matches", "title", "TEXT NOT NULL DEFAULT ''"},
+		{"title_source_matches", "chapters_found", "INTEGER NOT NULL DEFAULT 0"},
+		{"title_source_matches", "sample_images_found", "INTEGER NOT NULL DEFAULT 0"},
+		{"title_source_matches", "error", "TEXT NOT NULL DEFAULT ''"},
+		{"title_source_matches", "updated_at", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
+			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration: %w", err)

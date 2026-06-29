@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/browserfetch"
+	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/jobs"
@@ -25,12 +26,14 @@ type JobService struct {
 	jobs *jobs.Repository
 	lib  *LibraryService
 	src  *sourceService
+	want *WantedService
 }
 
 // JobPayload is the common payload for background jobs.
 type JobPayload struct {
-	TitleID  int64  `json:"title_id,omitempty"`
-	SourceID string `json:"source_id,omitempty"`
+	TitleID   int64  `json:"title_id,omitempty"`
+	SourceID  string `json:"source_id,omitempty"`
+	CatalogID int64  `json:"catalog_id,omitempty"`
 }
 
 // RunSummary describes one queue drain.
@@ -172,6 +175,7 @@ func newJobService(db *sql.DB) *JobService {
 		jobs: jobs.NewRepository(db),
 		lib:  &LibraryService{repo: library.NewRepository(db)},
 		src:  newSourceService(db),
+		want: newWantedService(db),
 	}
 }
 
@@ -243,6 +247,39 @@ func (s *JobService) ListTitles(ctx context.Context) ([]library.Title, error) {
 	return s.lib.ListTitles(ctx)
 }
 
+// SearchAniList searches AniList and stores returned metadata locally.
+func (s *JobService) SearchAniList(ctx context.Context, query string, limit int) ([]catalog.Manga, error) {
+	return s.want.SearchAniList(ctx, query, limit)
+}
+
+// AddAniListWanted adds an AniList title to wanted.
+func (s *JobService) AddAniListWanted(ctx context.Context, anilistID int) (catalog.Manga, error) {
+	return s.want.AddAniListWanted(ctx, anilistID)
+}
+
+// ListWanted returns wanted canonical titles.
+func (s *JobService) ListWanted(ctx context.Context) ([]catalog.Manga, error) {
+	return s.want.ListWanted(ctx)
+}
+
+// MatchSources finds source matches for one canonical title.
+func (s *JobService) MatchSources(ctx context.Context, catalogID int64) ([]catalog.Match, error) {
+	cfg := config.DefaultConfig()
+	s.ApplySettings(ctx, cfg)
+	cfg.CookieDBPath = database.DefaultPath()
+	return s.want.MatchSources(ctx, cfg, ui.NewLogger(false), catalogID)
+}
+
+// ListMatches returns persisted source matches.
+func (s *JobService) ListMatches(ctx context.Context, catalogID int64) ([]catalog.Match, error) {
+	return s.want.ListMatches(ctx, catalogID)
+}
+
+// TrackMatch adds a selected match to the tracked library.
+func (s *JobService) TrackMatch(ctx context.Context, matchID int64, output string, monitored bool, refreshInterval string) (library.Title, error) {
+	return s.want.TrackMatch(ctx, matchID, output, monitored, refreshInterval)
+}
+
 // SyncSources stores bundled profiles and, when set, a remote registry.
 func (s *JobService) SyncSources(ctx context.Context, registryURL string) error {
 	if err := s.src.SyncBuiltIn(ctx); err != nil {
@@ -287,6 +324,11 @@ func (s *JobService) Enqueue(ctx context.Context, typ string, titleID int64, run
 // EnqueueSource creates a source-scoped job.
 func (s *JobService) EnqueueSource(ctx context.Context, sourceID string, runAfter time.Time) (jobs.Job, error) {
 	return s.enqueue(ctx, jobs.TypeVerifySource, JobPayload{SourceID: strings.TrimSpace(sourceID)}, runAfter)
+}
+
+// EnqueueCatalog creates a catalog-scoped job.
+func (s *JobService) EnqueueCatalog(ctx context.Context, typ string, catalogID int64, runAfter time.Time) (jobs.Job, error) {
+	return s.enqueue(ctx, typ, JobPayload{CatalogID: catalogID}, runAfter)
 }
 
 func (s *JobService) enqueue(ctx context.Context, typ string, payload JobPayload, runAfter time.Time) (jobs.Job, error) {
@@ -361,6 +403,9 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc *ui.Log
 	case jobs.TypeVerifySource:
 		_, err := s.VerifySource(ctx, cfg, logSvc, payload.SourceID)
 		return err
+	case jobs.TypeMatchSources:
+		_, err := s.want.MatchSources(ctx, cfg, logSvc, payload.CatalogID)
+		return err
 	default:
 		return fmt.Errorf("unknown job type %q", job.Type)
 	}
@@ -375,6 +420,10 @@ func validateJob(typ string, payload JobPayload) error {
 	case jobs.TypeVerifySource:
 		if strings.TrimSpace(payload.SourceID) == "" {
 			return fmt.Errorf("source id is required")
+		}
+	case jobs.TypeMatchSources:
+		if payload.CatalogID <= 0 {
+			return fmt.Errorf("catalog id is required")
 		}
 	default:
 		return fmt.Errorf("unknown job type %q", typ)

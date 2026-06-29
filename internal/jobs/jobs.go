@@ -8,6 +8,7 @@ const (
 	TypeScanDownloads   = "scan_downloads"
 	TypeDownloadMissing = "download_missing"
 	TypeVerifySource    = "verify_source"
+	TypeMatchSources    = "match_sources"
 )
 
 // Job is a persisted background job.
