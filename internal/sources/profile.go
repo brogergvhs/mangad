@@ -18,17 +18,18 @@ const (
 
 // Profile describes a supported manga website.
 type Profile struct {
-	ID                    string   `json:"id" yaml:"id"`
-	Name                  string   `json:"name" yaml:"name"`
-	Domains               []string `json:"domains" yaml:"domains"`
-	BaseURL               string   `json:"base_url" yaml:"base_url"`
-	SampleMangaURL        string   `json:"sample_manga_url" yaml:"sample_manga_url"`
-	Scraper               string   `json:"scraper" yaml:"scraper"`
-	AllowedExtensions     []string `json:"allowed_extensions" yaml:"allowed_extensions"`
-	MinChapters           int      `json:"min_chapters" yaml:"min_chapters"`
-	RequiresBrowserSolver bool     `json:"requires_browser_solver" yaml:"requires_browser_solver"`
-	Enabled               bool     `json:"enabled" yaml:"enabled"`
-	Version               string   `json:"version" yaml:"version"`
+	ID                      string   `json:"id" yaml:"id"`
+	Name                    string   `json:"name" yaml:"name"`
+	Domains                 []string `json:"domains" yaml:"domains"`
+	BaseURL                 string   `json:"base_url" yaml:"base_url"`
+	SampleMangaURL          string   `json:"sample_manga_url" yaml:"sample_manga_url"`
+	Scraper                 string   `json:"scraper" yaml:"scraper"`
+	AllowedExtensions       []string `json:"allowed_extensions" yaml:"allowed_extensions"`
+	MinChapters             int      `json:"min_chapters" yaml:"min_chapters"`
+	RequiresBrowserSolver   bool     `json:"requires_browser_solver" yaml:"requires_browser_solver"`
+	RequiresBrowserDownload bool     `json:"requires_browser_downloader" yaml:"requires_browser_downloader"`
+	Enabled                 bool     `json:"enabled" yaml:"enabled"`
+	Version                 string   `json:"version" yaml:"version"`
 }
 
 // Source is a persisted profile plus its latest verification result.

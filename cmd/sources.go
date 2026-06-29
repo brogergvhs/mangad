@@ -98,6 +98,9 @@ func runSourcesList(_ *cobra.Command, _ []string) error {
 			if src.RequiresBrowserSolver {
 				fmt.Println("  solver:     browser required")
 			}
+			if src.RequiresBrowserDownload {
+				fmt.Println("  download:   browser downloader required")
+			}
 			if src.LastError != "" {
 				fmt.Printf("  error:      %s\n", src.LastError)
 			}

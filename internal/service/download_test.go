@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -91,6 +93,50 @@ func TestDownloadSummaryIncludesChapterErrors(t *testing.T) {
 	}
 	if !strings.Contains(summary.Errors[0], "image 2: HTTP 403") {
 		t.Fatalf("summary errors = %#v", summary.Errors)
+	}
+}
+
+func TestDownloadUsesBrowserDownloaderFallback(t *testing.T) {
+	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Mangad-Images", "7")
+		_, _ = w.Write([]byte("cbz"))
+	}))
+	defer worker.Close()
+
+	output := t.TempDir()
+	svc := NewDownloadService(
+		&config.Config{
+			Output:         output,
+			ImageWorkers:   1,
+			ChapterWorkers: 1,
+			AllowExt:       []string{"webp"},
+			BrowserDownload: config.BrowserDownloadConfig{
+				Enabled:        true,
+				Endpoint:       worker.URL,
+				TimeoutSeconds: 1,
+			},
+		},
+		&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusForbidden, Status: "403 Forbidden", Body: http.NoBody}, nil
+		})},
+		fakeScraper{images: []string{"https://cdn.test/1.webp"}},
+		noopLogger{},
+		nil,
+	)
+
+	summary, err := svc.Download(context.Background(), []chapters.Chapter{{Chapter: providers.Chapter{
+		URL:   "https://manga.test/chapter-1",
+		Title: "Chapter 1",
+		Label: "1",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.FailedChapters != 0 || summary.Chapters != 1 || summary.Images != 7 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if _, err := os.Stat(filepath.Join(output, "1_chapter_1.cbz")); err != nil {
+		t.Fatal(err)
 	}
 }
 

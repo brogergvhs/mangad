@@ -3,8 +3,10 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/browserfetch"
 
 	"gopkg.in/yaml.v3"
@@ -32,13 +34,20 @@ type Config struct {
 
 	SkipBroken bool `yaml:"skip_broken"`
 
-	BrowserSolver BrowserSolverConfig `yaml:"browser_solver"`
-	CookieDBPath  string              `yaml:"-"`
+	BrowserSolver   BrowserSolverConfig   `yaml:"browser_solver"`
+	BrowserDownload BrowserDownloadConfig `yaml:"browser_downloader"`
+	CookieDBPath    string                `yaml:"-"`
 }
 
 type BrowserSolverConfig struct {
 	Enabled        bool   `yaml:"enabled"`
 	Provider       string `yaml:"provider"`
+	Endpoint       string `yaml:"endpoint"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"`
+}
+
+type BrowserDownloadConfig struct {
+	Enabled        bool   `yaml:"enabled"`
 	Endpoint       string `yaml:"endpoint"`
 	TimeoutSeconds int    `yaml:"timeout_seconds"`
 }
@@ -62,6 +71,7 @@ type Options struct {
 	UserAgent           string
 	SkipBroken          bool
 	BrowserSolver       BrowserSolverConfig
+	BrowserDownload     BrowserDownloadConfig
 }
 
 func DefaultConfig() *Config {
@@ -88,6 +98,11 @@ func DefaultConfig() *Config {
 			Provider:       browserfetch.ProviderFlareSolverr,
 			Endpoint:       browserfetch.DefaultFlareSolverrEndpoint,
 			TimeoutSeconds: 60,
+		},
+		BrowserDownload: BrowserDownloadConfig{
+			Enabled:        false,
+			Endpoint:       browserdownload.DefaultEndpoint,
+			TimeoutSeconds: 180,
 		},
 	}
 }
@@ -155,6 +170,19 @@ func mergeConfig(c *Config, o Options) {
 	if env := strings.TrimSpace(os.Getenv("MANGAD_DOWNLOAD_DIR")); env != "" {
 		c.DownloadDir = env
 	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_DOWNLOADER_ENABLED")); env != "" {
+		if enabled, err := strconv.ParseBool(env); err == nil {
+			c.BrowserDownload.Enabled = enabled
+		}
+	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_DOWNLOADER_ENDPOINT")); env != "" {
+		c.BrowserDownload.Endpoint = env
+	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS")); env != "" {
+		if seconds, err := strconv.Atoi(env); err == nil {
+			c.BrowserDownload.TimeoutSeconds = seconds
+		}
+	}
 	if o.ImageWorkers != 0 {
 		c.ImageWorkers = o.ImageWorkers
 	}
@@ -209,6 +237,15 @@ func mergeConfig(c *Config, o Options) {
 	if o.BrowserSolver.TimeoutSeconds != 0 {
 		c.BrowserSolver.TimeoutSeconds = o.BrowserSolver.TimeoutSeconds
 	}
+	if o.BrowserDownload.Enabled {
+		c.BrowserDownload.Enabled = true
+	}
+	if o.BrowserDownload.Endpoint != "" {
+		c.BrowserDownload.Endpoint = o.BrowserDownload.Endpoint
+	}
+	if o.BrowserDownload.TimeoutSeconds != 0 {
+		c.BrowserDownload.TimeoutSeconds = o.BrowserDownload.TimeoutSeconds
+	}
 }
 
 func normalizeDefaults(c *Config) {
@@ -232,6 +269,12 @@ func normalizeDefaults(c *Config) {
 	}
 	if c.BrowserSolver.TimeoutSeconds == 0 {
 		c.BrowserSolver.TimeoutSeconds = 60
+	}
+	if c.BrowserDownload.Endpoint == "" {
+		c.BrowserDownload.Endpoint = browserdownload.DefaultEndpoint
+	}
+	if c.BrowserDownload.TimeoutSeconds == 0 {
+		c.BrowserDownload.TimeoutSeconds = 180
 	}
 }
 
@@ -282,5 +325,8 @@ func (c *Config) Print() {
 	}
 	if c.BrowserSolver.Enabled {
 		fmt.Printf(" -browser_solver: %s %s timeout=%ds\n", c.BrowserSolver.Provider, c.BrowserSolver.Endpoint, c.BrowserSolver.TimeoutSeconds)
+	}
+	if c.BrowserDownload.Enabled {
+		fmt.Printf(" -browser_downloader: %s timeout=%ds\n", c.BrowserDownload.Endpoint, c.BrowserDownload.TimeoutSeconds)
 	}
 }

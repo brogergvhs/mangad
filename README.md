@@ -173,6 +173,50 @@ browser_solver.timeout_seconds
 
 `GET /api/solver/health` checks the configured FlareSolverr endpoint.
 
+Browser downloader fallback
+-----
+
+Some sites allow the chapter page to load in a browser, but block direct image HTTP downloads from the app. MangaD can call a separate Selenium-based browser worker as a fallback after normal image downloading fails:
+
+```yaml
+browser_downloader:
+  enabled: true
+  endpoint: http://localhost:8192
+  timeout_seconds: 180
+```
+
+The worker opens the chapter URL in Chrome through Selenium, scrolls the page, captures image response bodies from Chrome DevTools network events, and returns a CBZ to MangaD.
+
+Docker Compose example
+-----
+
+`docker-compose.example.yml` starts:
+
+- `mangad`
+- `flaresolverr`
+- `selenium`
+- `browser-worker`
+
+The example uses `selenium/standalone-chromium` because `selenium/standalone-chrome` is not available for every arm64 platform.
+
+```sh
+docker compose -f docker-compose.example.yml up --build
+```
+
+The example stores config, database, and downloads in Docker volumes. It enables the browser downloader through environment variables:
+
+```text
+MANGAD_BROWSER_DOWNLOADER_ENABLED=true
+MANGAD_BROWSER_DOWNLOADER_ENDPOINT=http://browser-worker:8192
+MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS=180
+```
+
+The `mangad` image is distroless and does not include shell tools. Use the optional toolbox service to inspect files in the shared volumes:
+
+```sh
+docker compose -f docker-compose.example.yml run --rm tools ls -lah /downloads
+```
+
 Contributing
 ---
 

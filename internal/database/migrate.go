@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sources (
 	allowed_extensions_json TEXT NOT NULL DEFAULT '[]',
 	min_chapters INTEGER NOT NULL DEFAULT 0,
 	requires_browser_solver INTEGER NOT NULL DEFAULT 0,
+	requires_browser_downloader INTEGER NOT NULL DEFAULT 0,
 	enabled INTEGER NOT NULL DEFAULT 1,
 	profile_version TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT 'unknown',
@@ -167,6 +168,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, err = tx.ExecContext(ctx, initialSchema); err != nil {
 		return fmt.Errorf("apply migration %d: %w", initialSchemaVersion, err)
 	}
+	if err = ensureColumn(ctx, tx, "sources", "requires_browser_downloader", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("migrate sources.requires_browser_downloader: %w", err)
+	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration: %w", err)
 	}
@@ -198,6 +202,43 @@ func recreateObsoleteSources(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("recreate sources table: %w", err)
 	}
 	return nil
+}
+
+func ensureColumn(ctx context.Context, tx *sql.Tx, table, column, def string) error {
+	ok, _, err := txHasColumn(ctx, tx, table, column)
+	if err != nil || ok {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, def))
+	return err
+}
+
+func txHasColumn(ctx context.Context, tx *sql.Tx, table, column string) (bool, bool, error) {
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return false, false, err
+	}
+	defer rows.Close()
+
+	var exists bool
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return false, false, err
+		}
+		exists = true
+		if name == column {
+			return true, true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, false, err
+	}
+	return false, exists, nil
 }
 
 func tableHasColumn(ctx context.Context, db *sql.DB, table, column string) (bool, bool, error) {

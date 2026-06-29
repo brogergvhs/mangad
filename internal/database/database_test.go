@@ -27,6 +27,13 @@ func TestOpenAndMigrate(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("schema migration count = %d, want 1", count)
 	}
+	ok, exists, err := tableHasColumn(ctx, db, "sources", "requires_browser_downloader")
+	if err != nil {
+		t.Fatalf("tableHasColumn() error = %v", err)
+	}
+	if !exists || !ok {
+		t.Fatalf("sources.requires_browser_downloader exists=%t ok=%t", exists, ok)
+	}
 }
 
 func TestMigrateRecreatesObsoleteSourcesTable(t *testing.T) {

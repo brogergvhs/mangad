@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/config"
@@ -374,6 +375,9 @@ func (s *DownloadService) downloadChapter(
 
 	files, bytes, err := dl.DownloadImagesConcurrently(ctx, images, tmpFolder, ch.URL, max(1, s.cfg.ImageWorkers), handle)
 	if err != nil {
+		if s.cfg.BrowserDownload.Enabled {
+			return s.downloadChapterWithBrowser(ctx, ch, cbzOut, tmpFolder, err)
+		}
 		return ChapterDownloadResult{}, err
 	}
 
@@ -387,6 +391,31 @@ func (s *DownloadService) downloadChapter(
 
 	handle.MarkDone()
 	return ChapterDownloadResult{Chapter: ch, OutputFile: cbzOut, Images: len(files), Bytes: bytes}, nil
+}
+
+func (s *DownloadService) downloadChapterWithBrowser(
+	ctx context.Context,
+	ch chapters.Chapter,
+	cbzOut string,
+	tmpFolder string,
+	cause error,
+) (ChapterDownloadResult, error) {
+	if s.log != nil {
+		s.log.Debugf("Chapter %s image download failed, trying browser downloader: %v\n", ch.Label, cause)
+	}
+	timeout := time.Duration(s.cfg.BrowserDownload.TimeoutSeconds) * time.Second
+	client := browserdownload.New(s.cfg.BrowserDownload.Endpoint, timeout, nil)
+	result, err := client.DownloadCBZ(ctx, browserdownload.Request{
+		ChapterURL:        ch.URL,
+		AllowedExtensions: s.cfg.AllowExt,
+	}, cbzOut)
+	if err != nil {
+		return ChapterDownloadResult{}, fmt.Errorf("%w; browser downloader fallback failed: %v", cause, err)
+	}
+	if !s.cfg.KeepFolders {
+		util.CleanupFolder(tmpFolder)
+	}
+	return ChapterDownloadResult{Chapter: ch, OutputFile: cbzOut, Images: result.Images, Bytes: result.Bytes}, nil
 }
 
 func (s *DownloadService) progressHandle(prefix string) ProgressHandle {

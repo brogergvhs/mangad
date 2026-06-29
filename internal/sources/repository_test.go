@@ -14,14 +14,15 @@ func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
 	ctx, repo, closeDB := testRepository(t)
 	defer closeDB()
 	profile := Profile{
-		ID:                "Example",
-		Name:              "Example",
-		Domains:           []string{"example.test", "example.test"},
-		BaseURL:           "https://example.test/",
-		SampleMangaURL:    "https://example.test/manga/demo/",
-		AllowedExtensions: []string{"webp", "jpg"},
-		MinChapters:       3,
-		Enabled:           true,
+		ID:                      "Example",
+		Name:                    "Example",
+		Domains:                 []string{"example.test", "example.test"},
+		BaseURL:                 "https://example.test/",
+		SampleMangaURL:          "https://example.test/manga/demo/",
+		AllowedExtensions:       []string{"webp", "jpg"},
+		MinChapters:             3,
+		RequiresBrowserDownload: true,
+		Enabled:                 true,
 	}
 	if err := repo.Sync(ctx, []Profile{profile}, OriginLocal); err != nil {
 		t.Fatalf("Sync() error = %v", err)
@@ -42,6 +43,9 @@ func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
 	}
 	if len(got.ImageExtensions) != 1 || got.ImageExtensions[0] != "webp" {
 		t.Fatalf("image extensions = %#v", got.ImageExtensions)
+	}
+	if !got.RequiresBrowserDownload {
+		t.Fatalf("RequiresBrowserDownload = false")
 	}
 
 	all, err := repo.List(ctx)
@@ -128,6 +132,9 @@ func TestBuiltInProfiles(t *testing.T) {
 	for _, profile := range got {
 		if profile.ID == "" || profile.BaseURL == "" || profile.SampleMangaURL == "" {
 			t.Fatalf("incomplete profile = %#v", profile)
+		}
+		if profile.ID == "zazamanga" && (!profile.RequiresBrowserDownload || profile.MinChapters != 42) {
+			t.Fatalf("zazamanga profile = %#v", profile)
 		}
 	}
 }

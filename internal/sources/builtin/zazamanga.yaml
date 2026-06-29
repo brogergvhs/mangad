@@ -1,0 +1,17 @@
+id: zazamanga
+name: ZazaManga
+domains:
+  - zazamanga.com
+  - www.zazamanga.com
+  - img-r1.2xstorage.com
+  - img-r2.2xstorage.com
+base_url: https://www.zazamanga.com/
+sample_manga_url: https://www.zazamanga.com/manga/the-demonic-supreme-sword
+scraper: generic
+allowed_extensions:
+  - webp
+min_chapters: 42
+requires_browser_solver: false
+requires_browser_downloader: true
+enabled: true
+version: "2026-06-29"

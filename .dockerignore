@@ -1,0 +1,9 @@
+.git
+bin
+dist
+.cache
+*.db
+*_tmp
+*.cbz
+__pycache__
+*.pyc

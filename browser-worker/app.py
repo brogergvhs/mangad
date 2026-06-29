@@ -1,0 +1,247 @@
+import base64
+import io
+import json
+import os
+import posixpath
+import time
+import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+
+
+IMAGE_MIME = ("image/jpeg", "image/png", "image/webp", "image/gif", "image/avif")
+SKIP_TOKENS = ("/thumb/", "/banner/", "/avatar/", "/logo/", "/background", "fbshare", "share")
+
+
+def env(name, default):
+    return os.environ.get(name, default)
+
+
+def int_env(name, default):
+    try:
+        return int(env(name, str(default)))
+    except ValueError:
+        return default
+
+
+def image_ext(url):
+    path = urlparse(url).path.lower()
+    ext = posixpath.splitext(path)[1].lstrip(".")
+    return ext
+
+
+def keep_image(url, mime, allowed):
+    low = url.lower()
+    if any(token in low for token in SKIP_TOKENS):
+        return False
+    ext = image_ext(url)
+    if allowed and ext and ext not in allowed:
+        return False
+    return mime.startswith(IMAGE_MIME) or ext in allowed
+
+
+def safe_ext(url, mime):
+    ext = image_ext(url)
+    if ext:
+        return ext
+    if mime == "image/png":
+        return "png"
+    if mime == "image/webp":
+        return "webp"
+    if mime == "image/gif":
+        return "gif"
+    if mime == "image/avif":
+        return "avif"
+    return "jpg"
+
+
+def driver_options():
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+    return options
+
+
+def open_driver():
+    return webdriver.Remote(command_executor=env("SELENIUM_REMOTE_URL", "http://selenium:4444/wd/hub"), options=driver_options())
+
+
+def cdp(driver, cmd, params=None):
+    params = params or {}
+    if hasattr(driver, "execute_cdp_cmd"):
+        return driver.execute_cdp_cmd(cmd, params)
+    return driver.execute("executeCdpCommand", {"cmd": cmd, "params": params}).get("value", {})
+
+
+def collect_new_images(driver, seen, allowed):
+    images = []
+    for entry in driver.get_log("performance"):
+        try:
+            msg = json.loads(entry["message"])["message"]
+        except (KeyError, json.JSONDecodeError):
+            continue
+        if msg.get("method") != "Network.responseReceived":
+            continue
+        params = msg.get("params", {})
+        response = params.get("response", {})
+        url = response.get("url", "")
+        mime = response.get("mimeType", "")
+        request_id = params.get("requestId")
+        if not request_id or url in seen or not keep_image(url, mime, allowed):
+            continue
+        try:
+            body = cdp(driver, "Network.getResponseBody", {"requestId": request_id})
+        except Exception:
+            continue
+        data = body.get("body", "")
+        if body.get("base64Encoded"):
+            data = base64.b64decode(data)
+        else:
+            data = data.encode()
+        if not data:
+            continue
+        seen.add(url)
+        images.append((url, mime, data))
+    return images
+
+
+def dom_image_urls(driver, allowed):
+    nodes = driver.execute_script(
+        """
+        return Array.from(document.images).map((img, index) => {
+            const rect = img.getBoundingClientRect();
+            const attrs = ["currentSrc", "src", "data-src", "data-lazy-src", "data-original"];
+            let url = "";
+            for (const name of attrs) {
+                url = name === "currentSrc" ? img.currentSrc : (name === "src" ? img.src : img.getAttribute(name));
+                if (url) break;
+            }
+            return {
+                url,
+                index,
+                top: rect.top + window.scrollY,
+                left: rect.left + window.scrollX,
+                width: img.naturalWidth || rect.width,
+                height: img.naturalHeight || rect.height
+            };
+        });
+        """
+    )
+    out = []
+    seen = set()
+    for node in sorted(nodes, key=lambda n: (n.get("top", 0), n.get("left", 0), n.get("index", 0))):
+        url = node.get("url", "")
+        if url in seen or not keep_image(url, "", allowed):
+            continue
+        seen.add(url)
+        out.append(url)
+    return out
+
+
+def order_images(driver, images, allowed):
+    by_url = {url: (url, mime, data) for url, mime, data in images}
+    ordered = []
+    for url in dom_image_urls(driver, allowed):
+        if url in by_url:
+            ordered.append(by_url[url])
+    if ordered:
+        return ordered
+    return images
+
+
+def scroll_and_capture(chapter_url, allowed):
+    driver = open_driver()
+    try:
+        cdp(driver, "Network.enable")
+        driver.get(chapter_url)
+        seen = set()
+        images = []
+        stable = 0
+        last_count = 0
+        max_scrolls = int_env("BROWSER_WORKER_MAX_SCROLLS", 80)
+        idle_rounds = int_env("BROWSER_WORKER_IDLE_ROUNDS", 4)
+        pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
+
+        for _ in range(max_scrolls):
+            time.sleep(pause)
+            images.extend(collect_new_images(driver, seen, allowed))
+            driver.execute_script("window.scrollBy(0, Math.max(window.innerHeight, 900));")
+            if len(images) == last_count:
+                stable += 1
+            else:
+                stable = 0
+                last_count = len(images)
+            at_bottom = driver.execute_script("return window.innerHeight + window.scrollY >= document.body.scrollHeight - 4")
+            if at_bottom and stable >= idle_rounds:
+                break
+        time.sleep(pause)
+        images.extend(collect_new_images(driver, seen, allowed))
+        return order_images(driver, images, allowed)
+    finally:
+        driver.quit()
+
+
+def make_cbz(images):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        width = max(3, len(str(len(images))))
+        for i, (url, mime, data) in enumerate(images, 1):
+            zf.writestr(f"page_{i:0{width}d}.{safe_ext(url, mime)}", data)
+    return buf.getvalue()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        print(fmt % args, flush=True)
+
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
+        self.send_error(404)
+
+    def do_POST(self):
+        if self.path != "/download":
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length))
+            chapter_url = payload["chapter_url"]
+            allowed = {ext.lower().lstrip(".") for ext in payload.get("allowed_extensions", [])}
+            images = scroll_and_capture(chapter_url, allowed)
+            if not images:
+                raise RuntimeError("no browser-loaded images captured")
+            cbz = make_cbz(images)
+        except Exception as exc:
+            data = json.dumps({"error": str(exc)}).encode()
+            self.send_response(502)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.comicbook+zip")
+        self.send_header("Content-Length", str(len(cbz)))
+        self.send_header("X-Mangad-Images", str(len(images)))
+        self.end_headers()
+        self.wfile.write(cbz)
+
+
+def main():
+    host, port = env("BROWSER_WORKER_ADDR", "0.0.0.0:8192").rsplit(":", 1)
+    ThreadingHTTPServer((host, int(port)), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

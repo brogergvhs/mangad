@@ -110,6 +110,9 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc *
 			cfgCopy.BrowserSolver.TimeoutSeconds = 60
 		}
 	}
+	if src.RequiresBrowserDownload {
+		cfgCopy.BrowserDownload.Enabled = true
+	}
 
 	downloadSvc, err := NewDefaultDownloadService(&cfgCopy, logSvc, nil)
 	if err != nil {

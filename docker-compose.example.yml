@@ -1,0 +1,68 @@
+services:
+  mangad:
+    build: .
+    command:
+      - serve
+      - --addr
+      - :8080
+      - --db
+      - /data/mangad.db
+    ports:
+      - "8080:8080"
+    environment:
+      XDG_CONFIG_HOME: /config
+      MANGAD_DOWNLOAD_DIR: /downloads
+      MANGAD_BROWSER_DOWNLOADER_ENABLED: "true"
+      MANGAD_BROWSER_DOWNLOADER_ENDPOINT: http://browser-worker:8192
+      MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS: "180"
+    volumes:
+      - mangad-config:/config
+      - mangad-data:/data
+      - mangad-downloads:/downloads
+    depends_on:
+      browser-worker:
+        condition: service_healthy
+      flaresolverr:
+        condition: service_started
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      LOG_LEVEL: info
+    ports:
+      - "8191:8191"
+
+  selenium:
+    image: selenium/standalone-chromium:latest
+    shm_size: 2gb
+    ports:
+      - "4444:4444"
+
+  browser-worker:
+    build: ./browser-worker
+    environment:
+      SELENIUM_REMOTE_URL: http://selenium:4444/wd/hub
+      BROWSER_WORKER_ADDR: 0.0.0.0:8192
+    ports:
+      - "8192:8192"
+    depends_on:
+      selenium:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8192/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  tools:
+    image: alpine:latest
+    profiles: ["tools"]
+    volumes:
+      - mangad-config:/config
+      - mangad-data:/data
+      - mangad-downloads:/downloads
+
+volumes:
+  mangad-config:
+  mangad-data:
+  mangad-downloads:

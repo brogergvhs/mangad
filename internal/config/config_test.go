@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/browserfetch"
 )
 
@@ -43,5 +44,32 @@ func TestBrowserSolverDefaults(t *testing.T) {
 	}
 	if cfg.BrowserSolver.Endpoint == "" || cfg.BrowserSolver.TimeoutSeconds != 60 {
 		t.Fatalf("BrowserSolver = %#v", cfg.BrowserSolver)
+	}
+}
+
+func TestBrowserDownloaderDefaults(t *testing.T) {
+	cfg, _, err := LoadMerged(Options{IgnoreConfig: true})
+	if err != nil {
+		t.Fatalf("LoadMerged() error = %v", err)
+	}
+	if cfg.BrowserDownload.Enabled {
+		t.Fatal("BrowserDownload.Enabled = true, want false")
+	}
+	if cfg.BrowserDownload.Endpoint != browserdownload.DefaultEndpoint || cfg.BrowserDownload.TimeoutSeconds != 180 {
+		t.Fatalf("BrowserDownload = %#v", cfg.BrowserDownload)
+	}
+}
+
+func TestBrowserDownloaderEnvOverride(t *testing.T) {
+	t.Setenv("MANGAD_BROWSER_DOWNLOADER_ENABLED", "true")
+	t.Setenv("MANGAD_BROWSER_DOWNLOADER_ENDPOINT", "http://browser-worker:8192")
+	t.Setenv("MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS", "90")
+
+	cfg, _, err := LoadMerged(Options{IgnoreConfig: true})
+	if err != nil {
+		t.Fatalf("LoadMerged() error = %v", err)
+	}
+	if !cfg.BrowserDownload.Enabled || cfg.BrowserDownload.Endpoint != "http://browser-worker:8192" || cfg.BrowserDownload.TimeoutSeconds != 90 {
+		t.Fatalf("BrowserDownload = %#v", cfg.BrowserDownload)
 	}
 }

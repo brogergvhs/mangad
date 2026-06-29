@@ -47,10 +47,11 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				allowed_extensions_json,
 				min_chapters,
 				requires_browser_solver,
+				requires_browser_downloader,
 				enabled,
 				profile_version,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 			ON CONFLICT(id) DO UPDATE SET
 				origin = excluded.origin,
 				name = excluded.name,
@@ -61,11 +62,12 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				allowed_extensions_json = excluded.allowed_extensions_json,
 				min_chapters = excluded.min_chapters,
 				requires_browser_solver = excluded.requires_browser_solver,
+				requires_browser_downloader = excluded.requires_browser_downloader,
 				enabled = excluded.enabled,
 				profile_version = excluded.profile_version,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE sources.origin != 'local' OR excluded.origin = 'local'
-		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.Scraper, extensions, p.MinChapters, boolToInt(p.RequiresBrowserSolver), boolToInt(p.Enabled), p.Version)
+		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.Scraper, extensions, p.MinChapters, boolToInt(p.RequiresBrowserSolver), boolToInt(p.RequiresBrowserDownload), boolToInt(p.Enabled), p.Version)
 		if err != nil {
 			return fmt.Errorf("sync source %s: %w", p.ID, err)
 		}
@@ -169,6 +171,7 @@ func sourceSelect() string {
 			allowed_extensions_json,
 			min_chapters,
 			requires_browser_solver,
+			requires_browser_downloader,
 			enabled,
 			profile_version,
 			status,
@@ -185,7 +188,7 @@ func scanSource(scanner interface {
 }) (Source, error) {
 	var src Source
 	var domainsJSON, extensionsJSON, imageExtensionsJSON string
-	var requiresBrowserSolver, enabled int
+	var requiresBrowserSolver, requiresBrowserDownloader, enabled int
 	err := scanner.Scan(
 		&src.ID,
 		&src.Origin,
@@ -197,6 +200,7 @@ func scanSource(scanner interface {
 		&extensionsJSON,
 		&src.MinChapters,
 		&requiresBrowserSolver,
+		&requiresBrowserDownloader,
 		&enabled,
 		&src.Version,
 		&src.Status,
@@ -219,6 +223,7 @@ func scanSource(scanner interface {
 		return Source{}, fmt.Errorf("decode source image extensions: %w", err)
 	}
 	src.RequiresBrowserSolver = requiresBrowserSolver != 0
+	src.RequiresBrowserDownload = requiresBrowserDownloader != 0
 	src.Enabled = enabled != 0
 	src.Origin = cleanOrigin(src.Origin)
 	return src, nil
