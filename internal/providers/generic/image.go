@@ -100,7 +100,7 @@ func isNonPageImage(raw string) bool {
 		p = u.Path
 	}
 	p = strings.ToLower(p)
-	for _, token := range []string{"/ads/", "/avatar/", "/banner/", "/covers/", "/thumb/", "/media/images/", "/image/background"} {
+	for _, token := range []string{"/ads/", "/avatar/", "/banner/", "/cover/", "/covers/", "/thumb/", "/media/images/", "/image/background", "/static/images/"} {
 		if strings.Contains(p, token) {
 			return true
 		}

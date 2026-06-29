@@ -163,6 +163,7 @@ def scroll_and_capture(chapter_url, allowed):
     try:
         cdp(driver, "Network.enable")
         driver.get(chapter_url)
+        check_blocked_page(driver)
         seen = set()
         images = []
         stable = 0
@@ -194,6 +195,7 @@ def rendered_html(page_url):
     driver = open_driver()
     try:
         driver.get(page_url)
+        check_blocked_page(driver)
         pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
         wait_for_render(driver, page_url, pause)
         if not looks_like_reader_url(page_url) and has_chapter_links(driver):
@@ -201,6 +203,12 @@ def rendered_html(page_url):
         return rendered_images(driver, pause)
     finally:
         driver.quit()
+
+
+def check_blocked_page(driver):
+    text = (driver.title + "\n" + driver.execute_script("return document.body ? document.body.innerText : ''")).lower()
+    if "cloudflare" in text and ("sorry, you have been blocked" in text or "attention required" in text or "just a moment" in text):
+        raise RuntimeError("browser fetch blocked by Cloudflare")
 
 
 def looks_like_reader_url(page_url):

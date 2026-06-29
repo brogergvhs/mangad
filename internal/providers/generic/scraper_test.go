@@ -31,6 +31,17 @@ func TestFetchBodyCloudflareWithoutBrowserSolver(t *testing.T) {
 	}
 }
 
+func TestFetchBodyCloudflareBlockBodyUsesBrowserSolver(t *testing.T) {
+	scraper := NewScraper(statusClient(http.StatusOK, "Attention Required! | Cloudflare\nSorry, you have been blocked"), ui.NewLogger(false), nil, false, fakeBrowserFetcher("<html>solved</html>"))
+	body, err := scraper.fetchBody(context.Background(), "http://manga.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != "<html>solved</html>" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
 func TestFetchBodyHTTPErrorUsesBrowserSolver(t *testing.T) {
 	scraper := NewScraper(statusClient(http.StatusInternalServerError, "500 Internal Server Error"), ui.NewLogger(false), nil, false, fakeBrowserFetcher("<html>solved</html>"))
 	body, err := scraper.fetchBody(context.Background(), "http://manga.test")
@@ -189,6 +200,46 @@ func TestGetImagesUsesBrowserRenderedHTMLWhenStaticHasOnlyChromeAssets(t *testin
 	}
 }
 
+func TestGetImagesFetchesHTMXImageFragment(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `
+			<html><body>
+				<img src="/static/images/brand.png">
+				<meta property="og:image" content="https://temp.test/cover/fallback/title.jpg">
+				<section hx-get="/chapters/abc/images?is_prev=False&amp;current_page=1" hx-include="[name='reading_style']"></section>
+			</body></html>
+		`
+		if req.URL.Path == "/chapters/abc/images" {
+			if req.Header.Get("HX-Request") != "true" {
+				t.Fatalf("HX-Request header = %q", req.Header.Get("HX-Request"))
+			}
+			if req.URL.Query().Get("reading_style") != "long_strip" {
+				t.Fatalf("reading_style = %q", req.URL.Query().Get("reading_style"))
+			}
+			body = `
+				<img src="https://cdn.test/chapter/001.png">
+				<img src="https://cdn.test/chapter/002.png">
+			`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), []string{"png", "jpg"}, false, nil)
+	images, err := scraper.GetImages(context.Background(), "https://weebcentral.com/chapters/abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://cdn.test/chapter/001.png", "https://cdn.test/chapter/002.png"}
+	if strings.Join(images, ",") != strings.Join(want, ",") {
+		t.Fatalf("images = %#v", images)
+	}
+}
+
 func TestGetChaptersSkipsOtherSeriesLinks(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -272,6 +323,74 @@ func TestGetChaptersAllowsSharedSeriesIDChapterPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(chapters) != 1 || chapters[0].Label != "265" {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+}
+
+func TestGetChaptersAllowsEpisodeTextWithCentralChapterPath(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body: io.NopCloser(bytes.NewBufferString(`
+				<html><body>
+					<a href="/chapters/01KVQMY1RKZSC02446EPA774WA">
+						<span>Episode 262</span>
+					</a>
+					<a href="/chapters/not-a-chapter">Discussion</a>
+				</body></html>
+			`)),
+			Header: http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
+	chapters, err := scraper.GetChapters(context.Background(), "https://weebcentral.com/series/01J76XYDMTRNJZJH9G1ADMPJQC/The-Great-Mage-Returns-After-4000-Years")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chapters) != 1 {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+	if chapters[0].Label != "262" || chapters[0].Title != "Episode 262" {
+		t.Fatalf("chapters = %#v", chapters)
+	}
+}
+
+func TestGetChaptersExpandsGappedChapterList(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `
+			<html><body>
+				<a href="/chapters/one"><span>Episode 1</span></a>
+				<a href="/chapters/two"><span>Episode 2</span></a>
+				<a href="/chapters/three"><span>Episode 3</span></a>
+				<a href="/chapters/last"><span>Episode 20</span></a>
+				<button hx-get="/series/title/full-chapter-list" hx-target="#chapter-list">Show All Chapters</button>
+			</body></html>
+		`
+		if req.URL.Path == "/series/title/full-chapter-list" {
+			body = `
+				<a href="/chapters/one"><span>Episode 1</span></a>
+				<a href="/chapters/two"><span>Episode 2</span></a>
+				<a href="/chapters/three"><span>Episode 3</span></a>
+				<a href="/chapters/four"><span>Episode 4</span></a>
+				<a href="/chapters/last"><span>Episode 20</span></a>
+			`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
+	chapters, err := scraper.GetChapters(context.Background(), "https://weebcentral.com/series/title")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chapters) != 5 || chapters[3].Label != "4" {
 		t.Fatalf("chapters = %#v", chapters)
 	}
 }

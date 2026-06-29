@@ -1,0 +1,11 @@
+id: weebcentral
+name: WeebCentral
+base_url: https://weebcentral.com
+sample_manga_url: https://weebcentral.com/series/01J76XYDMTRNJZJH9G1ADMPJQC/The-Great-Mage-Returns-After-4000-Years
+scraper: generic
+allowed_extensions:
+  - png
+min_chapters: 263
+requires_browser_solver: false
+requires_browser_downloader: false
+enabled: true

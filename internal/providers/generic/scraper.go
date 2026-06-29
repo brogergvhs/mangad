@@ -46,8 +46,8 @@ func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool,
 }
 
 var (
-	chapRe          = regexp.MustCompile(`(?i)(?:vol(?:ume)?[_\-\s]*\d+[_\-\s]*)?(?:chapter|ch)[_\-\s]*0*([0-9]+)(?:[_\-\s]*([.\-])[_\-\s]*([0-9]+))?`)
-	chapterDash     = regexp.MustCompile(`chapter[_\-]?0*([0-9]+)[_\-]?([0-9]+)?`)
+	chapRe          = regexp.MustCompile(`(?i)(?:vol(?:ume)?[_\-\s]*\d+[_\-\s]*)?(?:chapter|ch|episode|ep)[._\-\s]*0*([0-9]+)(?:[_\-\s]*([.\-])[_\-\s]*([0-9]+))?`)
+	chapterDash     = regexp.MustCompile(`(?:chapter|episode)[._\-]?0*([0-9]+)[_\-]?([0-9]+)?`)
 	reLikelyChapter = regexp.MustCompile(`(?i)(?:^|[-_/])(?:c|ch|chapter)[-_]?\d+`)
 
 	batoSimple  = regexp.MustCompile(`(?:^|[/\-_])c[h]?[_\-]?(\d+(?:\.\d+)?)`)
@@ -66,6 +66,37 @@ func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Doc
 		return nil, "", err
 	}
 
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
+	return doc, body, err
+}
+
+func (s *Scraper) fetchHTMXDOMBody(ctx context.Context, target, referer string) (*goquery.Document, string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("Referer", referer)
+	resp, err := util.DoWithRetry(s.client, req, 3, 500*time.Millisecond)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			s.log.Debugf("Warning: failed to close response body: %v\n", cerr)
+		}
+	}()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	body := string(data)
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if isCloudflareBlock(body) {
+		return nil, "", fmt.Errorf("cloudflare challenge blocked")
+	}
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
 	return doc, body, err
 }
@@ -104,7 +135,7 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 	}
 	body := string(data)
 
-	if resp.StatusCode == http.StatusForbidden || strings.Contains(body, "Just a moment") {
+	if resp.StatusCode == http.StatusForbidden || isCloudflareBlock(body) {
 		s.log.Infof("Cloudflare protection detected for %s.\n", target)
 		if s.browser != nil {
 			return s.fetchViaBrowser(ctx, target)
@@ -114,6 +145,14 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 	}
 
 	return body, nil
+}
+
+func isCloudflareBlock(body string) bool {
+	body = strings.ToLower(body)
+	return strings.Contains(body, "cloudflare") &&
+		(strings.Contains(body, "just a moment") ||
+			strings.Contains(body, "attention required") ||
+			strings.Contains(body, "sorry, you have been blocked"))
 }
 
 func (s *Scraper) fetchViaBrowser(ctx context.Context, target string) (string, error) {
@@ -169,7 +208,7 @@ func parseFromBaseLike(href string) (int, string, bool) {
 
 func parseChapterLabel(href, title string) (int, string, int, string, bool) {
 	h := strings.ToLower(href)
-	t := strings.ToLower(title)
+	t := strings.ToLower(strings.TrimSpace(title))
 
 	if n, label, ok := parseFromBaseLike(h); ok {
 		return n, "", 0, label, true
@@ -204,9 +243,11 @@ func parseChapterLabel(href, title string) (int, string, int, string, bool) {
 func hasChapterKeywords(h, t string) bool {
 	return strings.Contains(h, "ch") ||
 		strings.Contains(h, "chapter") ||
+		strings.Contains(h, "episode") ||
 		strings.Contains(h, "vol") ||
 		strings.Contains(t, "ch") ||
 		strings.Contains(t, "chapter") ||
+		strings.Contains(t, "episode") ||
 		strings.Contains(t, "vol")
 }
 
@@ -299,9 +340,12 @@ func looksLikeChapterLink(href, title string) bool {
 		return true
 	}
 
-	t := strings.ToLower(title)
+	t := strings.ToLower(strings.TrimSpace(title))
 
-	return strings.HasPrefix(t, "ch ") || strings.HasPrefix(t, "chapter ")
+	return strings.HasPrefix(t, "ch ") ||
+		strings.HasPrefix(t, "chapter ") ||
+		strings.HasPrefix(t, "ep ") ||
+		strings.HasPrefix(t, "episode ")
 }
 
 func resolveURL(baseURL, href string) string {
@@ -330,6 +374,7 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 	}
 
 	out := scanChapterLinks(doc, pageURL, s.log)
+	out = s.expandChapterListIfGapped(ctx, pageURL, doc, out)
 	if len(out) == 0 && s.browser != nil {
 		s.log.Infof("No static chapter links found for %s; trying browser-rendered HTML.\n", pageURL)
 		body, err = s.fetchViaBrowser(ctx, pageURL)
@@ -341,12 +386,31 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 			return nil, err
 		}
 		out = scanChapterLinks(doc, pageURL, s.log)
+		out = s.expandChapterListIfGapped(ctx, pageURL, doc, out)
 	}
 	if len(out) == 0 && looksDynamicApp(body) {
 		return nil, fmt.Errorf("no static chapter links found; enable browser_downloader.enabled or browser_solver.enabled for JS-rendered chapter lists")
 	}
 
 	return out, nil
+}
+
+func (s *Scraper) expandChapterListIfGapped(ctx context.Context, pageURL string, doc *goquery.Document, chapters []providers.Chapter) []providers.Chapter {
+	if !hasDefinitiveChapterGap(chapters) {
+		return chapters
+	}
+	for _, u := range chapterExpansionURLs(doc, pageURL) {
+		s.log.Infof("Chapter gap detected; trying expanded chapter list %s.\n", u)
+		nextDoc, _, err := s.fetchDOMBody(ctx, u)
+		if err != nil {
+			s.log.Debugf("Skipping chapter expansion %s: %v\n", u, err)
+			continue
+		}
+		if expanded := mergeChapters(chapters, scanChapterLinks(nextDoc, pageURL, s.log)); len(expanded) > len(chapters) {
+			return expanded
+		}
+	}
+	return chapters
 }
 
 func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []providers.Chapter {
@@ -362,16 +426,16 @@ func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []p
 			return
 		}
 
-		if !sameSeriesChapterLink(pageURL, href) {
-			return
-		}
-
-		log.Debugf("Link looks like chapter link: %s\n", href)
-
 		n, t, sn, label, ok := parseChapterLabel(strings.TrimSpace(href), strings.TrimSpace(a.Text()))
 		if !ok {
 			return
 		}
+
+		if !sameSeriesChapterLink(pageURL, href, ok) {
+			return
+		}
+
+		log.Debugf("Link looks like chapter link: %s\n", href)
 		if seenLabel[label] {
 			return
 		}
@@ -414,12 +478,95 @@ func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []p
 	return out
 }
 
+func hasDefinitiveChapterGap(chapters []providers.Chapter) bool {
+	if len(chapters) < 3 {
+		return false
+	}
+	min, max := chapters[0].NumMain, chapters[0].NumMain
+	seen := map[int]bool{}
+	for _, ch := range chapters {
+		if ch.SuffixType != "" {
+			continue
+		}
+		seen[ch.NumMain] = true
+		if ch.NumMain < min {
+			min = ch.NumMain
+		}
+		if ch.NumMain > max {
+			max = ch.NumMain
+		}
+	}
+	if len(seen) < 3 {
+		return false
+	}
+	return max-min+1-len(seen) >= 10
+}
+
+func chapterExpansionURLs(doc *goquery.Document, pageURL string) []string {
+	var out []string
+	seen := map[string]bool{}
+	doc.Find("[hx-get],a[href]").Each(func(_ int, s *goquery.Selection) {
+		raw, _ := s.Attr("hx-get")
+		if raw == "" {
+			raw, _ = s.Attr("href")
+		}
+		signal := strings.ToLower(raw + " " + attr(s, "hx-target") + " " + s.Text())
+		if !strings.Contains(signal, "chapter") ||
+			!(strings.Contains(signal, "full") || strings.Contains(signal, "show all") || strings.Contains(signal, "load more") || strings.Contains(signal, "chapter-list")) {
+			return
+		}
+		u := resolveURL(pageURL, raw)
+		if !sameHost(pageURL, u) {
+			return
+		}
+		if !seen[u] {
+			seen[u] = true
+			out = append(out, u)
+		}
+	})
+	return out
+}
+
+func sameHost(a, b string) bool {
+	au, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	bu, err := url.Parse(b)
+	return err == nil && au.Host == bu.Host
+}
+
+func attr(s *goquery.Selection, name string) string {
+	v, _ := s.Attr(name)
+	return v
+}
+
+func mergeChapters(a, b []providers.Chapter) []providers.Chapter {
+	out := append([]providers.Chapter{}, a...)
+	seen := map[string]bool{}
+	for _, ch := range out {
+		seen[ch.Label] = true
+	}
+	for _, ch := range b {
+		if !seen[ch.Label] {
+			out = append(out, ch)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].NumMain != out[j].NumMain {
+			return out[i].NumMain < out[j].NumMain
+		}
+		return out[i].SuffixNum < out[j].SuffixNum
+	})
+	return out
+}
+
 func looksDynamicApp(body string) bool {
 	return strings.Contains(body, `id="app-root"`) || strings.Contains(body, `id='app-root'`) ||
 		strings.Contains(body, `id="initial-data"`) || strings.Contains(body, `id='initial-data'`)
 }
 
-func sameSeriesChapterLink(pageURL, href string) bool {
+func sameSeriesChapterLink(pageURL, href string, parsedChapter bool) bool {
 	base, err := url.Parse(pageURL)
 	if err != nil {
 		return false
@@ -440,10 +587,22 @@ func sameSeriesChapterLink(pageURL, href string) bool {
 	if sameSeriesID(baseParts, candidateParts) {
 		return true
 	}
+	if parsedChapter && candidateParts[0] == "chapters" && !hasNumericPathPart(baseParts) {
+		return true
+	}
 	if baseParts[0] != candidateParts[0] {
 		return false
 	}
 	return baseParts[1] == candidateParts[1]
+}
+
+func hasNumericPathPart(parts []string) bool {
+	for _, part := range parts {
+		if _, err := strconv.Atoi(part); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func sameSeriesID(baseParts, candidateParts []string) bool {
@@ -511,6 +670,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 		}
 		s.scanImages(ctx, col, nextDoc, nextBody, pageURL)
 	}
+	s.scanImageFragments(ctx, col, doc, chapterURL)
 
 	final := col.Finalize()
 	if len(final) == 0 && s.browser != nil && !usedBrowser {
@@ -532,6 +692,50 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	}
 
 	return final, nil
+}
+
+func (s *Scraper) scanImageFragments(ctx context.Context, col *imageCollector, doc *goquery.Document, chapterURL string) {
+	for _, u := range imageFragmentURLs(doc, chapterURL) {
+		s.log.Infof("Trying reader image fragment %s.\n", u)
+		nextDoc, nextBody, err := s.fetchHTMXDOMBody(ctx, u, chapterURL)
+		if err != nil {
+			s.log.Debugf("Skipping reader image fragment %s: %v\n", u, err)
+			continue
+		}
+		s.scanImages(ctx, col, nextDoc, nextBody, u)
+	}
+}
+
+func imageFragmentURLs(doc *goquery.Document, chapterURL string) []string {
+	var out []string
+	seen := map[string]bool{}
+	doc.Find("[hx-get]").Each(func(_ int, s *goquery.Selection) {
+		raw, _ := s.Attr("hx-get")
+		signal := strings.ToLower(raw + " " + attr(s, "hx-target") + " " + attr(s, "hx-include") + " " + s.Text())
+		if !strings.Contains(signal, "image") {
+			return
+		}
+		u := withDefaultQuery(resolveURL(chapterURL, raw), "reading_style", "long_strip")
+		if !sameHost(chapterURL, u) || seen[u] {
+			return
+		}
+		seen[u] = true
+		out = append(out, u)
+	})
+	return out
+}
+
+func withDefaultQuery(raw, key, value string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := u.Query()
+	if q.Get(key) == "" {
+		q.Set(key, value)
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
 }
 
 func (s *Scraper) scanImages(ctx context.Context, col *imageCollector, doc *goquery.Document, body, chapterURL string) {
