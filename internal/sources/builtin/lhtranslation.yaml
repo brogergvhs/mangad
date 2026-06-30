@@ -4,6 +4,7 @@ domains:
   - lhtranslation.net
 base_url: https://lhtranslation.net/
 sample_manga_url: https://lhtranslation.net/manga/isekai-nonbiri-nouka/
+search_url: https://lhtranslation.net/?s={query}&post_type=wp-manga
 scraper: generic
 allowed_extensions:
   - jpg

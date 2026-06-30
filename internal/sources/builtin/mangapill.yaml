@@ -5,6 +5,7 @@ domains:
   - cdn.readdetectiveconan.com
 base_url: https://mangapill.com/
 sample_manga_url: https://mangapill.com/manga/5281/sakamoto-days
+search_url: https://mangapill.com/search?q={query}&type=&status=
 scraper: generic
 allowed_extensions:
   - jpeg

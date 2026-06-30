@@ -5,6 +5,7 @@ domains:
   - cdn.asurascans.com
 base_url: https://asurascans.com/
 sample_manga_url: https://asurascans.com/comics/academys-genius-swordmaster-fc4c7eba
+search_url: https://asurascans.com/browse?search={query}
 scraper: generic
 allowed_extensions:
   - webp

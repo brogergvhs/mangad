@@ -183,6 +183,22 @@ func mergeConfig(c *Config, o Options) {
 			c.BrowserDownload.TimeoutSeconds = seconds
 		}
 	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_ENABLED")); env != "" {
+		if enabled, err := strconv.ParseBool(env); err == nil {
+			c.BrowserSolver.Enabled = enabled
+		}
+	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_PROVIDER")); env != "" {
+		c.BrowserSolver.Provider = env
+	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_ENDPOINT")); env != "" {
+		c.BrowserSolver.Endpoint = env
+	}
+	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_TIMEOUT_SECONDS")); env != "" {
+		if seconds, err := strconv.Atoi(env); err == nil {
+			c.BrowserSolver.TimeoutSeconds = seconds
+		}
+	}
 	if o.ImageWorkers != 0 {
 		c.ImageWorkers = o.ImageWorkers
 	}

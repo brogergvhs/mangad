@@ -40,6 +40,7 @@ func TestOpenAndMigrate(t *testing.T) {
 	}{
 		{"catalog_manga", "wanted"},
 		{"catalog_manga", "synonyms_json"},
+		{"sources", "search_url"},
 		{"title_source_matches", "chapters_found"},
 		{"title_source_matches", "updated_at"},
 	} {

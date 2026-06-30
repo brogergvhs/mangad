@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -10,14 +13,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
+	"github.com/PuerkitoBio/goquery"
+
+	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/sources"
 	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/mangad/internal/util"
 )
 
 // WantedService coordinates canonical manga and source matching.
@@ -100,23 +109,51 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	if err != nil {
 		return nil, err
 	}
-	var out []catalog.Match
+	var enabled []sources.Source
 	for _, src := range sourceList {
-		if !src.Enabled {
-			continue
+		if src.Enabled {
+			enabled = append(enabled, src)
 		}
-		for _, candidate := range candidateSourceURLs(src, manga) {
-			match, ok := s.verifyCandidate(ctx, cfg, logSvc, manga, src, candidate)
-			if !ok {
-				continue
+	}
+	matches := make(chan catalog.Match, len(enabled))
+	jobs := make(chan sources.Source)
+	var wg sync.WaitGroup
+	for range min(len(enabled), 4) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for src := range jobs {
+				if match, ok := s.matchSource(ctx, cfg, logSvc, manga, src); ok {
+					select {
+					case matches <- match:
+					case <-ctx.Done():
+						return
+					}
+				}
 			}
-			stored, err := s.catalog.UpsertMatch(ctx, match)
-			if err != nil {
-				return out, err
-			}
-			out = append(out, stored)
-			break
+		}()
+	}
+	for _, src := range enabled {
+		select {
+		case jobs <- src:
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			close(matches)
+			return nil, ctx.Err()
 		}
+	}
+	close(jobs)
+	wg.Wait()
+	close(matches)
+
+	var out []catalog.Match
+	for match := range matches {
+		stored, err := s.catalog.UpsertMatch(ctx, match)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, stored)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].ChaptersFound != out[j].ChaptersFound {
@@ -125,6 +162,23 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 		return out[i].Confidence > out[j].Confidence
 	})
 	return out, nil
+}
+
+func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source) (catalog.Match, bool) {
+	probeCfg := configForSource(cfg, src)
+	candidates, searched := searchSourceURLs(ctx, probeCfg, logSvc, src, manga)
+	if !searched {
+		candidates = append(candidates, candidateSourceURLs(src, manga)...)
+	} else if len(candidates) == 0 && logSvc != nil {
+		logSvc.Debugf("Source search %s completed with no candidates; skipping guessed slug probes.\n", src.ID)
+	}
+	for _, candidate := range uniqueStrings(candidates) {
+		match, ok := s.verifyCandidate(ctx, cfg, logSvc, manga, src, candidate)
+		if ok {
+			return match, true
+		}
+	}
+	return catalog.Match{}, false
 }
 
 // ListMatches returns persisted source matches.
@@ -154,14 +208,7 @@ func (s *WantedService) TrackMatch(ctx context.Context, matchID int64, outputPat
 }
 
 func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source, sourceURL string) (catalog.Match, bool) {
-	probeCfg := *cfg
-	probeCfg.AllowExt = src.AllowedExtensions
-	if src.RequiresBrowserSolver {
-		probeCfg.BrowserSolver.Enabled = true
-	}
-	if src.RequiresBrowserDownload {
-		probeCfg.BrowserDownload.Enabled = true
-	}
+	probeCfg := configForSource(cfg, src)
 	downloadSvc, err := NewDefaultDownloadService(&probeCfg, logSvc, nil)
 	if err != nil {
 		return catalog.Match{}, false
@@ -179,6 +226,212 @@ func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config,
 		MatchMethod:    "slug_probe",
 		ChaptersFound:  len(chapters),
 	}, true
+}
+
+func configForSource(cfg *config.Config, src sources.Source) config.Config {
+	probeCfg := *cfg
+	probeCfg.AllowExt = src.AllowedExtensions
+	if src.RequiresBrowserSolver {
+		probeCfg.BrowserSolver.Enabled = true
+	}
+	if src.RequiresBrowserDownload {
+		probeCfg.BrowserDownload.Enabled = true
+	}
+	return probeCfg
+}
+
+func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc *ui.Logger, src sources.Source, manga catalog.Manga) ([]string, bool) {
+	if strings.TrimSpace(src.SearchURL) == "" {
+		if logSvc != nil {
+			logSvc.Debugf("Source search skipped for %s: no search_url.\n", src.ID)
+		}
+		return nil, false
+	}
+	var out []string
+	searched := false
+	for _, title := range mangaTitleVariants(manga) {
+		searchURL := strings.ReplaceAll(src.SearchURL, "{query}", url.QueryEscape(title))
+		if logSvc != nil {
+			logSvc.Debugf("Source search %s query %q: %s\n", src.ID, title, searchURL)
+		}
+		body, err := fetchSearchPage(ctx, cfg, searchURL)
+		if err != nil {
+			if logSvc != nil {
+				logSvc.Debugf("Source search failed for %s: %v\n", searchURL, err)
+			}
+			continue
+		}
+		searched = true
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
+		if err != nil {
+			if logSvc != nil {
+				logSvc.Debugf("Source search parse failed for %s (%d bytes): %v\n", searchURL, len(body), err)
+			}
+			continue
+		}
+		found := append(searchLinks(doc, src, manga), searchStructuredLinks(body, src, manga)...)
+		if logSvc != nil {
+			logSvc.Debugf("Source search %s returned %d candidates from %d bytes.\n", src.ID, len(uniqueStrings(found)), len(body))
+		}
+		out = append(out, found...)
+		if len(out) > 0 {
+			break
+		}
+	}
+	if len(out) == 0 && logSvc != nil {
+		logSvc.Debugf("Source search %s found no candidates for %q.\n", src.ID, displayMangaTitle(manga))
+	}
+	return out, searched
+}
+
+func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (string, error) {
+	if cfg.BrowserDownload.Enabled {
+		return browserdownload.New(cfg.BrowserDownload.Endpoint, time.Duration(cfg.BrowserDownload.TimeoutSeconds)*time.Second, nil).Fetch(ctx, target)
+	}
+	client, err := util.NewHTTPClient(util.HTTPClientOptions{
+		Timeout:    30 * time.Second,
+		UserAgent:  util.PickUserAgent(cfg.UserAgent),
+		Cookie:     cfg.Cookie,
+		CookieFile: cfg.CookieFile,
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	return string(data), err
+}
+
+func searchLinks(doc *goquery.Document, src sources.Source, manga catalog.Manga) []string {
+	base, err := url.Parse(src.BaseURL)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	doc.Find("a[href]").Each(func(_ int, a *goquery.Selection) {
+		href, _ := a.Attr("href")
+		resolved := resolveMatchURL(src.BaseURL, href)
+		u, err := url.Parse(resolved)
+		if err != nil || u.Host == "" || !sameHostURL(base, u) {
+			return
+		}
+		text := strings.Join(strings.Fields(a.Text()), " ")
+		if !looksLikeMangaResult(src, manga, resolved, text) {
+			return
+		}
+		out = append(out, resolved)
+	})
+	return uniqueStrings(out)
+}
+
+func searchStructuredLinks(body string, src sources.Source, manga catalog.Manga) []string {
+	var raw any
+	if json.Unmarshal([]byte(body), &raw) != nil {
+		return nil
+	}
+	var out []string
+	var walk func(any)
+	walk = func(value any) {
+		switch v := value.(type) {
+		case map[string]any:
+			text := jsonResultText(v)
+			for _, key := range []string{"public_url", "permalink", "href"} {
+				if candidate, ok := v[key].(string); ok {
+					resolved := resolveMatchURL(src.BaseURL, candidate)
+					if looksLikeMangaResult(src, manga, resolved, text) {
+						out = append(out, resolved)
+					}
+				}
+			}
+			if slug, ok := v["slug"].(string); ok {
+				if candidate := sourceURLFromSlug(src, slug); candidate != "" && looksLikeMangaResult(src, manga, candidate, text) {
+					out = append(out, candidate)
+				}
+			}
+			for _, child := range v {
+				walk(child)
+			}
+		case []any:
+			for _, child := range v {
+				walk(child)
+			}
+		}
+	}
+	walk(raw)
+	return uniqueStrings(out)
+}
+
+func jsonResultText(value any) string {
+	var parts []string
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case string:
+			parts = append(parts, x)
+		case []any:
+			for _, item := range x {
+				walk(item)
+			}
+		case map[string]any:
+			for key, item := range x {
+				switch key {
+				case "title", "titles", "name", "slug", "limited_titles":
+					walk(item)
+				}
+			}
+		}
+	}
+	walk(value)
+	return strings.Join(parts, " ")
+}
+
+func sourceURLFromSlug(src sources.Source, slug string) string {
+	base, err := url.Parse(src.BaseURL)
+	if err != nil || base.Host == "" {
+		return ""
+	}
+	sample, err := url.Parse(src.SampleMangaURL)
+	if err != nil {
+		return ""
+	}
+	parts := pathParts(sample.Path)
+	if len(parts) == 0 {
+		return ""
+	}
+	base.Path = "/" + path.Join(parts[0], strings.Trim(slug, "/"))
+	base.RawQuery = ""
+	base.Fragment = ""
+	return base.String()
+}
+
+func looksLikeMangaResult(src sources.Source, manga catalog.Manga, href, text string) bool {
+	if !matchesWantedTitle(manga, href+" "+text) {
+		return false
+	}
+	u, err := url.Parse(href)
+	if err != nil {
+		return false
+	}
+	sample, err := url.Parse(src.SampleMangaURL)
+	if err != nil {
+		return true
+	}
+	candidateParts, sampleParts := pathParts(u.Path), pathParts(sample.Path)
+	if len(candidateParts) == 0 || len(sampleParts) == 0 {
+		return false
+	}
+	return candidateParts[0] == sampleParts[0]
 }
 
 func candidateSourceURLs(src sources.Source, manga catalog.Manga) []string {
@@ -214,6 +467,19 @@ func candidateSourceURLs(src sources.Source, manga catalog.Manga) []string {
 	return out
 }
 
+func resolveMatchURL(baseURL, href string) string {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return href
+	}
+	u, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return href
+	}
+	u.Fragment = ""
+	return base.ResolveReference(u).String()
+}
+
 func mangaTitleVariants(m catalog.Manga) []string {
 	return cleanMatchStrings(append([]string{m.TitleEnglish, m.TitleRomaji, m.TitleNative}, m.Synonyms...))
 }
@@ -231,6 +497,40 @@ func cleanMatchStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func matchesWantedTitle(m catalog.Manga, value string) bool {
+	value = strings.ToLower(value)
+	for _, title := range mangaTitleVariants(m) {
+		words := strings.Fields(strings.ReplaceAll(slugify(title), "-", " "))
+		if len(words) == 0 {
+			continue
+		}
+		hits := 0
+		for _, word := range words {
+			if len(word) >= 3 && strings.Contains(value, word) {
+				hits++
+			}
+		}
+		if hits >= len(words)/2+1 {
+			return true
+		}
+	}
+	return false
 }
 
 func displayMangaTitle(m catalog.Manga) string {
@@ -306,4 +606,8 @@ func pathParts(p string) []string {
 		}
 	}
 	return out
+}
+
+func sameHostURL(a, b *url.URL) bool {
+	return strings.TrimPrefix(strings.ToLower(a.Host), "www.") == strings.TrimPrefix(strings.ToLower(b.Host), "www.")
 }

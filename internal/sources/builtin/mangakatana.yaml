@@ -5,6 +5,7 @@ domains:
   - i1.mangakatana.com
 base_url: https://mangakatana.com/
 sample_manga_url: https://mangakatana.com/manga/the-mochi-i-drew-is-tasty-today-too.26697
+search_url: https://mangakatana.com/?search={query}&search_by=m_name
 scraper: generic
 allowed_extensions:
   - jpg

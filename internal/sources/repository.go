@@ -43,6 +43,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				domains_json,
 				base_url,
 				sample_manga_url,
+				search_url,
 				scraper,
 				allowed_extensions_json,
 				min_chapters,
@@ -51,13 +52,14 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				enabled,
 				profile_version,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 			ON CONFLICT(id) DO UPDATE SET
 				origin = excluded.origin,
 				name = excluded.name,
 				domains_json = excluded.domains_json,
 				base_url = excluded.base_url,
 				sample_manga_url = excluded.sample_manga_url,
+				search_url = excluded.search_url,
 				scraper = excluded.scraper,
 				allowed_extensions_json = excluded.allowed_extensions_json,
 				min_chapters = excluded.min_chapters,
@@ -67,7 +69,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				profile_version = excluded.profile_version,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE sources.origin != 'local' OR excluded.origin = 'local'
-		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.Scraper, extensions, p.MinChapters, boolToInt(p.RequiresBrowserSolver), boolToInt(p.RequiresBrowserDownload), boolToInt(p.Enabled), p.Version)
+		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.SearchURL, p.Scraper, extensions, p.MinChapters, boolToInt(p.RequiresBrowserSolver), boolToInt(p.RequiresBrowserDownload), boolToInt(p.Enabled), p.Version)
 		if err != nil {
 			return fmt.Errorf("sync source %s: %w", p.ID, err)
 		}
@@ -167,6 +169,7 @@ func sourceSelect() string {
 			domains_json,
 			base_url,
 			sample_manga_url,
+			search_url,
 			scraper,
 			allowed_extensions_json,
 			min_chapters,
@@ -196,6 +199,7 @@ func scanSource(scanner interface {
 		&domainsJSON,
 		&src.BaseURL,
 		&src.SampleMangaURL,
+		&src.SearchURL,
 		&src.Scraper,
 		&extensionsJSON,
 		&src.MinChapters,

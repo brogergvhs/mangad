@@ -5,6 +5,7 @@ domains:
   - img.manhuaus.com
 base_url: https://manhuaus.com/
 sample_manga_url: https://manhuaus.com/manga/the-regressed-mercenarys-machinations/
+search_url: https://manhuaus.com/?s={query}&post_type=wp-manga&op=&author=&artist=&release=&adult=
 scraper: generic
 allowed_extensions:
   - webp

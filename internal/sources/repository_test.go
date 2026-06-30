@@ -19,6 +19,7 @@ func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
 		Domains:                 []string{"example.test", "example.test"},
 		BaseURL:                 "https://example.test/",
 		SampleMangaURL:          "https://example.test/manga/demo/",
+		SearchURL:               "https://example.test/search?q={query}",
 		AllowedExtensions:       []string{"webp", "jpg"},
 		MinChapters:             3,
 		RequiresBrowserDownload: true,
@@ -46,6 +47,9 @@ func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
 	}
 	if !got.RequiresBrowserDownload {
 		t.Fatalf("RequiresBrowserDownload = false")
+	}
+	if got.SearchURL != "https://example.test/search?q={query}" {
+		t.Fatalf("SearchURL = %q", got.SearchURL)
 	}
 
 	all, err := repo.List(ctx)
@@ -108,6 +112,7 @@ profiles:
     name: Demo
     base_url: https://demo.test/
     sample_manga_url: https://demo.test/manga/sample/
+    search_url: https://demo.test/search?q={query}
     allowed_extensions: [webp]
 `)
 	got, err := DecodeRegistry(body)
@@ -116,6 +121,9 @@ profiles:
 	}
 	if len(got) != 1 || got[0].ID != "demo" || got[0].Scraper != "generic" {
 		t.Fatalf("profiles = %#v", got)
+	}
+	if got[0].SearchURL == "" {
+		t.Fatalf("SearchURL was not decoded: %#v", got[0])
 	}
 }
 

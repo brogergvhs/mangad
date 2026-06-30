@@ -23,6 +23,7 @@ type Profile struct {
 	Domains                 []string `json:"domains" yaml:"domains"`
 	BaseURL                 string   `json:"base_url" yaml:"base_url"`
 	SampleMangaURL          string   `json:"sample_manga_url" yaml:"sample_manga_url"`
+	SearchURL               string   `json:"search_url" yaml:"search_url"`
 	Scraper                 string   `json:"scraper" yaml:"scraper"`
 	AllowedExtensions       []string `json:"allowed_extensions" yaml:"allowed_extensions"`
 	MinChapters             int      `json:"min_chapters" yaml:"min_chapters"`
@@ -52,6 +53,7 @@ func TemplateProfile(id string) Profile {
 		Name:              id,
 		BaseURL:           "https://example.com/",
 		SampleMangaURL:    "https://example.com/manga/sample/",
+		SearchURL:         "https://example.com/search?q={query}",
 		Scraper:           "generic",
 		AllowedExtensions: []string{"jpg", "jpeg", "png", "webp"},
 		MinChapters:       1,
@@ -64,6 +66,7 @@ func normalizeProfile(p Profile) (Profile, error) {
 	p.Name = strings.TrimSpace(p.Name)
 	p.BaseURL = strings.TrimSpace(p.BaseURL)
 	p.SampleMangaURL = strings.TrimSpace(p.SampleMangaURL)
+	p.SearchURL = strings.TrimSpace(p.SearchURL)
 	p.Scraper = strings.TrimSpace(p.Scraper)
 	p.Version = strings.TrimSpace(p.Version)
 	if p.Scraper == "" {
@@ -82,6 +85,11 @@ func normalizeProfile(p Profile) (Profile, error) {
 	}
 	if _, err := url.ParseRequestURI(p.SampleMangaURL); err != nil {
 		return Profile{}, fmt.Errorf("invalid sample_manga_url for %s: %w", p.ID, err)
+	}
+	if p.SearchURL != "" {
+		if _, err := url.ParseRequestURI(strings.ReplaceAll(p.SearchURL, "{query}", "sample")); err != nil {
+			return Profile{}, fmt.Errorf("invalid search_url for %s: %w", p.ID, err)
+		}
 	}
 	if p.Scraper != "generic" {
 		return Profile{}, fmt.Errorf("unsupported scraper %q for %s", p.Scraper, p.ID)

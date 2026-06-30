@@ -47,6 +47,21 @@ func TestBrowserSolverDefaults(t *testing.T) {
 	}
 }
 
+func TestBrowserSolverEnvOverride(t *testing.T) {
+	t.Setenv("MANGAD_BROWSER_SOLVER_ENABLED", "true")
+	t.Setenv("MANGAD_BROWSER_SOLVER_PROVIDER", browserfetch.ProviderFlareSolverr)
+	t.Setenv("MANGAD_BROWSER_SOLVER_ENDPOINT", "http://flaresolverr:8191/v1")
+	t.Setenv("MANGAD_BROWSER_SOLVER_TIMEOUT_SECONDS", "120")
+
+	cfg, _, err := LoadMerged(Options{IgnoreConfig: true})
+	if err != nil {
+		t.Fatalf("LoadMerged() error = %v", err)
+	}
+	if !cfg.BrowserSolver.Enabled || cfg.BrowserSolver.Provider != browserfetch.ProviderFlareSolverr || cfg.BrowserSolver.Endpoint != "http://flaresolverr:8191/v1" || cfg.BrowserSolver.TimeoutSeconds != 120 {
+		t.Fatalf("BrowserSolver = %#v", cfg.BrowserSolver)
+	}
+}
+
 func TestBrowserDownloaderDefaults(t *testing.T) {
 	cfg, _, err := LoadMerged(Options{IgnoreConfig: true})
 	if err != nil {

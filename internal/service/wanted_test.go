@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PuerkitoBio/goquery"
+
 	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/sources"
 )
@@ -33,5 +35,58 @@ func TestCandidateSourceURLsSkipsNumericOrOpaquePatterns(t *testing.T) {
 		if len(urls) != 0 {
 			t.Fatalf("candidateSourceURLs(%q) = %#v", sample, urls)
 		}
+	}
+}
+
+func TestSearchLinksKeepsLikelyMangaResults(t *testing.T) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`
+		<html><body>
+			<a href="/manga/the-archmage-returns-after-4000-years/">The Archmage Returns After 4000 Years</a>
+			<a href="/manga/other-title/">Other Title</a>
+			<a href="/privacy">The Archmage Returns After 4000 Years</a>
+		</body></html>
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	urls := searchLinks(doc, sources.Source{Profile: sources.Profile{
+		BaseURL:        "https://coffeemanga.net/",
+		SampleMangaURL: "https://coffeemanga.net/manga/im-being-raised-by-villains/",
+	}}, catalog.Manga{
+		TitleEnglish: "The Archmage Returns After 4000 Years",
+	})
+	if len(urls) != 1 || urls[0] != "https://coffeemanga.net/manga/the-archmage-returns-after-4000-years/" {
+		t.Fatalf("urls = %#v", urls)
+	}
+}
+
+func TestSearchStructuredLinksUsesSlugResults(t *testing.T) {
+	urls := searchStructuredLinks(`{"data":[{"title":"The Demonic Supreme Sword","slug":"the-demonic-supreme-sword"}]}`, sources.Source{Profile: sources.Profile{
+		BaseURL:        "https://comickz.co.uk/",
+		SampleMangaURL: "https://comickz.co.uk/comic/the-demonic-supreme-sword",
+	}}, catalog.Manga{TitleEnglish: "The Demonic Supreme Sword"})
+	if len(urls) != 1 || urls[0] != "https://comickz.co.uk/comic/the-demonic-supreme-sword" {
+		t.Fatalf("urls = %#v", urls)
+	}
+}
+
+func TestSearchStructuredLinksUsesPublicURLResults(t *testing.T) {
+	urls := searchStructuredLinks(`{"items":[{"title":"Academy's Genius Swordmaster","public_url":"/comics/academys-genius-swordmaster-fc4c7eba"}]}`, sources.Source{Profile: sources.Profile{
+		BaseURL:        "https://asurascans.com/",
+		SampleMangaURL: "https://asurascans.com/comics/academys-genius-swordmaster-fc4c7eba",
+	}}, catalog.Manga{TitleEnglish: "Academy's Genius Swordmaster"})
+	if len(urls) != 1 || urls[0] != "https://asurascans.com/comics/academys-genius-swordmaster-fc4c7eba" {
+		t.Fatalf("urls = %#v", urls)
+	}
+}
+
+func TestMatchesWantedTitleAllowsPartialTitleOverlap(t *testing.T) {
+	manga := catalog.Manga{TitleEnglish: "The Archmage Returns After 4000 Years"}
+	if !matchesWantedTitle(manga, "https://demo.test/manga/the-great-mage-returns-after-4000-years") {
+		t.Fatalf("wanted title did not match alternate slug")
+	}
+	if matchesWantedTitle(manga, "https://demo.test/manga/solo-leveling") {
+		t.Fatalf("unrelated title matched")
 	}
 }

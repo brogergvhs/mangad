@@ -6,6 +6,7 @@ domains:
   - zjcdn.mangahere.org
 base_url: https://www.mangatown.com/
 sample_manga_url: https://www.mangatown.com/manga/jujutsu_kaisen/
+search_url: https://www.mangatown.com/search?name={query}
 scraper: generic
 allowed_extensions:
   - jpg

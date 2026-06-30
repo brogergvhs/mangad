@@ -4,6 +4,7 @@ domains:
   - coffeemanga.net
 base_url: https://coffeemanga.net/
 sample_manga_url: https://coffeemanga.net/manga/im-being-raised-by-villains/
+search_url: https://coffeemanga.net/?s={query}&post_type=wp-manga&op=&author=&artist=&release=&adult=
 scraper: generic
 allowed_extensions:
   - jpg

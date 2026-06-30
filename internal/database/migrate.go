@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS sources (
 	domains_json TEXT NOT NULL DEFAULT '[]',
 	base_url TEXT NOT NULL DEFAULT '',
 	sample_manga_url TEXT NOT NULL DEFAULT '',
+	search_url TEXT NOT NULL DEFAULT '',
 	scraper TEXT NOT NULL DEFAULT 'generic',
 	allowed_extensions_json TEXT NOT NULL DEFAULT '[]',
 	min_chapters INTEGER NOT NULL DEFAULT 0,
@@ -177,6 +178,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}
 	if err = ensureColumn(ctx, tx, "sources", "requires_browser_downloader", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return fmt.Errorf("migrate sources.requires_browser_downloader: %w", err)
+	}
+	if err = ensureColumn(ctx, tx, "sources", "search_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("migrate sources.search_url: %w", err)
 	}
 	for _, col := range []struct{ table, name, def string }{
 		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
