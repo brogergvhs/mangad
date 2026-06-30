@@ -165,7 +165,7 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 }
 
 func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source) (catalog.Match, bool) {
-	probeCfg := configForSource(cfg, src)
+	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
 	candidates, searched := searchSourceURLs(ctx, probeCfg, logSvc, src, manga)
 	if !searched {
 		candidates = append(candidates, candidateSourceURLs(src, manga)...)
@@ -208,7 +208,7 @@ func (s *WantedService) TrackMatch(ctx context.Context, matchID int64, outputPat
 }
 
 func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source, sourceURL string) (catalog.Match, bool) {
-	probeCfg := configForSource(cfg, src)
+	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
 	downloadSvc, err := NewSourceDownloadService(&probeCfg, logSvc, nil, src.Scraper)
 	if err != nil {
 		return catalog.Match{}, false
@@ -226,18 +226,6 @@ func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config,
 		MatchMethod:    "slug_probe",
 		ChaptersFound:  len(chapters),
 	}, true
-}
-
-func configForSource(cfg *config.Config, src sources.Source) config.Config {
-	probeCfg := *cfg
-	probeCfg.AllowExt = src.AllowedExtensions
-	if src.RequiresBrowserSolver {
-		probeCfg.BrowserSolver.Enabled = true
-	}
-	if src.RequiresBrowserDownload {
-		probeCfg.BrowserDownload.Enabled = true
-	}
-	return probeCfg
 }
 
 func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc *ui.Logger, src sources.Source, manga catalog.Manga) ([]string, bool) {

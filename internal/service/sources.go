@@ -7,7 +7,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/sources"
 	"github.com/brogergvhs/mangad/internal/ui"
@@ -90,25 +89,7 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc *
 	if !src.Enabled {
 		return fmt.Errorf("source %s is disabled", src.ID)
 	}
-	cfgCopy := *cfg
-	if len(src.AllowedExtensions) > 0 {
-		cfgCopy.AllowExt = src.AllowedExtensions
-	}
-	if src.RequiresBrowserSolver {
-		cfgCopy.BrowserSolver.Enabled = true
-		if cfgCopy.BrowserSolver.Provider == "" {
-			cfgCopy.BrowserSolver.Provider = browserfetch.ProviderFlareSolverr
-		}
-		if cfgCopy.BrowserSolver.Endpoint == "" {
-			cfgCopy.BrowserSolver.Endpoint = browserfetch.DefaultFlareSolverrEndpoint
-		}
-		if cfgCopy.BrowserSolver.TimeoutSeconds == 0 {
-			cfgCopy.BrowserSolver.TimeoutSeconds = 60
-		}
-	}
-	if src.RequiresBrowserDownload {
-		cfgCopy.BrowserDownload.Enabled = true
-	}
+	cfgCopy := ConfigForSource(*cfg, src, SourceConfigOptions{})
 
 	downloadSvc, err := NewSourceDownloadService(&cfgCopy, logSvc, nil, src.Scraper)
 	if err != nil {

@@ -75,7 +75,7 @@ func init() {
 }
 
 func runDownload(cmd *cobra.Command, _ []string) error {
-	cfg, logSvc, err := prepareConfigAndLogger(cmd)
+	cfg, logSvc, usedPath, err := prepareConfigAndLogger(cmd)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,23 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	ctx := context.Background()
 	util.SetupInterruptHandler(cfg.Output)
 
-	downloadSvc, err := service.NewDefaultDownloadService(cfg, logSvc, nil)
+	scraperName := "generic"
+	var sourceID string
+	if src, ok := service.ResolveSourceForURL(ctx, cfg.DefaultURL, "", logSvc); ok {
+		applied := service.ConfigForSource(*cfg, src, service.SourceConfigOptions{
+			PreserveAllowedExtensions: cmd.Flags().Changed("allow-ext"),
+		})
+		cfg = &applied
+		scraperName = src.Scraper
+		sourceID = src.ID
+	}
+
+	printLoadedConfig(usedPath, cfg)
+	if sourceID != "" {
+		fmt.Printf("Using source: %s (scraper=%s)\n\n", sourceID, scraperName)
+	}
+
+	downloadSvc, err := service.NewSourceDownloadService(cfg, logSvc, nil, scraperName)
 	if err != nil {
 		return err
 	}
@@ -116,7 +132,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, error) {
+func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, string, error) {
 	cfg, usedPath, err := config.LoadMerged(config.Options{
 		IgnoreConfig:        flagIgnoreConfig,
 		Debug:               flagDebug,
@@ -136,7 +152,7 @@ func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, err
 		SkipBroken:          flagSkipBroken,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	if cmd.Flags().Changed("image-workers") {
@@ -151,26 +167,28 @@ func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, err
 
 	logSvc := ui.NewLogger(cfg.Debug)
 
-	if usedPath != "" {
-		fmt.Printf("Config file: %s\n", usedPath)
-	}
-
 	if cfg.Output == "" {
 		cfg.Output = "."
 	}
 	if err := os.MkdirAll(cfg.Output, 0755); err != nil {
-		return nil, nil, fmt.Errorf("cannot create output folder: %w", err)
+		return nil, nil, "", fmt.Errorf("cannot create output folder: %w", err)
+	}
+
+	if cfg.DefaultURL == "" {
+		return nil, nil, "", fmt.Errorf("missing --url and no default_url in config")
+	}
+
+	return cfg, logSvc, usedPath, nil
+}
+
+func printLoadedConfig(usedPath string, cfg *config.Config) {
+	if usedPath != "" {
+		fmt.Printf("Config file: %s\n", usedPath)
 	}
 
 	fmt.Println("Full config:")
 	cfg.Print()
 	fmt.Println()
-
-	if cfg.DefaultURL == "" {
-		return nil, nil, fmt.Errorf("missing --url and no default_url in config")
-	}
-
-	return cfg, logSvc, nil
 }
 
 func doDryRun(ctx context.Context, downloadSvc *service.DownloadService, selected []chapters.Chapter) error {
