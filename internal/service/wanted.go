@@ -209,7 +209,7 @@ func (s *WantedService) TrackMatch(ctx context.Context, matchID int64, outputPat
 
 func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source, sourceURL string) (catalog.Match, bool) {
 	probeCfg := configForSource(cfg, src)
-	downloadSvc, err := NewDefaultDownloadService(&probeCfg, logSvc, nil)
+	downloadSvc, err := NewSourceDownloadService(&probeCfg, logSvc, nil, src.Scraper)
 	if err != nil {
 		return catalog.Match{}, false
 	}
@@ -340,23 +340,24 @@ func searchStructuredLinks(body string, src sources.Source, manga catalog.Manga)
 	if json.Unmarshal([]byte(body), &raw) != nil {
 		return nil
 	}
-	var out []string
+	var out []sourceCandidate
 	var walk func(any)
 	walk = func(value any) {
 		switch v := value.(type) {
 		case map[string]any:
 			text := jsonResultText(v)
+			chapters := jsonNumber(v["chapter_count"])
 			for _, key := range []string{"public_url", "permalink", "href"} {
 				if candidate, ok := v[key].(string); ok {
 					resolved := resolveMatchURL(src.BaseURL, candidate)
 					if looksLikeMangaResult(src, manga, resolved, text) {
-						out = append(out, resolved)
+						out = append(out, sourceCandidate{url: resolved, chapters: chapters})
 					}
 				}
 			}
 			if slug, ok := v["slug"].(string); ok {
 				if candidate := sourceURLFromSlug(src, slug); candidate != "" && looksLikeMangaResult(src, manga, candidate, text) {
-					out = append(out, candidate)
+					out = append(out, sourceCandidate{url: candidate, chapters: chapters})
 				}
 			}
 			for _, child := range v {
@@ -369,7 +370,31 @@ func searchStructuredLinks(body string, src sources.Source, manga catalog.Manga)
 		}
 	}
 	walk(raw)
-	return uniqueStrings(out)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].chapters > out[j].chapters })
+	values := make([]string, 0, len(out))
+	for _, candidate := range out {
+		values = append(values, candidate.url)
+	}
+	return uniqueStrings(values)
+}
+
+type sourceCandidate struct {
+	url      string
+	chapters int
+}
+
+func jsonNumber(v any) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case string:
+		i, _ := strconv.Atoi(strings.TrimSpace(n))
+		return i
+	default:
+		return 0
+	}
 }
 
 func jsonResultText(value any) string {
@@ -431,7 +456,7 @@ func looksLikeMangaResult(src sources.Source, manga catalog.Manga, href, text st
 	if len(candidateParts) == 0 || len(sampleParts) == 0 {
 		return false
 	}
-	return candidateParts[0] == sampleParts[0]
+	return candidateParts[0] == sampleParts[0] && len(candidateParts) == len(sampleParts)
 }
 
 func candidateSourceURLs(src sources.Source, manga catalog.Manga) []string {

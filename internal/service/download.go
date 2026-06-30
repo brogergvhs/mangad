@@ -19,6 +19,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/downloader"
 	"github.com/brogergvhs/mangad/internal/providers"
+	comickzprovider "github.com/brogergvhs/mangad/internal/providers/comickz"
 	"github.com/brogergvhs/mangad/internal/providers/generic"
 	"github.com/brogergvhs/mangad/internal/ui"
 	"github.com/brogergvhs/mangad/internal/util"
@@ -114,6 +115,25 @@ func NewDefaultDownloadService(
 	log *ui.Logger,
 	progress ProgressManager,
 ) (*DownloadService, error) {
+	return newDownloadServiceWithScraper(cfg, log, progress, "generic")
+}
+
+// NewSourceDownloadService creates a download service using a source profile's scraper.
+func NewSourceDownloadService(
+	cfg *config.Config,
+	log *ui.Logger,
+	progress ProgressManager,
+	scraperName string,
+) (*DownloadService, error) {
+	return newDownloadServiceWithScraper(cfg, log, progress, scraperName)
+}
+
+func newDownloadServiceWithScraper(
+	cfg *config.Config,
+	log *ui.Logger,
+	progress ProgressManager,
+	scraperName string,
+) (*DownloadService, error) {
 	browserState := &util.BrowserState{}
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
 		Timeout:     30 * time.Second,
@@ -151,11 +171,25 @@ func NewDefaultDownloadService(
 		timeout := time.Duration(cfg.BrowserDownload.TimeoutSeconds) * time.Second
 		browser = browserdownload.New(cfg.BrowserDownload.Endpoint, timeout, nil)
 	}
-	scraper := generic.NewScraper(client, log, cfg.AllowExt, cfg.CheckJS, browser)
+	scraper, err := newProviderScraper(scraperName, client, log, cfg.AllowExt, cfg.CheckJS, browser)
+	if err != nil {
+		return nil, err
+	}
 
 	svc := NewDownloadService(cfg, client, scraper, log, progress)
 	svc.browser = downloadBrowser
 	return svc, nil
+}
+
+func newProviderScraper(scraperName string, client *http.Client, log *ui.Logger, allowExt []string, checkJS bool, browser generic.BrowserFetcher) (providers.Scraper, error) {
+	switch scraperName {
+	case "", "generic":
+		return generic.NewScraper(client, log, allowExt, checkJS, browser), nil
+	case "comickz":
+		return comickzprovider.NewScraper(client, log, allowExt, checkJS, browser), nil
+	default:
+		return nil, fmt.Errorf("unsupported scraper %q", scraperName)
+	}
 }
 
 func cookieDBPath(cfg *config.Config) string {

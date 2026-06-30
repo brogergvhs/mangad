@@ -42,6 +42,7 @@ func TestSearchLinksKeepsLikelyMangaResults(t *testing.T) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`
 		<html><body>
 			<a href="/manga/the-archmage-returns-after-4000-years/">The Archmage Returns After 4000 Years</a>
+			<a href="/manga/the-archmage-returns-after-4000-years/c263">The Archmage Returns After 4000 Years Chapter 263</a>
 			<a href="/manga/other-title/">Other Title</a>
 			<a href="/privacy">The Archmage Returns After 4000 Years</a>
 		</body></html>
@@ -62,11 +63,14 @@ func TestSearchLinksKeepsLikelyMangaResults(t *testing.T) {
 }
 
 func TestSearchStructuredLinksUsesSlugResults(t *testing.T) {
-	urls := searchStructuredLinks(`{"data":[{"title":"The Demonic Supreme Sword","slug":"the-demonic-supreme-sword"}]}`, sources.Source{Profile: sources.Profile{
+	urls := searchStructuredLinks(`{"data":[
+		{"title":"The Demonic Supreme Sword Duplicate","slug":"02-the-demonic-supreme-sword","chapter_count":48},
+		{"title":"The Demonic Supreme Sword","slug":"the-demonic-supreme-sword","chapter_count":270}
+	]}`, sources.Source{Profile: sources.Profile{
 		BaseURL:        "https://comickz.co.uk/",
 		SampleMangaURL: "https://comickz.co.uk/comic/the-demonic-supreme-sword",
 	}}, catalog.Manga{TitleEnglish: "The Demonic Supreme Sword"})
-	if len(urls) != 1 || urls[0] != "https://comickz.co.uk/comic/the-demonic-supreme-sword" {
+	if len(urls) != 2 || urls[0] != "https://comickz.co.uk/comic/the-demonic-supreme-sword" {
 		t.Fatalf("urls = %#v", urls)
 	}
 }

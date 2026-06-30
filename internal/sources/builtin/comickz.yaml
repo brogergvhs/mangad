@@ -5,7 +5,7 @@ domains:
 base_url: https://comickz.co.uk/
 sample_manga_url: https://comickz.co.uk/comic/the-demonic-supreme-sword
 search_url: https://comickz.co.uk/search?q={query}
-scraper: generic
+scraper: comickz
 allowed_extensions:
   - webp
 min_chapters: 40

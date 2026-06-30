@@ -91,13 +91,22 @@ func normalizeProfile(p Profile) (Profile, error) {
 			return Profile{}, fmt.Errorf("invalid search_url for %s: %w", p.ID, err)
 		}
 	}
-	if p.Scraper != "generic" {
+	if !supportedScraper(p.Scraper) {
 		return Profile{}, fmt.Errorf("unsupported scraper %q for %s", p.Scraper, p.ID)
 	}
 	if p.MinChapters < 0 {
 		p.MinChapters = 0
 	}
 	return p, nil
+}
+
+func supportedScraper(name string) bool {
+	switch name {
+	case "generic", "comickz":
+		return true
+	default:
+		return false
+	}
 }
 
 func cleanStrings(values []string) []string {

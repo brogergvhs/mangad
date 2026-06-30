@@ -90,10 +90,6 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc *
 	if !src.Enabled {
 		return fmt.Errorf("source %s is disabled", src.ID)
 	}
-	if src.Scraper != "generic" {
-		return fmt.Errorf("unsupported scraper %q", src.Scraper)
-	}
-
 	cfgCopy := *cfg
 	if len(src.AllowedExtensions) > 0 {
 		cfgCopy.AllowExt = src.AllowedExtensions
@@ -114,7 +110,7 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc *
 		cfgCopy.BrowserDownload.Enabled = true
 	}
 
-	downloadSvc, err := NewDefaultDownloadService(&cfgCopy, logSvc, nil)
+	downloadSvc, err := NewSourceDownloadService(&cfgCopy, logSvc, nil, src.Scraper)
 	if err != nil {
 		return err
 	}
