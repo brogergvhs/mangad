@@ -168,11 +168,11 @@ func runLibraryRefresh(_ *cobra.Command, args []string) error {
 		}
 
 		results, err := lib.RefreshMonitored(ctx, cfg, logSvc)
-		if err != nil {
-			return err
-		}
 		for _, result := range results {
 			printRefresh(result)
+		}
+		if err != nil {
+			return err
 		}
 		if flagLibraryRefreshScan {
 			scan, err := lib.ScanDownloads(ctx, 0)
