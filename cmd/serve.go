@@ -53,6 +53,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	defer closeDB()
+	svc.SetRuntimeConfig(runtimeConfig)
 
 	if err := seedServeSetting(cmd, svc, ctx, "refresh-every", service.SettingServeRefreshEvery, flagServeRefreshEvery); err != nil {
 		return err
@@ -73,12 +74,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			return runDue(ctx, svc)
 		},
 		func(ctx context.Context, sourceID string) (service.SourceVerifyResult, error) {
-			cfg, logSvc, err := runtimeConfig()
+			cfg, logSvc, err := svc.RuntimeConfig(ctx)
 			if err != nil {
 				return service.SourceVerifyResult{}, err
 			}
-			cfg.CookieDBPath = flagServeDB
-			svc.ApplySettings(ctx, cfg)
 			return svc.VerifySource(ctx, cfg, logSvc, sourceID)
 		},
 		flagServeAPIKey,
@@ -124,11 +123,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("Serving: refresh=%s scan=%s download=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, runEvery)
 		}
 
-		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery)); err != nil {
-			return err
+		// Transient failures (e.g. SQLITE_BUSY) must not kill the daemon;
+		// shutdown is handled by the ctx.Done select below.
+		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery)); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "serve tick: %v\n", err)
 		}
-		if _, err := runDue(ctx, svc); err != nil {
-			return err
+		if _, err := runDue(ctx, svc); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "run due jobs: %v\n", err)
 		}
 
 		timer := time.NewTimer(runEvery)
@@ -165,12 +166,10 @@ func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, down
 }
 
 func runDue(ctx context.Context, svc *service.JobService) (service.RunSummary, error) {
-	cfg, logSvc, err := runtimeConfig()
+	cfg, logSvc, err := svc.RuntimeConfig(ctx)
 	if err != nil {
 		return service.RunSummary{}, err
 	}
-	cfg.CookieDBPath = flagServeDB
-	svc.ApplySettings(ctx, cfg)
 	summary, err := svc.RunDue(ctx, cfg, logSvc)
 	if err != nil {
 		return summary, err

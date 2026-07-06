@@ -22,11 +22,13 @@ import (
 
 // JobService enqueues and runs jobs.
 type JobService struct {
-	db   *sql.DB
-	jobs *jobs.Repository
-	lib  *LibraryService
-	src  *sourceService
-	want *WantedService
+	db      *sql.DB
+	dbPath  string
+	runtime func() (*config.Config, *ui.Logger, error)
+	jobs    *jobs.Repository
+	lib     *LibraryService
+	src     *sourceService
+	want    *WantedService
 }
 
 // JobPayload is the common payload for background jobs.
@@ -159,6 +161,9 @@ func validateDurationSetting(key, value string) error {
 
 // OpenJobs opens the app database for job processing.
 func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
+	if dbPath == "" {
+		dbPath = database.DefaultPath()
+	}
 	db, err := database.Open(ctx, dbPath)
 	if err != nil {
 		return nil, nil, err
@@ -169,7 +174,12 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 	}
 
 	svc := newJobService(db)
+	svc.dbPath = dbPath
 	if _, err := svc.lib.ReconcileStartedDownloads(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	if _, err := svc.jobs.ReconcileRunning(ctx); err != nil {
 		_ = db.Close()
 		return nil, nil, err
 	}
@@ -178,12 +188,35 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 
 func newJobService(db *sql.DB) *JobService {
 	return &JobService{
-		db:   db,
+		db:     db,
+		dbPath: database.DefaultPath(),
+		runtime: func() (*config.Config, *ui.Logger, error) {
+			return config.DefaultConfig(), ui.NewLogger(false), nil
+		},
 		jobs: jobs.NewRepository(db),
 		lib:  newLibraryService(db),
 		src:  newSourceService(db),
 		want: newWantedService(db),
 	}
+}
+
+// SetRuntimeConfig overrides how job execution loads the base runtime config
+// (e.g. the CLI's merged config file); DB-backed settings still overlay it.
+func (s *JobService) SetRuntimeConfig(fn func() (*config.Config, *ui.Logger, error)) {
+	if fn != nil {
+		s.runtime = fn
+	}
+}
+
+// RuntimeConfig returns the merged runtime config for job execution.
+func (s *JobService) RuntimeConfig(ctx context.Context) (*config.Config, *ui.Logger, error) {
+	cfg, logSvc, err := s.runtime()
+	if err != nil {
+		return nil, nil, err
+	}
+	s.ApplySettings(ctx, cfg)
+	cfg.CookieDBPath = s.dbPath
+	return cfg, logSvc, nil
 }
 
 // Setting returns an app setting or fallback.
@@ -271,10 +304,11 @@ func (s *JobService) ListWanted(ctx context.Context) ([]catalog.Manga, error) {
 
 // MatchSources finds source matches for one canonical title.
 func (s *JobService) MatchSources(ctx context.Context, catalogID int64) ([]catalog.Match, error) {
-	cfg := config.DefaultConfig()
-	s.ApplySettings(ctx, cfg)
-	cfg.CookieDBPath = database.DefaultPath()
-	return s.want.MatchSources(ctx, cfg, ui.NewLogger(false), catalogID)
+	cfg, logSvc, err := s.RuntimeConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.want.MatchSources(ctx, cfg, logSvc, catalogID)
 }
 
 // ListMatches returns persisted source matches.
@@ -359,6 +393,9 @@ func (s *JobService) List(ctx context.Context) ([]jobs.Job, error) {
 // RunDue claims and runs due jobs until the queue is empty.
 func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc *ui.Logger) (RunSummary, error) {
 	var summary RunSummary
+	// Outcomes must be persisted even when ctx is cancelled mid-job;
+	// marking with the cancelled ctx would strand the job as running.
+	markCtx := context.WithoutCancel(ctx)
 	for {
 		job, ok, err := s.jobs.ClaimNext(ctx)
 		if err != nil || !ok {
@@ -370,13 +407,13 @@ func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc *ui.
 		cancel()
 		if err != nil {
 			summary.Failed++
-			if markErr := s.jobs.MarkFailed(ctx, job.ID, err); markErr != nil {
+			if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {
 				return summary, markErr
 			}
 			continue
 		}
 		summary.Done++
-		if err := s.jobs.MarkDone(ctx, job.ID); err != nil {
+		if err := s.jobs.MarkDone(markCtx, job.ID); err != nil {
 			return summary, err
 		}
 	}

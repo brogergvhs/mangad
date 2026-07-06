@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/database"
@@ -126,14 +127,22 @@ func (c browserCookieCache) save(ctx context.Context, target, userAgent string, 
 	return nil
 }
 
+// cookieMigrations tracks which cookie DB paths were migrated; load/save run
+// once per FlareSolverr fetch and must not replay migrations every time.
+var cookieMigrations sync.Map // dbPath -> *sync.Once
+
 func (c browserCookieCache) open(ctx context.Context) (*sql.DB, func(), error) {
 	db, err := database.Open(ctx, c.dbPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := database.Migrate(ctx, db); err != nil {
+	once, _ := cookieMigrations.LoadOrStore(c.dbPath, new(sync.Once))
+	var migrateErr error
+	once.(*sync.Once).Do(func() { migrateErr = database.Migrate(ctx, db) })
+	if migrateErr != nil {
+		cookieMigrations.Delete(c.dbPath)
 		_ = db.Close()
-		return nil, nil, err
+		return nil, nil, migrateErr
 	}
 	return db, func() { _ = db.Close() }, nil
 }
