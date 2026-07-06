@@ -12,6 +12,8 @@ type Chapter struct {
 	providers.Chapter
 }
 
+var reUnderscores = regexp.MustCompile(`_+`)
+
 func sanitize(s string) string {
 	s = strings.ToLower(s)
 
@@ -39,8 +41,7 @@ func sanitize(s string) string {
 	}
 	s = string(clean)
 
-	reUnderscore := regexp.MustCompile(`_+`)
-	s = reUnderscore.ReplaceAllString(s, "_")
+	s = reUnderscores.ReplaceAllString(s, "_")
 
 	return strings.Trim(s, "_")
 }

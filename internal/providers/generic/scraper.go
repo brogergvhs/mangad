@@ -22,7 +22,7 @@ import (
 
 type Scraper struct {
 	client  *http.Client
-	log     *ui.Logger
+	log     ui.Log
 	allowed *regexp.Regexp
 	checkJS bool
 	browser BrowserFetcher
@@ -36,7 +36,7 @@ type BrowserCacheLoader interface {
 	LoadCached(ctx context.Context, target string)
 }
 
-func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool, browser BrowserFetcher) *Scraper {
+func NewScraper(c *http.Client, log ui.Log, allowExt []string, checkJS bool, browser BrowserFetcher) *Scraper {
 	return &Scraper{
 		client:  c,
 		log:     log,
@@ -56,7 +56,10 @@ var (
 	batoPlain   = regexp.MustCompile(`[/\-](\d+(?:\.\d+)?)(?:$|[/\-_])`)
 	titlePrefix = regexp.MustCompile(`^\s*(\d+(?:\.\d+)?)\s*[.\- ]`)
 
-	reNuxt = regexp.MustCompile(`window\.__NUXT__\s*=\s*(\{.*?});`)
+	reNuxt = regexp.MustCompile(`(?s)window\.__NUXT__\s*=\s*(\{.*?\});`)
+
+	reAnyDigits = regexp.MustCompile(`[0-9]+`)
+	reBaseLike  = regexp.MustCompile(`(?:/|^)c?0*([0-9]+)(?:/|$)`)
 )
 
 func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Document, string, error) {
@@ -197,12 +200,11 @@ func isLikelyChapterFromBase(baseURL, href string) bool {
 		return false
 	}
 
-	return regexp.MustCompile(`[0-9]+`).MatchString(relPath)
+	return reAnyDigits.MatchString(relPath)
 }
 
 func parseFromBaseLike(href string) (int, string, bool) {
-	re := regexp.MustCompile(`(?:/|^)c?0*([0-9]+)(?:/|$)`)
-	if m := re.FindStringSubmatch(href); m != nil {
+	if m := reBaseLike.FindStringSubmatch(href); m != nil {
 		n, _ := strconv.Atoi(m[1])
 
 		return n, fmt.Sprintf("%d", n), true
@@ -211,42 +213,45 @@ func parseFromBaseLike(href string) (int, string, bool) {
 	return 0, "", false
 }
 
-func parseChapterLabel(href, title string) (int, string, int, string, bool) {
+// chapterLabel is a parsed chapter numbering: the main number, an optional
+// sub-number with its separator, and the display label.
+type chapterLabel struct {
+	Num        int
+	SuffixType string
+	SuffixNum  int
+	Label      string
+}
+
+func parseChapterLabel(href, title string) (chapterLabel, bool) {
 	h := strings.ToLower(href)
 	t := strings.ToLower(strings.TrimSpace(title))
 
 	if isExcluded(h) {
-		return 0, "", 0, "", false
+		return chapterLabel{}, false
 	}
 
 	if n, label, ok := parseFromBaseLike(h); ok {
-		return n, "", 0, label, true
+		return chapterLabel{Num: n, Label: label}, true
 	}
 
 	if !hasChapterKeywords(h, t) {
-		return 0, "", 0, "", false
+		return chapterLabel{}, false
 	}
 
-	if n, typ, sn, label, ok := matchChapterDash(h); ok {
-		return n, typ, sn, label, true
-	}
-	if n, typ, sn, label, ok := matchBatoVol(h); ok {
-		return n, typ, sn, label, true
-	}
-	if n, typ, sn, label, ok := matchBatoSimple(h); ok {
-		return n, typ, sn, label, true
-	}
-	if n, typ, sn, label, ok := matchBatoPlain(h); ok {
-		return n, typ, sn, label, true
-	}
-	if n, typ, sn, label, ok := matchTitlePrefix(title); ok {
-		return n, typ, sn, label, true
-	}
-	if n, typ, sn, label, ok := matchChapRe(title); ok {
-		return n, typ, sn, label, true
+	for _, match := range []func() (chapterLabel, bool){
+		func() (chapterLabel, bool) { return matchChapterDash(h) },
+		func() (chapterLabel, bool) { return matchBatoVol(h) },
+		func() (chapterLabel, bool) { return matchBatoSimple(h) },
+		func() (chapterLabel, bool) { return matchBatoPlain(h) },
+		func() (chapterLabel, bool) { return matchTitlePrefix(title) },
+		func() (chapterLabel, bool) { return matchChapRe(title) },
+	} {
+		if parsed, ok := match(); ok {
+			return parsed, true
+		}
 	}
 
-	return 0, "", 0, "", false
+	return chapterLabel{}, false
 }
 
 func hasChapterKeywords(h, t string) bool {
@@ -269,83 +274,78 @@ func isExcluded(h string) bool {
 	return false
 }
 
-func matchChapterDash(h string) (int, string, int, string, bool) {
+func matchChapterDash(h string) (chapterLabel, bool) {
 	if m := chapterDash.FindStringSubmatch(h); m != nil {
 		main, _ := strconv.Atoi(m[1])
 		if m[2] != "" {
 			sub, _ := strconv.Atoi(m[2])
-
-			return main, "-", sub, fmt.Sprintf("%d-%d", main, sub), true
+			return chapterLabel{Num: main, SuffixType: "-", SuffixNum: sub, Label: fmt.Sprintf("%d-%d", main, sub)}, true
 		}
-
-		return main, "", 0, fmt.Sprintf("%d", main), true
+		return chapterLabel{Num: main, Label: strconv.Itoa(main)}, true
 	}
 
-	return 0, "", 0, "", false
+	return chapterLabel{}, false
 }
 
-func matchBatoVol(h string) (int, string, int, string, bool) {
+// matchBatoVol reads vol_X/ch_Y URLs; the volume is dropped because chapter
+// numbering on these sites continues across volumes.
+func matchBatoVol(h string) (chapterLabel, bool) {
 	if m := batoVol.FindStringSubmatch(h); m != nil {
-		vol, _ := strconv.Atoi(m[1])
-		ch, _ := strconv.Atoi(m[2])
-
-		return ch, ".", vol, fmt.Sprintf("%d.%d", vol, ch), true
+		return parseDecimalLabel(m[2])
 	}
 
-	return 0, "", 0, "", false
+	return chapterLabel{}, false
 }
 
-func matchBatoSimple(h string) (int, string, int, string, bool) {
+func matchBatoSimple(h string) (chapterLabel, bool) {
 	if m := batoSimple.FindStringSubmatch(h); m != nil {
-		parts := strings.Split(m[1], ".")
-		main, _ := strconv.Atoi(parts[0])
-		if len(parts) == 2 {
-			sub, _ := strconv.Atoi(parts[1])
-
-			return main, ".", sub, fmt.Sprintf("%d.%d", main, sub), true
-		}
-
-		return main, "", 0, fmt.Sprintf("%d", main), true
+		return parseDecimalLabel(m[1])
 	}
 
-	return 0, "", 0, "", false
+	return chapterLabel{}, false
 }
 
-func matchBatoPlain(h string) (int, string, int, string, bool) {
+// parseDecimalLabel parses "12" or "12.5" style chapter numbers.
+func parseDecimalLabel(raw string) (chapterLabel, bool) {
+	parts := strings.Split(raw, ".")
+	main, _ := strconv.Atoi(parts[0])
+	if len(parts) == 2 {
+		sub, _ := strconv.Atoi(parts[1])
+		return chapterLabel{Num: main, SuffixType: ".", SuffixNum: sub, Label: fmt.Sprintf("%d.%s", main, parts[1])}, true
+	}
+	return chapterLabel{Num: main, Label: strconv.Itoa(main)}, true
+}
+
+func matchBatoPlain(h string) (chapterLabel, bool) {
 	if m := batoPlain.FindStringSubmatch(h); m != nil {
 		n, _ := strconv.Atoi(m[1])
-
-		return n, "", 0, m[1], true
+		return chapterLabel{Num: n, Label: m[1]}, true
 	}
 
-	return 0, "", 0, "", false
+	return chapterLabel{}, false
 }
 
-func matchTitlePrefix(title string) (int, string, int, string, bool) {
+func matchTitlePrefix(title string) (chapterLabel, bool) {
 	if m := titlePrefix.FindStringSubmatch(title); m != nil {
 		n, _ := strconv.Atoi(m[1])
-
-		return n, "", 0, m[1], true
+		return chapterLabel{Num: n, Label: m[1]}, true
 	}
 
-	return 0, "", 0, "", false
+	return chapterLabel{}, false
 }
 
-func matchChapRe(title string) (int, string, int, string, bool) {
+func matchChapRe(title string) (chapterLabel, bool) {
 	if m := chapRe.FindStringSubmatch(title); m != nil {
 		main, _ := strconv.Atoi(m[1])
 		typ := m[2]
 		sub, _ := strconv.Atoi(m[3])
-		label := fmt.Sprintf("%d%s%d", main, typ, sub)
-
 		if typ == "" {
-			label = fmt.Sprintf("%d", main)
+			return chapterLabel{Num: main, Label: strconv.Itoa(main)}, true
 		}
-
-		return main, typ, sub, label, true
+		return chapterLabel{Num: main, SuffixType: typ, SuffixNum: sub, Label: fmt.Sprintf("%d%s%d", main, typ, sub)}, true
 	}
 
-	return 0, "", 0, "", false
+	return chapterLabel{}, false
 }
 
 func looksLikeChapterLink(href, title string) bool {
@@ -360,24 +360,6 @@ func looksLikeChapterLink(href, title string) bool {
 		strings.HasPrefix(t, "chapter ") ||
 		strings.HasPrefix(t, "ep ") ||
 		strings.HasPrefix(t, "episode ")
-}
-
-func resolveURL(baseURL, href string) string {
-	if href == "" {
-		return baseURL
-	}
-
-	u, err := url.Parse(href)
-	if err == nil && u.IsAbs() {
-		return u.String()
-	}
-
-	b, err := url.Parse(baseURL)
-	if err != nil {
-		return href
-	}
-
-	return b.ResolveReference(u).String()
 }
 
 func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.Chapter, error) {
@@ -427,7 +409,7 @@ func (s *Scraper) expandChapterListIfGapped(ctx context.Context, pageURL string,
 	return chapters
 }
 
-func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []providers.Chapter {
+func scanChapterLinks(doc *goquery.Document, pageURL string, log ui.Log) []providers.Chapter {
 	var out []providers.Chapter
 	seen := map[string]bool{}
 	seenLabel := map[string]bool{}
@@ -440,42 +422,42 @@ func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []p
 			return
 		}
 
-		n, t, sn, label, ok := parseChapterLabel(strings.TrimSpace(href), strings.TrimSpace(a.Text()))
+		parsed, ok := parseChapterLabel(strings.TrimSpace(href), strings.TrimSpace(a.Text()))
 		if !ok {
 			return
 		}
 
-		if !sameSeriesChapterLink(pageURL, href, ok) {
+		if !sameSeriesChapterLink(pageURL, href) {
 			return
 		}
 
 		log.Debugf("Link looks like chapter link: %s\n", href)
-		if seenLabel[label] {
+		if seenLabel[parsed.Label] {
 			return
 		}
 
-		u := resolveURL(pageURL, href)
+		u := providers.ResolveURL(pageURL, href)
 		if seen[u] {
 			return
 		}
 		seen[u] = true
-		seenLabel[label] = true
+		seenLabel[parsed.Label] = true
 
 		title := strings.TrimSpace(a.Text())
 		if before, _, ok := strings.Cut(title, "\n"); ok {
 			title = strings.TrimSpace(before)
 		}
 		if title == "" {
-			title = "Chapter " + label
+			title = "Chapter " + parsed.Label
 		}
 
 		out = append(out, providers.Chapter{
 			URL:        u,
 			Title:      title,
-			NumMain:    n,
-			SuffixType: t,
-			SuffixNum:  sn,
-			Label:      label,
+			NumMain:    parsed.Num,
+			SuffixType: parsed.SuffixType,
+			SuffixNum:  parsed.SuffixNum,
+			Label:      parsed.Label,
 		})
 	})
 
@@ -521,7 +503,7 @@ func chapterExpansionURLs(doc *goquery.Document, pageURL string) []string {
 			!(strings.Contains(signal, "full") || strings.Contains(signal, "show all") || strings.Contains(signal, "load more") || strings.Contains(signal, "chapter-list")) {
 			return
 		}
-		u := resolveURL(pageURL, raw)
+		u := providers.ResolveURL(pageURL, raw)
 		if !sameHost(pageURL, u) {
 			return
 		}
@@ -567,12 +549,12 @@ func looksDynamicApp(body string) bool {
 		strings.Contains(body, `id="initial-data"`) || strings.Contains(body, `id='initial-data'`)
 }
 
-func sameSeriesChapterLink(pageURL, href string, parsedChapter bool) bool {
+func sameSeriesChapterLink(pageURL, href string) bool {
 	base, err := url.Parse(pageURL)
 	if err != nil {
 		return false
 	}
-	candidate, err := url.Parse(resolveURL(pageURL, href))
+	candidate, err := url.Parse(providers.ResolveURL(pageURL, href))
 	if err != nil {
 		return false
 	}
@@ -588,7 +570,7 @@ func sameSeriesChapterLink(pageURL, href string, parsedChapter bool) bool {
 	if sameSeriesID(baseParts, candidateParts) {
 		return true
 	}
-	if parsedChapter && candidateParts[0] == "chapters" && !hasNumericPathPart(baseParts) {
+	if candidateParts[0] == "chapters" && !hasNumericPathPart(baseParts) {
 		return true
 	}
 	if baseParts[0] != candidateParts[0] {
@@ -716,7 +698,7 @@ func imageFragmentURLs(doc *goquery.Document, chapterURL string) []string {
 		if !strings.Contains(signal, "image") {
 			return
 		}
-		u := withDefaultQuery(resolveURL(chapterURL, raw), "reading_style", "long_strip")
+		u := withDefaultQuery(providers.ResolveURL(chapterURL, raw), "reading_style", "long_strip")
 		if !sameHost(chapterURL, u) || seen[u] {
 			return
 		}
@@ -789,7 +771,7 @@ func chapterPageURLs(doc *goquery.Document, chapterURL string) []string {
 	seen := map[string]bool{}
 	out := []string{}
 	add := func(raw string) {
-		u := resolveURL(chapterURL, strings.TrimSpace(raw))
+		u := providers.ResolveURL(chapterURL, strings.TrimSpace(raw))
 		n, ok := chapterPageNumber(chapterURL, u)
 		if u == "" || seen[u] || !ok || n == 1 {
 			return

@@ -17,8 +17,6 @@ import (
 
 type Downloader struct {
 	client     *http.Client
-	debug      bool
-	outputDir  string
 	skipBroken bool
 	retryDelay time.Duration
 	browser    BrowserFetcher
@@ -40,11 +38,9 @@ type ProgressHandle interface {
 	MarkDone()
 }
 
-func New(c *http.Client, debug bool, outputDir string, skipBroken bool) *Downloader {
+func New(c *http.Client, skipBroken bool) *Downloader {
 	return &Downloader{
 		client:     c,
-		debug:      debug,
-		outputDir:  outputDir,
 		skipBroken: skipBroken,
 		retryDelay: time.Second,
 		warmed:     map[string]int{},

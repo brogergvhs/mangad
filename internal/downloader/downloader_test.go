@@ -15,7 +15,7 @@ import (
 func TestDownloadImagesReportsSampleErrors(t *testing.T) {
 	d := New(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusForbidden, Status: "403 Forbidden", Body: http.NoBody}, nil
-	})}, false, t.TempDir(), false)
+	})}, false)
 	d.retryDelay = 0
 
 	_, _, err := d.DownloadImagesConcurrently(
@@ -42,7 +42,7 @@ func TestDownloadImagesAcceptsBinaryImageByURLExtension(t *testing.T) {
 			Header:     http.Header{"Content-Type": []string{"application/octet-stream"}},
 			Body:       io.NopCloser(strings.NewReader("image bytes")),
 		}, nil
-	})}, false, t.TempDir(), false)
+	})}, false)
 	d.retryDelay = 0
 
 	files, _, err := d.DownloadImagesConcurrently(
@@ -78,7 +78,7 @@ func TestDownloadImagesWarmsBrowserSessionOnForbidden(t *testing.T) {
 		}, nil
 	})}
 	browser := &fakeBrowser{client: client, imageCookieTarget: "https://www.zazamanga.com/manga/the-demonic-supreme-sword/chapter-30"}
-	d := New(client, false, t.TempDir(), false)
+	d := New(client, false)
 	d.SetBrowserFetcher(browser)
 	d.retryDelay = 0
 
@@ -121,7 +121,7 @@ func TestDownloadImagesWarmsCDNOriginAfterRefererStillForbidden(t *testing.T) {
 		}, nil
 	})}
 	browser := &fakeBrowser{client: client, imageCookieTarget: "https://img-r1.2xstorage.com/"}
-	d := New(client, false, t.TempDir(), false)
+	d := New(client, false)
 	d.SetBrowserFetcher(browser)
 	d.retryDelay = 0
 
@@ -151,7 +151,7 @@ func TestDownloadImagesStopsAfterWarmFailure(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusForbidden, Status: "403 Forbidden", Body: http.NoBody}, nil
 	})}
 	browser := &fakeBrowser{client: client, failTarget: "https://img-r1.2xstorage.com/"}
-	d := New(client, false, t.TempDir(), false)
+	d := New(client, false)
 	d.SetBrowserFetcher(browser)
 	d.retryDelay = 0
 

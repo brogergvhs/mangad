@@ -18,6 +18,7 @@ var (
 
 	reSizeSuffix = regexp.MustCompile(`[-_]\d{2,5}x\d{2,5}`)
 	reParseSize  = regexp.MustCompile(`[-_](\d{2,5})x(\d{2,5})(?:\.[A-Za-z0-9]+)?$`)
+	reLooseSize  = regexp.MustCompile(`[-_](\d{2,5})x(\d{2,5})`)
 
 	reBackgroundURL = regexp.MustCompile(`url\((?:["']?)([^"')]+)(?:["']?)\)`)
 	reLooseURLs     = regexp.MustCompile(`https?://[^\s"'<>]+`)
@@ -31,13 +32,13 @@ type collectedItem struct {
 
 type imageCollector struct {
 	allowed *regexp.Regexp
-	log     *ui.Logger
+	log     ui.Log
 	items   []collectedItem
 	seen    map[string]bool
 	counter int
 }
 
-func newImageCollector(allowed *regexp.Regexp, log *ui.Logger) *imageCollector {
+func newImageCollector(allowed *regexp.Regexp, log ui.Log) *imageCollector {
 	return &imageCollector{
 		allowed: allowed,
 		log:     log,
@@ -187,7 +188,7 @@ func parseWxH(u string) (int, int) {
 		return w, h
 	}
 
-	if m := regexp.MustCompile(`[-_](\d{2,5})x(\d{2,5})`).FindStringSubmatch(u); m != nil {
+	if m := reLooseSize.FindStringSubmatch(u); m != nil {
 		w, _ := strconv.Atoi(m[1])
 		h, _ := strconv.Atoi(m[2])
 		return w, h
@@ -385,33 +386,12 @@ func (c *imageCollector) Finalize() []string {
 
 // groupCollectedItems groups collected images by their normalized base URL.
 func groupCollectedItems(items []collectedItem) map[string][]collectedItem {
-	type grp struct {
-		firstOrder int
-		items      []collectedItem
-	}
-	groups := map[string]*grp{}
-
+	groups := map[string][]collectedItem{}
 	for _, it := range items {
 		key := normalizeBase(it.URL)
-		g, ok := groups[key]
-		if !ok {
-			g = &grp{firstOrder: it.Order}
-			groups[key] = g
-		}
-
-		if it.Order < g.firstOrder {
-			g.firstOrder = it.Order
-		}
-
-		g.items = append(g.items, it)
+		groups[key] = append(groups[key], it)
 	}
-
-	out := make(map[string][]collectedItem, len(groups))
-	for k, g := range groups {
-		out[k] = g.items
-	}
-
-	return out
+	return groups
 }
 
 // chooseBestImages selects the best candidate per group.

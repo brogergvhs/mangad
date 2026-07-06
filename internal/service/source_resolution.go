@@ -32,7 +32,7 @@ func ConfigForSource(cfg config.Config, src sources.Source, opts SourceConfigOpt
 }
 
 // ResolveSourceForURL finds the best enabled source profile for a URL.
-func ResolveSourceForURL(ctx context.Context, target, dbPath string, logSvc *ui.Logger) (sources.Source, bool) {
+func ResolveSourceForURL(ctx context.Context, target, dbPath string, logSvc ui.Log) (sources.Source, bool) {
 	profiles, err := sources.BuiltInProfiles()
 	if err != nil {
 		if logSvc != nil {
@@ -68,8 +68,8 @@ func MatchSourceForURL(list []sources.Source, target string) (sources.Source, bo
 	bestScore := 0
 	var best sources.Source
 	for _, src := range list {
-		score := sourceMatchScore(src, u)
-		if score > bestScore || (score == bestScore && score > 0 && originRank(src.Origin) > originRank(best.Origin)) {
+		// sourceMatchScore already folds originRank into the score.
+		if score := sourceMatchScore(src, u); score > bestScore {
 			bestScore = score
 			best = src
 		}

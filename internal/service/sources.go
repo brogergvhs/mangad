@@ -66,7 +66,7 @@ func (s *sourceService) ExportSource(ctx context.Context, id string) ([]byte, er
 	return sources.EncodeProfileYAML(src.Profile)
 }
 
-func (s *sourceService) VerifySource(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, id string) (SourceVerifyResult, error) {
+func (s *sourceService) VerifySource(ctx context.Context, cfg *config.Config, logSvc ui.Log, id string) (SourceVerifyResult, error) {
 	src, err := s.repo.Get(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return SourceVerifyResult{}, err
@@ -85,7 +85,7 @@ func (s *sourceService) VerifySource(ctx context.Context, cfg *config.Config, lo
 	return result, nil
 }
 
-func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, src sources.Source, result *SourceVerifyResult) error {
+func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc ui.Log, src sources.Source, result *SourceVerifyResult) error {
 	if !src.Enabled {
 		return fmt.Errorf("source %s is disabled", src.ID)
 	}
@@ -100,11 +100,11 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc *
 		return err
 	}
 	result.ChaptersFound = len(chapters)
-	if len(chapters) < src.MinChapters {
-		return fmt.Errorf("found %d chapters, expected at least %d", len(chapters), src.MinChapters)
-	}
 	if len(chapters) == 0 {
 		return fmt.Errorf("no chapters found")
+	}
+	if len(chapters) < src.MinChapters {
+		return fmt.Errorf("found %d chapters, expected at least %d", len(chapters), src.MinChapters)
 	}
 	images, err := downloadSvc.FetchImages(ctx, chapters[0])
 	if err != nil {
