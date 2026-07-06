@@ -35,26 +35,33 @@ func tryBuildDynamicURLs(js JSAnalysis) []string {
 	return final
 }
 
+const maxDynamicProbes = 10
+
 func (s *Scraper) probeDynamicEndpoints(
 	ctx context.Context,
 	chapterURL string,
 	js JSAnalysis,
 	col *imageCollector,
 ) {
-
 	candidates := tryBuildDynamicURLs(js)
 	s.log.Debugf("Dynamic endpoint candidates: %v\n", candidates)
+	if len(candidates) > maxDynamicProbes {
+		s.log.Infof("Probing only %d of %d dynamic endpoint candidates.\n", maxDynamicProbes, len(candidates))
+		candidates = candidates[:maxDynamicProbes]
+	}
 
 	for _, path := range candidates {
 		fullURL := resolve(chapterURL, path)
-
-		s.log.Debugf("Probing dynamic:", fullURL)
-
-		html, ok := s.tryDynamicFetch(ctx, fullURL, "POST")
-		if !ok {
-			html, ok = s.tryDynamicFetch(ctx, fullURL, "GET")
+		// Probe read-only and only the chapter's own host: these URLs are
+		// mined from page scripts and can point anywhere.
+		if !sameHost(chapterURL, fullURL) {
+			s.log.Debugf("Skipping off-host dynamic candidate: %s\n", fullURL)
+			continue
 		}
 
+		s.log.Debugf("Probing dynamic: %s\n", fullURL)
+
+		html, ok := s.tryDynamicFetch(ctx, fullURL, http.MethodGet)
 		if !ok {
 			continue
 		}
@@ -82,11 +89,6 @@ func (s *Scraper) tryDynamicFetch(
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		select {
-		case <-ctx.Done():
-			return "", false
-		default:
-		}
 		return "", false
 	}
 	defer func() {

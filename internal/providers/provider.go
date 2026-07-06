@@ -1,6 +1,9 @@
 package providers
 
-import "context"
+import (
+	"context"
+	"sort"
+)
 
 type Chapter struct {
 	URL        string
@@ -9,6 +12,19 @@ type Chapter struct {
 	SuffixType string
 	SuffixNum  int
 	Label      string
+}
+
+// SortChapters orders chapters by main number, then suffix type and number.
+func SortChapters(chapters []Chapter) {
+	sort.SliceStable(chapters, func(i, j int) bool {
+		if chapters[i].NumMain != chapters[j].NumMain {
+			return chapters[i].NumMain < chapters[j].NumMain
+		}
+		if chapters[i].SuffixType != chapters[j].SuffixType {
+			return chapters[i].SuffixType < chapters[j].SuffixType
+		}
+		return chapters[i].SuffixNum < chapters[j].SuffixNum
+	})
 }
 
 type Scraper interface {

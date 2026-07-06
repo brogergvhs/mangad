@@ -1,15 +1,16 @@
 package generic
 
 import (
-	"fmt"
 	"net/url"
 	"path"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/brogergvhs/mangad/internal/ui"
 )
 
 var (
@@ -30,16 +31,16 @@ type collectedItem struct {
 
 type imageCollector struct {
 	allowed *regexp.Regexp
-	debug   bool
+	log     *ui.Logger
 	items   []collectedItem
 	seen    map[string]bool
 	counter int
 }
 
-func newImageCollector(allowed *regexp.Regexp, debug bool) *imageCollector {
+func newImageCollector(allowed *regexp.Regexp, log *ui.Logger) *imageCollector {
 	return &imageCollector{
 		allowed: allowed,
-		debug:   debug,
+		log:     log,
 		items:   make([]collectedItem, 0, 64),
 		seen:    make(map[string]bool),
 		counter: 0,
@@ -67,8 +68,8 @@ func (c *imageCollector) addURL(url string, idx int, allowExtensionless bool) {
 		return
 	}
 	if isNonPageImage(lu) {
-		if c.debug {
-			fmt.Printf("Skipping non-page image: %s\n", url)
+		if c.log != nil {
+			c.log.Debugf("Skipping non-page image: %s\n", url)
 		}
 
 		return
@@ -105,9 +106,14 @@ func isNonPageImage(raw string) bool {
 			return true
 		}
 	}
+	// Match whole name segments so e.g. "undercover-01.jpg" is kept.
 	base := path.Base(p)
-	for _, token := range []string{"logo", "cover", "profile", "avatar", "banner", "fbshare", "share", "background", "thumbnail", "search"} {
-		if strings.Contains(base, token) {
+	base = strings.TrimSuffix(base, path.Ext(base))
+	for _, segment := range strings.FieldsFunc(base, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		switch segment {
+		case "logo", "cover", "profile", "avatar", "banner", "fbshare", "share", "background", "thumbnail", "search":
 			return true
 		}
 	}
@@ -165,7 +171,13 @@ func normalizeBase(raw string) string {
 	base = reSizeSuffix.ReplaceAllString(base, "")
 	base = strings.TrimRight(base, "-_")
 
-	return base + ext
+	// Host and query stay in the key: the same path on another host or
+	// with a different query is a different image, not a variant to collapse.
+	key := u.Host + base + ext
+	if u.RawQuery != "" {
+		key += "?" + u.RawQuery
+	}
+	return key
 }
 
 func parseWxH(u string) (int, int) {

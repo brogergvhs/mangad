@@ -3,6 +3,7 @@ package generic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -115,11 +116,15 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 
 	resp, err := util.DoWithRetry(s.client, req, 3, 500*time.Millisecond)
 	if err != nil {
-		if s.browser != nil {
-			s.log.Infof("Normal HTTP fetch failed for %s: %v\n", target, err)
-			return s.fetchViaBrowser(ctx, target)
+		// Definitive 4xx answers (dead URL etc.) won't change in a browser;
+		// transport errors and 5xx may be a challenge, so try the solver.
+		var statusErr *util.StatusError
+		definitive := errors.As(err, &statusErr) && statusErr.Code < http.StatusInternalServerError
+		if definitive || s.browser == nil {
+			return "", err
 		}
-		return "", err
+		s.log.Infof("Normal HTTP fetch failed for %s: %v\n", target, err)
+		return s.fetchViaBrowser(ctx, target)
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
@@ -210,11 +215,15 @@ func parseChapterLabel(href, title string) (int, string, int, string, bool) {
 	h := strings.ToLower(href)
 	t := strings.ToLower(strings.TrimSpace(title))
 
+	if isExcluded(h) {
+		return 0, "", 0, "", false
+	}
+
 	if n, label, ok := parseFromBaseLike(h); ok {
 		return n, "", 0, label, true
 	}
 
-	if !hasChapterKeywords(h, t) || isExcluded(h) {
+	if !hasChapterKeywords(h, t) {
 		return 0, "", 0, "", false
 	}
 
@@ -252,7 +261,12 @@ func hasChapterKeywords(h, t string) bool {
 }
 
 func isExcluded(h string) bool {
-	return strings.Contains(h, "/u/") || strings.Contains(h, "batolists")
+	for _, token := range []string{"/u/", "batolists", "/page/", "/pg/", "?page=", "&page="} {
+		if strings.Contains(h, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchChapterDash(h string) (int, string, int, string, bool) {
@@ -465,15 +479,7 @@ func scanChapterLinks(doc *goquery.Document, pageURL string, log *ui.Logger) []p
 		})
 	})
 
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].NumMain != out[j].NumMain {
-			return out[i].NumMain < out[j].NumMain
-		}
-		if out[i].SuffixType != out[j].SuffixType {
-			return out[i].SuffixType < out[j].SuffixType
-		}
-		return out[i].SuffixNum < out[j].SuffixNum
-	})
+	providers.SortChapters(out)
 
 	return out
 }
@@ -552,12 +558,7 @@ func mergeChapters(a, b []providers.Chapter) []providers.Chapter {
 			out = append(out, ch)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].NumMain != out[j].NumMain {
-			return out[i].NumMain < out[j].NumMain
-		}
-		return out[i].SuffixNum < out[j].SuffixNum
-	})
+	providers.SortChapters(out)
 	return out
 }
 
@@ -654,7 +655,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 
 	// s.log.Debugf("\n======= DEBUG HTML START =======\n%s\n======= DEBUG HTML END =======\n\n", body)
 
-	col := newImageCollector(s.allowed, s.log.Debug)
+	col := newImageCollector(s.allowed, s.log)
 	visited := map[string]bool{chapterURL: true}
 
 	s.scanImages(ctx, col, doc, body, chapterURL)
@@ -683,7 +684,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 		if err != nil {
 			return nil, err
 		}
-		col = newImageCollector(s.allowed, s.log.Debug)
+		col = newImageCollector(s.allowed, s.log)
 		s.scanImages(ctx, col, doc, body, chapterURL)
 		final = col.Finalize()
 	}

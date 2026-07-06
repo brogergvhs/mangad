@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +67,9 @@ func (s *Scraper) fetchAPIChapters(ctx context.Context, pageURL string) ([]provi
 			lastPage = resp.Pagination.LastPage
 		}
 		out = append(out, chaptersFromRows(pageURL, slug, resp.Data)...)
+	}
+	if lastPage > maxChapterPages && s.log != nil {
+		s.log.Infof("Comickz chapter list for %s truncated at %d of %d pages.\n", pageURL, maxChapterPages, lastPage)
 	}
 
 	return dedupeAndSort(out), nil
@@ -194,11 +196,14 @@ func parseChapter(raw string) (int, string, int, string, bool) {
 	}
 	parts := strings.SplitN(raw, separator, 2)
 	main, errMain := strconv.Atoi(normalizeNumberPart(parts[0]))
-	suffix, errSuffix := strconv.Atoi(normalizeNumberPart(parts[1]))
+	// Keep the suffix text verbatim in the label: stripping zeros would
+	// collapse "10.05" into "10.5". The int form is only a sort key.
+	suffixText := strings.TrimSpace(parts[1])
+	suffix, errSuffix := strconv.Atoi(normalizeNumberPart(suffixText))
 	if errMain != nil || errSuffix != nil {
 		return 0, "", 0, "", false
 	}
-	return main, separator, suffix, fmt.Sprintf("%d%s%d", main, separator, suffix), true
+	return main, separator, suffix, fmt.Sprintf("%d%s%s", main, separator, suffixText), true
 }
 
 func normalizeNumberPart(value string) string {
@@ -219,15 +224,7 @@ func dedupeAndSort(chapters []providers.Chapter) []providers.Chapter {
 		seen[ch.Label] = true
 		out = append(out, ch)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].NumMain != out[j].NumMain {
-			return out[i].NumMain < out[j].NumMain
-		}
-		if out[i].SuffixType != out[j].SuffixType {
-			return out[i].SuffixType < out[j].SuffixType
-		}
-		return out[i].SuffixNum < out[j].SuffixNum
-	})
+	providers.SortChapters(out)
 	return out
 }
 

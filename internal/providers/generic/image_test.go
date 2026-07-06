@@ -8,7 +8,7 @@ import (
 )
 
 func TestImageCollectorTrimsAndDedupes(t *testing.T) {
-	col := newImageCollector(buildExtRegex([]string{"webp"}), false)
+	col := newImageCollector(buildExtRegex([]string{"webp"}), nil)
 	col.add("\n https://cdn.test/page-001.webp ", -1)
 	col.add("https://cdn.test/page-001.webp", -1)
 
@@ -19,7 +19,7 @@ func TestImageCollectorTrimsAndDedupes(t *testing.T) {
 }
 
 func TestImageCollectorAllowsQueryAfterExtension(t *testing.T) {
-	col := newImageCollector(buildExtRegex([]string{"webp"}), false)
+	col := newImageCollector(buildExtRegex([]string{"webp"}), nil)
 	image := "https://cdn.asurascans.com/asura-images/chapters/academys-genius-swordmaster/140/567e52.webp?v=1781373584"
 	col.add(image, -1)
 
@@ -30,7 +30,7 @@ func TestImageCollectorAllowsQueryAfterExtension(t *testing.T) {
 }
 
 func TestImageCollectorSkipsShareAssets(t *testing.T) {
-	col := newImageCollector(buildExtRegex([]string{"jpg"}), false)
+	col := newImageCollector(buildExtRegex([]string{"jpg"}), nil)
 	col.add("https://zjcdn.mangahere.org/store/manga/29763/030.0/compressed/n000.jpg", -1)
 	col.add("http://www.mangatown.com/media/images/fbshare.jpg", -1)
 
@@ -41,7 +41,7 @@ func TestImageCollectorSkipsShareAssets(t *testing.T) {
 }
 
 func TestImageCollectorSkipsSiteChromeAssets(t *testing.T) {
-	col := newImageCollector(buildExtRegex([]string{"png", "webp"}), false)
+	col := newImageCollector(buildExtRegex([]string{"png", "webp"}), nil)
 	col.add("https://www.zazamanga.com/banner/zazamanga-manga-online-official.png", -1)
 	col.add("https://comickz.co.uk/images/ads/ori-expand.png", -1)
 	col.add("https://cdn4.zinmanga1.com/thumb/tales-of-demons-and-gods.webp", -1)
@@ -67,7 +67,7 @@ func TestImageCollectorAllowsMarkedExtensionlessPageImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	col := newImageCollector(buildExtRegex([]string{"webp", "jpg"}), false)
+	col := newImageCollector(buildExtRegex([]string{"webp", "jpg"}), nil)
 	col.ScanIMGTags(doc, "https://comix.to/title/vyd0/7266081-chapter-30")
 
 	got := col.Finalize()
