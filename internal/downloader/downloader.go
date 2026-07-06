@@ -99,15 +99,6 @@ func (d *Downloader) DownloadImagesConcurrently(
 		defer wg.Done()
 		for i := range jobs {
 			u := urls[i]
-			low := strings.ToLower(u)
-
-			if strings.HasSuffix(low, ".gif") {
-				cs.mu.Lock()
-				cs.doneImages++
-				ph.Update(cs.doneImages, cs.totalImages, cs.doneBytes)
-				cs.mu.Unlock()
-				continue
-			}
 
 			ext := imageExt(u)
 			if ext == "" {
@@ -272,7 +263,7 @@ func (d *Downloader) download(
 	ctx context.Context,
 	u, output, referer string,
 	progress func(done int64),
-) error {
+) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -296,11 +287,8 @@ func (d *Downloader) download(
 		return err
 	}
 
-	var bodyCloseErr error
 	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil && bodyCloseErr == nil {
-			bodyCloseErr = cerr
-		}
+		err = errors.Join(err, resp.Body.Close())
 	}()
 
 	if resp.StatusCode != http.StatusOK {
@@ -320,11 +308,8 @@ func (d *Downloader) download(
 		return err
 	}
 
-	var fileCloseErr error
 	defer func() {
-		if cerr := f.Close(); cerr != nil && fileCloseErr == nil {
-			fileCloseErr = cerr
-		}
+		err = errors.Join(err, f.Close())
 	}()
 
 	written, err := copyWithProgress(f, resp.Body, progress)
@@ -336,11 +321,7 @@ func (d *Downloader) download(
 		progress(resp.ContentLength)
 	}
 
-	if fileCloseErr != nil {
-		return fileCloseErr
-	}
-
-	return bodyCloseErr
+	return nil
 }
 
 type statusError struct {

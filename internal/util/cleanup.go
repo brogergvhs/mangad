@@ -3,27 +3,9 @@ package util
 import (
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
-
-func SetupInterruptHandler(outputDir string) {
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		<-sig
-		fmt.Println("\nInterrupt received. Cleaning up...")
-
-		CleanupUnfinishedTempFolders(outputDir)
-		RemoveIfEmpty(outputDir)
-		fmt.Println("\nExiting due to interrupt.")
-
-		os.Exit(1)
-	}()
-}
 
 func CleanupUnfinishedTempFolders(outputDir string) {
 	entries, err := os.ReadDir(outputDir)

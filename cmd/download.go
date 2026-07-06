@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/chapters"
@@ -80,8 +82,8 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	ctx := context.Background()
-	util.SetupInterruptHandler(cfg.Output)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	scraperName := "generic"
 	var sourceID string
@@ -124,6 +126,13 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 
 	downloadSvc.SetProgressManager(service.NewTerminalProgressManager(cfg.ChapterWorkers))
 	summary, err := downloadSvc.Download(ctx, selected)
+	if ctx.Err() != nil {
+		// Workers have stopped; now removing partial temp folders is safe.
+		fmt.Println("\nInterrupted, cleaning up...")
+		util.CleanupUnfinishedTempFolders(cfg.Output)
+		util.RemoveIfEmpty(cfg.Output)
+		return fmt.Errorf("download interrupted")
+	}
 	if err != nil {
 		return err
 	}

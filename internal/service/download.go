@@ -142,6 +142,7 @@ func newDownloadServiceWithScraper(
 		Transport:   cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
 		CookieFile:  cfg.CookieFile,
 		State:       browserState,
+		RateLimit:   hostRateLimit(cfg),
 		DebugLogger: log,
 	})
 	if err != nil {
@@ -179,6 +180,14 @@ func newDownloadServiceWithScraper(
 	svc := NewDownloadService(cfg, client, scraper, log, progress)
 	svc.browser = downloadBrowser
 	return svc, nil
+}
+
+func hostRateLimit(cfg *config.Config) util.HostRateLimit {
+	return util.HostRateLimit{
+		Interval: time.Duration(cfg.RateLimit.IntervalMS) * time.Millisecond,
+		Burst:    cfg.RateLimit.Burst,
+		Disabled: cfg.RateLimit.Disabled,
+	}
 }
 
 func newProviderScraper(scraperName string, client *http.Client, log *ui.Logger, allowExt []string, checkJS bool, browser generic.BrowserFetcher) (providers.Scraper, error) {
@@ -425,7 +434,7 @@ func (s *DownloadService) downloadChapter(
 		return ChapterDownloadResult{}, err
 	}
 
-	if err := util.CreateCBZ(files, cbzOut); err != nil {
+	if err := util.CreateCBZ(files, cbzOut, s.cfg.SkipBroken); err != nil {
 		return ChapterDownloadResult{}, fmt.Errorf("create cbz: %w", err)
 	}
 
