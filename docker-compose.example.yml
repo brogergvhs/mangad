@@ -8,10 +8,13 @@ services:
       - --db
       - /data/mangad.db
     ports:
-      - "8080:8080"
+      # The API has no auth by default; keep it bound to the host's loopback
+      # or set MANGAD_API_KEY before exposing it to the network.
+      - "127.0.0.1:8080:8080"
     environment:
       XDG_CONFIG_HOME: /config
       MANGAD_DOWNLOAD_DIR: /downloads
+      # MANGAD_API_KEY: change-me
       MANGAD_BROWSER_DOWNLOADER_ENABLED: "true"
       MANGAD_BROWSER_DOWNLOADER_ENDPOINT: http://browser-worker:8192
       MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS: "180"
@@ -32,7 +35,7 @@ services:
     environment:
       LOG_LEVEL: info
     ports:
-      - "8191:8191"
+      - "127.0.0.1:8191:8191"
 
   selenium:
     image: selenium/standalone-chromium:latest
@@ -41,7 +44,7 @@ services:
       SE_NODE_MAX_SESSIONS: "4"
       SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
     ports:
-      - "4444:4444"
+      - "127.0.0.1:4444:4444"
 
   browser-worker:
     build: ./browser-worker
@@ -49,7 +52,7 @@ services:
       SELENIUM_REMOTE_URL: http://selenium:4444/wd/hub
       BROWSER_WORKER_ADDR: 0.0.0.0:8192
     ports:
-      - "8192:8192"
+      - "127.0.0.1:8192:8192"
     depends_on:
       selenium:
         condition: service_started

@@ -199,6 +199,8 @@ Docker Compose example
 
 The example uses `selenium/standalone-chromium` because `selenium/standalone-chrome` is not available for every arm64 platform.
 
+The API has no authentication unless `MANGAD_API_KEY` (or `--api-key`) is set; anyone who can reach the port can trigger downloads and change settings. The example therefore publishes all ports on `127.0.0.1` only — set an API key before exposing `mangad` beyond localhost.
+
 ```sh
 docker compose -f docker-compose.example.yml up --build
 ```
