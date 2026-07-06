@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -24,7 +26,7 @@ import (
 type JobService struct {
 	db      *sql.DB
 	dbPath  string
-	runtime func() (*config.Config, *ui.Logger, error)
+	runtime func() (*config.Config, ui.Log, error)
 	jobs    *jobs.Repository
 	lib     *LibraryService
 	src     *sourceService
@@ -190,7 +192,7 @@ func newJobService(db *sql.DB) *JobService {
 	return &JobService{
 		db:     db,
 		dbPath: database.DefaultPath(),
-		runtime: func() (*config.Config, *ui.Logger, error) {
+		runtime: func() (*config.Config, ui.Log, error) {
 			return config.DefaultConfig(), ui.NewLogger(false), nil
 		},
 		jobs: jobs.NewRepository(db),
@@ -202,14 +204,14 @@ func newJobService(db *sql.DB) *JobService {
 
 // SetRuntimeConfig overrides how job execution loads the base runtime config
 // (e.g. the CLI's merged config file); DB-backed settings still overlay it.
-func (s *JobService) SetRuntimeConfig(fn func() (*config.Config, *ui.Logger, error)) {
+func (s *JobService) SetRuntimeConfig(fn func() (*config.Config, ui.Log, error)) {
 	if fn != nil {
 		s.runtime = fn
 	}
 }
 
 // RuntimeConfig returns the merged runtime config for job execution.
-func (s *JobService) RuntimeConfig(ctx context.Context) (*config.Config, *ui.Logger, error) {
+func (s *JobService) RuntimeConfig(ctx context.Context) (*config.Config, ui.Log, error) {
 	cfg, logSvc, err := s.runtime()
 	if err != nil {
 		return nil, nil, err
@@ -219,10 +221,13 @@ func (s *JobService) RuntimeConfig(ctx context.Context) (*config.Config, *ui.Log
 	return cfg, logSvc, nil
 }
 
-// Setting returns an app setting or fallback.
+// Setting returns an app setting, or fallback when the key is unset.
 func (s *JobService) Setting(ctx context.Context, key, fallback string) string {
 	var value string
 	if err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&value); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("read setting %s: %v (using fallback)", key, err)
+		}
 		return fallback
 	}
 	return value
@@ -353,7 +358,7 @@ func (s *JobService) ExportSource(ctx context.Context, sourceID string) ([]byte,
 }
 
 // VerifySource checks one source profile.
-func (s *JobService) VerifySource(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, sourceID string) (SourceVerifyResult, error) {
+func (s *JobService) VerifySource(ctx context.Context, cfg *config.Config, logSvc ui.Log, sourceID string) (SourceVerifyResult, error) {
 	return s.src.VerifySource(ctx, cfg, logSvc, sourceID)
 }
 
@@ -391,7 +396,7 @@ func (s *JobService) List(ctx context.Context) ([]jobs.Job, error) {
 }
 
 // RunDue claims and runs due jobs until the queue is empty.
-func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc *ui.Logger) (RunSummary, error) {
+func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc ui.Log) (RunSummary, error) {
 	var summary RunSummary
 	// Outcomes must be persisted even when ctx is cancelled mid-job;
 	// marking with the cancelled ctx would strand the job as running.
@@ -419,7 +424,7 @@ func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc *ui.
 	}
 }
 
-func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, job jobs.Job) error {
+func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log, job jobs.Job) error {
 	var payload JobPayload
 	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
 		return fmt.Errorf("decode job payload: %w", err)

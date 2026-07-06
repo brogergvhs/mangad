@@ -118,7 +118,7 @@ func (s *LibraryService) GetTitle(ctx context.Context, id int64) (library.Title,
 func (s *LibraryService) RefreshTitle(
 	ctx context.Context,
 	cfg *config.Config,
-	logSvc *ui.Logger,
+	logSvc ui.Log,
 	title library.Title,
 ) (RefreshResult, error) {
 	downloadSvc, err := s.downloadServiceForTitle(ctx, cfg, logSvc, nil, title)
@@ -142,7 +142,7 @@ func (s *LibraryService) RefreshTitle(
 func (s *LibraryService) RefreshMonitored(
 	ctx context.Context,
 	cfg *config.Config,
-	logSvc *ui.Logger,
+	logSvc ui.Log,
 ) ([]RefreshResult, error) {
 	titles, err := s.repo.ListTitles(ctx)
 	if err != nil {
@@ -198,7 +198,7 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (Scan
 func (s *LibraryService) DownloadMissing(
 	ctx context.Context,
 	cfg *config.Config,
-	logSvc *ui.Logger,
+	logSvc ui.Log,
 	titleID int64,
 ) ([]ChapterDownloadResult, error) {
 	title, missing, err := s.MissingChapters(ctx, titleID)
@@ -235,7 +235,7 @@ func (s *LibraryService) DownloadMissing(
 func (s *LibraryService) DownloadMonitoredMissing(
 	ctx context.Context,
 	cfg *config.Config,
-	logSvc *ui.Logger,
+	logSvc ui.Log,
 ) ([]ChapterDownloadResult, error) {
 	titles, err := s.repo.ListTitles(ctx)
 	if err != nil {
@@ -265,7 +265,7 @@ func (s *LibraryService) DownloadMonitoredMissing(
 func (s *LibraryService) DownloadChapterLabel(
 	ctx context.Context,
 	cfg *config.Config,
-	logSvc *ui.Logger,
+	logSvc ui.Log,
 	titleID int64,
 	label string,
 ) (ChapterDownloadResult, error) {
@@ -315,7 +315,7 @@ func (s *LibraryService) downloadChapter(
 func (s *LibraryService) downloadServiceForTitle(
 	ctx context.Context,
 	cfg *config.Config,
-	logSvc *ui.Logger,
+	logSvc ui.Log,
 	progress ProgressManager,
 	title library.Title,
 ) (*DownloadService, error) {

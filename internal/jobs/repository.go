@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/brogergvhs/mangad/internal/database"
 )
 
 const (
@@ -43,7 +45,7 @@ func (r *Repository) Enqueue(ctx context.Context, typ string, payload string, ru
 			UPDATE jobs
 			SET run_after = MIN(run_after, ?), updated_at = CURRENT_TIMESTAMP
 			WHERE id = ? AND status != 'running'
-		`, sqliteTime(runAfter), id); err != nil {
+		`, database.FormatTime(runAfter), id); err != nil {
 			return Job{}, fmt.Errorf("reschedule pending job %d: %w", id, err)
 		}
 		return r.Get(ctx, id)
@@ -56,7 +58,7 @@ func (r *Repository) Enqueue(ctx context.Context, typ string, payload string, ru
 		INSERT INTO jobs(type, status, payload_json, run_after)
 		VALUES (?, 'queued', ?, ?)
 		RETURNING id
-	`, typ, payload, sqliteTime(runAfter))
+	`, typ, payload, database.FormatTime(runAfter))
 
 	if err := row.Scan(&id); err != nil {
 		return Job{}, fmt.Errorf("enqueue job: %w", err)
@@ -102,51 +104,26 @@ func (r *Repository) List(ctx context.Context) ([]Job, error) {
 	return out, nil
 }
 
-// ClaimNext marks the next due queued/failed job as running.
+// ClaimNext marks the next due queued/failed job as running. The single
+// guarded UPDATE makes the claim atomic without a write transaction.
 func (r *Repository) ClaimNext(ctx context.Context) (Job, bool, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Job{}, false, fmt.Errorf("begin claim: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
 	var id int64
-	err = tx.QueryRowContext(ctx, `
-		SELECT id FROM jobs
-		WHERE status IN ('queued', 'failed') AND run_after <= CURRENT_TIMESTAMP
-		ORDER BY run_after, id
-		LIMIT 1
-	`).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		_ = tx.Rollback()
-		return Job{}, false, nil
-	}
-	if err != nil {
-		return Job{}, false, fmt.Errorf("select job to claim: %w", err)
-	}
-
-	result, err := tx.ExecContext(ctx, `
+	err := r.db.QueryRowContext(ctx, `
 		UPDATE jobs
 		SET status = 'running', attempts = attempts + 1, last_error = '', updated_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND status IN ('queued', 'failed') AND run_after <= CURRENT_TIMESTAMP
-	`, id)
-	if err != nil {
-		return Job{}, false, fmt.Errorf("claim job %d: %w", id, err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return Job{}, false, fmt.Errorf("check claimed rows: %w", err)
-	}
-	if changed == 0 {
-		_ = tx.Rollback()
+		WHERE id = (
+			SELECT id FROM jobs
+			WHERE status IN ('queued', 'failed') AND run_after <= CURRENT_TIMESTAMP
+			ORDER BY run_after, id
+			LIMIT 1
+		) AND status IN ('queued', 'failed')
+		RETURNING id
+	`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
 		return Job{}, false, nil
 	}
-	if err = tx.Commit(); err != nil {
-		return Job{}, false, fmt.Errorf("commit claim: %w", err)
+	if err != nil {
+		return Job{}, false, fmt.Errorf("claim job: %w", err)
 	}
 
 	job, err := r.Get(ctx, id)
@@ -207,13 +184,15 @@ func (r *Repository) markWithRunAfter(ctx context.Context, id int64, status, msg
 	args := []any{status, msg}
 	if !runAfter.IsZero() {
 		runAfterSQL = "?"
-		args = append(args, sqliteTime(runAfter))
+		args = append(args, database.FormatTime(runAfter))
 	}
 	args = append(args, id)
+	// Outcomes only apply to running jobs; anything else means the job was
+	// reconciled or re-claimed since, and must not be overwritten.
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE jobs
 		SET status = ?, last_error = ?, run_after = `+runAfterSQL+`, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
+		WHERE id = ? AND status = 'running'
 	`, args...)
 	if err != nil {
 		return fmt.Errorf("mark job %d %s: %w", id, status, err)
@@ -223,7 +202,7 @@ func (r *Repository) markWithRunAfter(ctx context.Context, id int64, status, msg
 		return fmt.Errorf("check job %d %s: %w", id, status, err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("job %d not found", id)
+		return fmt.Errorf("job %d is not running", id)
 	}
 
 	return nil
@@ -247,11 +226,7 @@ func jobSelect() string {
 	`
 }
 
-type scanner interface {
-	Scan(dest ...any) error
-}
-
-func scanJob(row scanner) (Job, error) {
+func scanJob(row database.Scanner) (Job, error) {
 	var job Job
 	var runAfter, createdAt, updatedAt string
 	if err := row.Scan(&job.ID, &job.Type, &job.Status, &job.Payload, &runAfter, &job.Attempts, &job.LastError, &createdAt, &updatedAt); err != nil {
@@ -259,30 +234,15 @@ func scanJob(row scanner) (Job, error) {
 	}
 
 	var err error
-	if job.RunAfter, err = parseTime(runAfter); err != nil {
+	if job.RunAfter, err = database.ParseTime(runAfter); err != nil {
 		return Job{}, err
 	}
-	if job.CreatedAt, err = parseTime(createdAt); err != nil {
+	if job.CreatedAt, err = database.ParseTime(createdAt); err != nil {
 		return Job{}, err
 	}
-	if job.UpdatedAt, err = parseTime(updatedAt); err != nil {
+	if job.UpdatedAt, err = database.ParseTime(updatedAt); err != nil {
 		return Job{}, err
 	}
 
 	return job, nil
-}
-
-func parseTime(value string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
-		t, err := time.Parse(layout, value)
-		if err == nil {
-			return t, nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("parse sqlite time %q", value)
-}
-
-func sqliteTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02 15:04:05")
 }

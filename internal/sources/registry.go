@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -18,13 +19,11 @@ type Registry struct {
 	Profiles []Profile `json:"profiles" yaml:"profiles"`
 }
 
-// DecodeProfile decodes one source profile.
+// DecodeProfile decodes one YAML (or JSON, a YAML subset) source profile.
 func DecodeProfile(body []byte) (Profile, error) {
 	var profile Profile
 	if err := yaml.Unmarshal(body, &profile); err != nil {
-		if jsonErr := json.Unmarshal(body, &profile); jsonErr != nil {
-			return Profile{}, fmt.Errorf("decode source profile: %w", err)
-		}
+		return Profile{}, fmt.Errorf("decode source profile: %w", err)
 	}
 	return normalizeProfile(profile)
 }
@@ -65,19 +64,26 @@ func FetchRegistry(ctx context.Context, registryURL string) ([]Profile, error) {
 	return DecodeRegistry(body)
 }
 
-// DecodeRegistry decodes a registry document.
+// DecodeRegistry decodes a registry document. Invalid entries are skipped
+// with a warning so one bad upstream profile cannot block all the others.
 func DecodeRegistry(body []byte) ([]Profile, error) {
 	var reg Registry
 	if err := decodeRegistry(body, &reg); err != nil {
 		return nil, err
 	}
 	out := make([]Profile, 0, len(reg.Profiles))
+	var lastErr error
 	for _, profile := range reg.Profiles {
 		p, err := normalizeProfile(profile)
 		if err != nil {
-			return nil, err
+			log.Printf("skipping invalid registry profile %q: %v", profile.ID, err)
+			lastErr = err
+			continue
 		}
 		out = append(out, p)
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, fmt.Errorf("registry has no valid profiles: %w", lastErr)
 	}
 	return out, nil
 }

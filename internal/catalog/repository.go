@@ -7,7 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
+
+	"github.com/brogergvhs/mangad/internal/database"
 )
 
 // Repository persists canonical manga and source matches.
@@ -56,7 +57,7 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
 	`, m.Provider, m.ProviderID, m.TitleRomaji, m.TitleEnglish, m.TitleNative, m.Description,
-		m.CoverImage, m.Status, m.Format, chapters, string(synonyms), boolToInt(m.Wanted), m.RawJSON)
+		m.CoverImage, m.Status, m.Format, chapters, string(synonyms), database.BoolToInt(m.Wanted), m.RawJSON)
 	var id int64
 	if err := row.Scan(&id); err != nil {
 		return Manga{}, fmt.Errorf("upsert manga: %w", err)
@@ -78,6 +79,24 @@ func (r *Repository) GetManga(ctx context.Context, id int64) (Manga, error) {
 }
 
 // ListWanted returns wanted canonical titles.
+// UpdateWanted sets the wanted flag for one catalog manga.
+func (r *Repository) UpdateWanted(ctx context.Context, id int64, wanted bool) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE catalog_manga SET wanted = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, database.BoolToInt(wanted), id)
+	if err != nil {
+		return fmt.Errorf("update wanted for manga %d: %w", id, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check wanted update for manga %d: %w", id, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("manga %d not found", id)
+	}
+	return nil
+}
+
 func (r *Repository) ListWanted(ctx context.Context) ([]Manga, error) {
 	rows, err := r.db.QueryContext(ctx, mangaSelect()+` WHERE wanted = 1 ORDER BY title_english COLLATE NOCASE, title_romaji COLLATE NOCASE`)
 	if err != nil {
@@ -192,9 +211,11 @@ func scanManga(row interface{ Scan(...any) error }) (Manga, error) {
 		v := int(chapters.Int64)
 		m.Chapters = &v
 	}
-	_ = json.Unmarshal([]byte(synonymsJSON), &m.Synonyms)
+	if err := json.Unmarshal([]byte(synonymsJSON), &m.Synonyms); err != nil {
+		return Manga{}, fmt.Errorf("decode synonyms for manga %d: %w", m.ID, err)
+	}
 	m.Wanted = wanted != 0
-	t, err := parseTime(updated)
+	t, err := database.ParseTime(updated)
 	if err != nil {
 		return Manga{}, err
 	}
@@ -210,7 +231,7 @@ func scanMatch(row interface{ Scan(...any) error }) (Match, error) {
 		&m.Error, &m.VerifiedAt, &updated); err != nil {
 		return Match{}, err
 	}
-	t, err := parseTime(updated)
+	t, err := database.ParseTime(updated)
 	if err != nil {
 		return Match{}, err
 	}
@@ -232,29 +253,10 @@ func cleanStrings(values []string) []string {
 	return out
 }
 
-func parseTime(value string) (time.Time, error) {
-	if strings.TrimSpace(value) == "" {
-		return time.Time{}, nil
-	}
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
-		if t, err := time.Parse(layout, value); err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("parse sqlite time %q", value)
-}
-
 func nonEmpty(value, fallback string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return fallback
 	}
 	return value
-}
-
-func boolToInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }

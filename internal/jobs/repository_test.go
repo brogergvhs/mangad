@@ -62,8 +62,9 @@ func TestRepositoryQueueLifecycle(t *testing.T) {
 		t.Fatal("ClaimNext(no due) ok = true, want false")
 	}
 
-	if err := repo.MarkFailed(ctx, future.ID, assertErr("boom")); err != nil {
-		t.Fatalf("MarkFailed() error = %v", err)
+	// Outcome marks only apply to running jobs.
+	if err := repo.MarkFailed(ctx, future.ID, assertErr("boom")); err == nil {
+		t.Fatal("MarkFailed(queued job) error = nil, want not-running error")
 	}
 	jobs, err := repo.List(ctx)
 	if err != nil {
@@ -227,8 +228,8 @@ func TestRepositoryEnqueueDedupesPendingJobs(t *testing.T) {
 		t.Fatal("different payload reused the same job")
 	}
 
-	if err := repo.MarkDone(ctx, later.ID); err != nil {
-		t.Fatalf("MarkDone() error = %v", err)
+	if _, err := db.ExecContext(ctx, `UPDATE jobs SET status = 'done' WHERE id = ?`, later.ID); err != nil {
+		t.Fatal(err)
 	}
 	fresh, err := repo.Enqueue(ctx, TypeRefreshTitle, `{"title_id":1}`, time.Now())
 	if err != nil {

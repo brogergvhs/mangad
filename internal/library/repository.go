@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/brogergvhs/mangad/internal/chapters"
+	"github.com/brogergvhs/mangad/internal/database"
 )
 
 // Repository persists tracked titles and chapters.
@@ -38,6 +39,11 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 	}
 	if _, err := url.ParseRequestURI(params.SourceURL); err != nil {
 		return Title{}, fmt.Errorf("invalid source URL: %w", err)
+	}
+	// The download root is only known at download time; reject traversal
+	// segments here so escapes are never even stored.
+	if hasDotDot(params.OutputPath) {
+		return Title{}, fmt.Errorf("output path %q must not contain ..", params.OutputPath)
 	}
 
 	var catalogID any
@@ -69,7 +75,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 			refresh_interval = excluded.refresh_interval,
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
-	`, catalogID, sourceID, params.SourceURL, params.DisplayTitle, params.OutputPath, boolToInt(params.Monitored), params.RefreshInterval)
+	`, catalogID, sourceID, params.SourceURL, params.DisplayTitle, params.OutputPath, database.BoolToInt(params.Monitored), params.RefreshInterval)
 
 	var id int64
 	if err := row.Scan(&id); err != nil {
@@ -175,10 +181,15 @@ func (r *Repository) UpsertChapters(
 	}
 	defer stmt.Close()
 
+	// Chapters also have UNIQUE(title_id, url); a second label for the same
+	// URL would abort the whole transaction, so keep the first one.
+	seenURL := map[string]bool{}
+	count := 0
 	for _, ch := range discovered {
-		if strings.TrimSpace(ch.Label) == "" || strings.TrimSpace(ch.URL) == "" {
+		if strings.TrimSpace(ch.Label) == "" || strings.TrimSpace(ch.URL) == "" || seenURL[ch.URL] {
 			continue
 		}
+		seenURL[ch.URL] = true
 		if _, err = stmt.ExecContext(
 			ctx,
 			titleID,
@@ -191,6 +202,7 @@ func (r *Repository) UpsertChapters(
 		); err != nil {
 			return 0, fmt.Errorf("upsert chapter %q: %w", ch.Label, err)
 		}
+		count++
 	}
 
 	if _, err = tx.ExecContext(ctx, `UPDATE titles SET last_refreshed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, titleID); err != nil {
@@ -200,7 +212,7 @@ func (r *Repository) UpsertChapters(
 		return 0, fmt.Errorf("commit chapter upsert: %w", err)
 	}
 
-	return len(discovered), nil
+	return count, nil
 }
 
 // ListMissingChapters returns discovered chapters without a completed
@@ -359,6 +371,18 @@ func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, 
 	return nil
 }
 
+func hasDotDot(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, part := range strings.Split(filepath.Clean(path), string(filepath.Separator)) {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeTitleParams(params AddTitleParams) AddTitleParams {
 	params.SourceURL = strings.TrimSpace(params.SourceURL)
 	params.SourceID = strings.TrimSpace(params.SourceID)
@@ -416,11 +440,7 @@ func titleSelectQuery() string {
 	`
 }
 
-type scanner interface {
-	Scan(dest ...any) error
-}
-
-func scanTitle(row scanner) (Title, error) {
+func scanTitle(row database.Scanner) (Title, error) {
 	var title Title
 	var catalogID sql.NullInt64
 	var monitored int
@@ -452,18 +472,18 @@ func scanTitle(row scanner) (Title, error) {
 	}
 	title.Monitored = monitored != 0
 	if lastRefreshed.Valid {
-		t, err := parseTime(lastRefreshed.String)
+		t, err := database.ParseTime(lastRefreshed.String)
 		if err != nil {
 			return Title{}, err
 		}
 		title.LastRefreshedAt = &t
 	}
 
-	created, err := parseTime(createdAt)
+	created, err := database.ParseTime(createdAt)
 	if err != nil {
 		return Title{}, err
 	}
-	updated, err := parseTime(updatedAt)
+	updated, err := database.ParseTime(updatedAt)
 	if err != nil {
 		return Title{}, err
 	}
@@ -473,7 +493,7 @@ func scanTitle(row scanner) (Title, error) {
 	return title, nil
 }
 
-func scanChapter(row scanner) (Chapter, error) {
+func scanChapter(row database.Scanner) (Chapter, error) {
 	var chapter Chapter
 	var discoveredAt string
 	var updatedAt string
@@ -493,11 +513,11 @@ func scanChapter(row scanner) (Chapter, error) {
 		return Chapter{}, err
 	}
 
-	discovered, err := parseTime(discoveredAt)
+	discovered, err := database.ParseTime(discoveredAt)
 	if err != nil {
 		return Chapter{}, err
 	}
-	updated, err := parseTime(updatedAt)
+	updated, err := database.ParseTime(updatedAt)
 	if err != nil {
 		return Chapter{}, err
 	}
@@ -505,23 +525,4 @@ func scanChapter(row scanner) (Chapter, error) {
 	chapter.UpdatedAt = updated
 
 	return chapter, nil
-}
-
-func parseTime(value string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
-		t, err := time.Parse(layout, value)
-		if err == nil {
-			return t, nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("parse sqlite time %q", value)
-}
-
-func boolToInt(value bool) int {
-	if value {
-		return 1
-	}
-
-	return 0
 }

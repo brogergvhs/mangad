@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/brogergvhs/mangad/internal/database"
 )
 
 // Repository persists source profiles.
@@ -20,8 +22,19 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 // Sync upserts profiles without clearing existing verification status.
-func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string) error {
+// It runs in one transaction so a failure cannot leave a partial sync.
+func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string) (err error) {
 	origin = cleanOrigin(origin)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin source sync: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
 	for _, profile := range profiles {
 		p, err := normalizeProfile(profile)
 		if err != nil {
@@ -35,7 +48,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 		if err != nil {
 			return fmt.Errorf("encode extensions for %s: %w", p.ID, err)
 		}
-		_, err = r.db.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			INSERT INTO sources (
 				id,
 				origin,
@@ -69,10 +82,13 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				profile_version = excluded.profile_version,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE sources.origin != 'local' OR excluded.origin = 'local'
-		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.SearchURL, p.Scraper, extensions, p.MinChapters, boolToInt(p.RequiresBrowserSolver), boolToInt(p.RequiresBrowserDownload), boolToInt(p.Enabled), p.Version)
+		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.SearchURL, p.Scraper, extensions, p.MinChapters, database.BoolToInt(p.RequiresBrowserSolver), database.BoolToInt(p.RequiresBrowserDownload), database.BoolToInt(p.Enabled), p.Version)
 		if err != nil {
 			return fmt.Errorf("sync source %s: %w", p.ID, err)
 		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit source sync: %w", err)
 	}
 	return nil
 }
@@ -132,6 +148,7 @@ func (r *Repository) Get(ctx context.Context, id string) (Source, error) {
 
 // UpdateCheck stores the latest source verification result.
 func (r *Repository) UpdateCheck(ctx context.Context, id, status, lastErr string, chapters, images int, extensions []string) error {
+	id = strings.ToLower(strings.TrimSpace(id))
 	encoded, err := encodeList(extensions)
 	if err != nil {
 		return fmt.Errorf("encode image extensions: %w", err)
@@ -259,11 +276,4 @@ func decodeList(value string) ([]string, error) {
 		return nil, err
 	}
 	return out, nil
-}
-
-func boolToInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }
