@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,7 +72,7 @@ func NewHTTPClient(opts HTTPClientOptions) (*http.Client, error) {
 			ua:           opts.UserAgent,
 			cookieHeader: joinCookies(opts.Cookie, opts.CookieFile),
 			state:        opts.State,
-			rateLimit:    opts.RateLimit,
+			limiters:     newHostLimiters(opts.RateLimit),
 			log:          opts.DebugLogger,
 		},
 		Jar: jar,
@@ -90,11 +91,14 @@ type roundTripper struct {
 	ua           string
 	cookieHeader string
 	state        *BrowserState
-	rateLimit    HostRateLimit
+	limiters     *hostLimiters
 	log          interface{ Debugf(string, ...any) }
 }
 
 func (rt roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// RoundTrippers must not modify the caller's request.
+	req = req.Clone(req.Context())
+
 	ua := rt.ua
 	if rt.state != nil {
 		if stateUA := rt.state.UserAgent(); stateUA != "" {
@@ -114,7 +118,7 @@ func (rt roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if rt.log != nil {
 		rt.log.Debugf("HTTP %s %s", req.Method, req.URL.String())
 	}
-	if err := waitHost(req.Context(), req.URL.Host, rt.rateLimit); err != nil {
+	if err := rt.limiters.Wait(req.Context(), req.URL.Host); err != nil {
 		return nil, err
 	}
 
@@ -144,32 +148,57 @@ func joinCookies(inline, file string) string {
 	return s
 }
 
-// DoWithRetry executes request with simple retry policy.
+// StatusError reports a non-success HTTP status after retries.
+type StatusError struct{ Code int }
+
+func (e *StatusError) Error() string { return fmt.Sprintf("HTTP %d", e.Code) }
+
+// DoWithRetry executes request, retrying transport errors, 429s, and 5xx
+// responses with linear backoff (429 also honors Retry-After). Responses
+// below 400 — and 403s, whose body callers inspect for challenge pages —
+// are returned as-is; any other status yields a *StatusError.
 func DoWithRetry(c *http.Client, req *http.Request, attempts int, backoff time.Duration) (*http.Response, error) {
-	var resp *http.Response
-	var err error
+	var lastErr error
 
 	for i := 1; i <= attempts; i++ {
-		resp, err = c.Do(req)
-		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 500 {
-			return resp, nil
-		}
-
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
+		var retryAfter time.Duration
+		resp, err := c.Do(req)
+		if err != nil {
+			lastErr = err
+		} else {
+			switch {
+			case resp.StatusCode < http.StatusBadRequest || resp.StatusCode == http.StatusForbidden:
+				return resp, nil
+			case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError:
+				lastErr = &StatusError{Code: resp.StatusCode}
+				retryAfter = retryAfterDelay(resp)
+				_ = resp.Body.Close()
+			default:
+				_ = resp.Body.Close()
+				return nil, &StatusError{Code: resp.StatusCode}
+			}
 		}
 
 		if i == attempts {
 			break
 		}
-		time.Sleep(backoff * time.Duration(i))
+		select {
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		case <-time.After(max(backoff*time.Duration(i), retryAfter)):
+		}
 	}
 
-	if err == nil && resp != nil {
-		return resp, fmt.Errorf("HTTP %d after %d attempts", resp.StatusCode, attempts)
-	}
+	return nil, lastErr
+}
 
-	return nil, err
+func retryAfterDelay(resp *http.Response) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After")))
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	const maxRetryAfter = 30 * time.Second
+	return min(time.Duration(seconds)*time.Second, maxRetryAfter)
 }
 
 func PickUserAgent(override string) string {

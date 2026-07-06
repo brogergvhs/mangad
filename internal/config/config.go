@@ -34,9 +34,18 @@ type Config struct {
 
 	SkipBroken bool `yaml:"skip_broken"`
 
+	RateLimit       RateLimitConfig       `yaml:"rate_limit"`
 	BrowserSolver   BrowserSolverConfig   `yaml:"browser_solver"`
 	BrowserDownload BrowserDownloadConfig `yaml:"browser_downloader"`
 	CookieDBPath    string                `yaml:"-"`
+}
+
+// RateLimitConfig controls per-host request pacing. Zero values use the
+// built-in default (200ms interval, burst 2).
+type RateLimitConfig struct {
+	Disabled   bool `yaml:"disabled"`
+	IntervalMS int  `yaml:"interval_ms"`
+	Burst      int  `yaml:"burst"`
 }
 
 type BrowserSolverConfig struct {

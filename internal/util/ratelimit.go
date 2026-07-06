@@ -6,9 +6,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
-// HostRateLimit controls per-host HTTP pacing.
+// HostRateLimit controls per-host HTTP pacing. Zero values fall back to the
+// built-in default; set Disabled to opt out entirely.
 type HostRateLimit struct {
 	Interval time.Duration
 	Burst    int
@@ -17,18 +20,16 @@ type HostRateLimit struct {
 
 var defaultHostRateLimit = HostRateLimit{Interval: 200 * time.Millisecond, Burst: 2}
 
-var (
-	hostLimitersMu sync.Mutex
-	hostLimiters   = map[string]*rateLimiter{}
-)
+// hostLimiters paces requests per hostname for one HTTP client.
+type hostLimiters struct {
+	cfg HostRateLimit
 
-type rateLimiter struct {
-	tokens chan struct{}
+	mu       sync.Mutex
+	limiters map[string]*rate.Limiter
 }
 
-func waitHost(ctx context.Context, host string, cfg HostRateLimit) error {
-	host = rateLimitHost(host)
-	if host == "" || cfg.Disabled {
+func newHostLimiters(cfg HostRateLimit) *hostLimiters {
+	if cfg.Disabled {
 		return nil
 	}
 	if cfg.Interval <= 0 {
@@ -37,13 +38,29 @@ func waitHost(ctx context.Context, host string, cfg HostRateLimit) error {
 	if cfg.Burst <= 0 {
 		cfg.Burst = defaultHostRateLimit.Burst
 	}
-	limiter := getHostLimiter(host, cfg)
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-limiter.tokens:
+	return &hostLimiters{cfg: cfg, limiters: map[string]*rate.Limiter{}}
+}
+
+// Wait blocks until a request to host may proceed or ctx is done.
+// A nil receiver never blocks.
+func (h *hostLimiters) Wait(ctx context.Context, host string) error {
+	if h == nil {
 		return nil
 	}
+	host = rateLimitHost(host)
+	if host == "" {
+		return nil
+	}
+
+	h.mu.Lock()
+	limiter := h.limiters[host]
+	if limiter == nil {
+		limiter = rate.NewLimiter(rate.Every(h.cfg.Interval), h.cfg.Burst)
+		h.limiters[host] = limiter
+	}
+	h.mu.Unlock()
+
+	return limiter.Wait(ctx)
 }
 
 func rateLimitHost(value string) string {
@@ -52,33 +69,4 @@ func rateLimitHost(value string) string {
 		value = host
 	}
 	return strings.Trim(value, "[]")
-}
-
-func getHostLimiter(host string, cfg HostRateLimit) *rateLimiter {
-	hostLimitersMu.Lock()
-	defer hostLimitersMu.Unlock()
-	if existing := hostLimiters[host]; existing != nil {
-		return existing
-	}
-	created := newRateLimiter(cfg)
-	hostLimiters[host] = created
-	return created
-}
-
-func newRateLimiter(cfg HostRateLimit) *rateLimiter {
-	limiter := &rateLimiter{tokens: make(chan struct{}, cfg.Burst)}
-	for i := 0; i < cfg.Burst; i++ {
-		limiter.tokens <- struct{}{}
-	}
-	go func() {
-		ticker := time.NewTicker(cfg.Interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			select {
-			case limiter.tokens <- struct{}{}:
-			default:
-			}
-		}
-	}()
-	return limiter
 }
