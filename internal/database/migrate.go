@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS downloads (
 	status TEXT NOT NULL,
 	output_file TEXT NOT NULL DEFAULT '',
 	bytes INTEGER NOT NULL DEFAULT 0,
+	attempts INTEGER NOT NULL DEFAULT 0,
 	error TEXT NOT NULL DEFAULT '',
 	started_at TEXT,
 	completed_at TEXT,
@@ -159,10 +160,6 @@ INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
 
 // Migrate applies all built-in database migrations.
 func Migrate(ctx context.Context, db *sql.DB) error {
-	if err := recreateObsoleteSources(ctx, db); err != nil {
-		return err
-	}
-
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin migration: %w", err)
@@ -173,6 +170,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 	}()
 
+	if err = dropObsoleteSources(ctx, tx); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, initialSchema); err != nil {
 		return fmt.Errorf("apply migration %d: %w", initialSchemaVersion, err)
 	}
@@ -185,6 +185,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	for _, col := range []struct{ table, name, def string }{
 		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},
+		{"downloads", "attempts", "INTEGER NOT NULL DEFAULT 0"},
 		{"title_source_matches", "title", "TEXT NOT NULL DEFAULT ''"},
 		{"title_source_matches", "chapters_found", "INTEGER NOT NULL DEFAULT 0"},
 		{"title_source_matches", "sample_images_found", "INTEGER NOT NULL DEFAULT 0"},
@@ -202,28 +203,15 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func recreateObsoleteSources(ctx context.Context, db *sql.DB) error {
-	ok, exists, err := tableHasColumn(ctx, db, "sources", "origin")
+// dropObsoleteSources removes the pre-origin sources table so initialSchema
+// can recreate it; ON DELETE SET NULL clears references from titles.
+func dropObsoleteSources(ctx context.Context, tx *sql.Tx) error {
+	ok, exists, err := txHasColumn(ctx, tx, "sources", "origin")
 	if err != nil || !exists || ok {
 		return err
 	}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("open migration connection: %w", err)
-	}
-	defer conn.Close()
-
-	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
-		return fmt.Errorf("disable foreign keys: %w", err)
-	}
-	defer func() { _, _ = conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`) }()
-
-	if _, err := conn.ExecContext(ctx, `DROP TABLE IF EXISTS sources`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DROP TABLE sources`); err != nil {
 		return fmt.Errorf("drop obsolete sources table: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, sourcesSchema); err != nil {
-		return fmt.Errorf("recreate sources table: %w", err)
 	}
 	return nil
 }
