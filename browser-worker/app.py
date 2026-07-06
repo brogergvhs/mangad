@@ -5,6 +5,7 @@ import json
 import os
 import posixpath
 import re
+import threading
 import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -43,7 +44,10 @@ def keep_image(url, mime, allowed):
     ext = image_ext(url)
     if allowed and ext and ext not in allowed:
         return False
-    return mime.startswith(IMAGE_MIME) or ext in allowed
+    if not mime:
+        # DOM-sourced URLs carry no MIME; the checks above suffice.
+        return True
+    return mime.startswith(IMAGE_MIME) or (ext != "" and ext in allowed)
 
 
 def safe_ext(url, mime):
@@ -71,8 +75,16 @@ def driver_options():
     return options
 
 
+# One grid session per slot; unbounded sessions strand the grid on load spikes.
+SESSIONS = threading.BoundedSemaphore(int_env("BROWSER_WORKER_MAX_SESSIONS", 1))
+
+
 def open_driver():
-    return webdriver.Remote(command_executor=env("SELENIUM_REMOTE_URL", "http://selenium:4444/wd/hub"), options=driver_options())
+    driver = webdriver.Remote(command_executor=env("SELENIUM_REMOTE_URL", "http://selenium:4444/wd/hub"), options=driver_options())
+    timeout = int_env("BROWSER_WORKER_PAGE_LOAD_TIMEOUT_S", 120)
+    driver.set_page_load_timeout(timeout)
+    driver.set_script_timeout(timeout)
+    return driver
 
 
 def cdp(driver, cmd, params=None):
@@ -159,50 +171,54 @@ def order_images(driver, images, allowed):
 
 
 def scroll_and_capture(chapter_url, allowed):
-    driver = open_driver()
-    try:
-        cdp(driver, "Network.enable")
-        driver.get(chapter_url)
-        check_blocked_page(driver)
-        seen = set()
-        images = []
-        stable = 0
-        last_count = 0
-        max_scrolls = int_env("BROWSER_WORKER_MAX_SCROLLS", 80)
-        idle_rounds = int_env("BROWSER_WORKER_IDLE_ROUNDS", 4)
-        pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
+    with SESSIONS:
+        driver = open_driver()
+        try:
+            cdp(driver, "Network.enable")
+            driver.get(chapter_url)
+            check_blocked_page(driver)
+            seen = set()
+            images = []
+            stable = 0
+            last_count = 0
+            max_scrolls = int_env("BROWSER_WORKER_MAX_SCROLLS", 80)
+            idle_rounds = int_env("BROWSER_WORKER_IDLE_ROUNDS", 4)
+            pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
 
-        for _ in range(max_scrolls):
+            for _ in range(max_scrolls):
+                time.sleep(pause)
+                images.extend(collect_new_images(driver, seen, allowed))
+                driver.execute_script("window.scrollBy(0, Math.max(window.innerHeight, 900));")
+                if len(images) == last_count:
+                    stable += 1
+                else:
+                    stable = 0
+                    last_count = len(images)
+                at_bottom = driver.execute_script("return window.innerHeight + window.scrollY >= document.body.scrollHeight - 4")
+                if at_bottom and stable >= idle_rounds:
+                    break
+            else:
+                print(f"warning: hit scroll ceiling ({max_scrolls}) before page bottom: {chapter_url}", flush=True)
             time.sleep(pause)
             images.extend(collect_new_images(driver, seen, allowed))
-            driver.execute_script("window.scrollBy(0, Math.max(window.innerHeight, 900));")
-            if len(images) == last_count:
-                stable += 1
-            else:
-                stable = 0
-                last_count = len(images)
-            at_bottom = driver.execute_script("return window.innerHeight + window.scrollY >= document.body.scrollHeight - 4")
-            if at_bottom and stable >= idle_rounds:
-                break
-        time.sleep(pause)
-        images.extend(collect_new_images(driver, seen, allowed))
-        return order_images(driver, images, allowed)
-    finally:
-        driver.quit()
+            return order_images(driver, images, allowed)
+        finally:
+            driver.quit()
 
 
 def rendered_html(page_url):
-    driver = open_driver()
-    try:
-        driver.get(page_url)
-        check_blocked_page(driver)
-        pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
-        wait_for_render(driver, page_url, pause)
-        if not looks_like_reader_url(page_url) and has_chapter_links(driver):
-            return rendered_chapter_links(driver, pause)
-        return rendered_images(driver, pause)
-    finally:
-        driver.quit()
+    with SESSIONS:
+        driver = open_driver()
+        try:
+            driver.get(page_url)
+            check_blocked_page(driver)
+            pause = int_env("BROWSER_WORKER_SCROLL_PAUSE_MS", 700) / 1000
+            wait_for_render(driver, page_url, pause)
+            if not looks_like_reader_url(page_url) and has_chapter_links(driver):
+                return rendered_chapter_links(driver, pause)
+            return rendered_images(driver, pause)
+        finally:
+            driver.quit()
 
 
 def check_blocked_page(driver):
@@ -285,6 +301,8 @@ def rendered_chapter_links(driver, pause):
         )
         if not clicked:
             break
+    else:
+        print(f"warning: hit chapter page ceiling ({max_pages}); list may be truncated", flush=True)
 
     return "<html><body>" + "".join(
         f'<a href="{html.escape(href, quote=True)}">{html.escape(text)}</a>'
@@ -319,6 +337,8 @@ def rendered_images(driver, pause):
         if at_bottom and stable >= idle_rounds:
             break
         driver.execute_script("window.scrollBy(0, Math.max(window.innerHeight, 900));")
+    else:
+        print(f"warning: hit scroll ceiling ({max_scrolls}); images may be truncated", flush=True)
 
     return "<html><body>" + "".join(
         f'<img src="{html.escape(url, quote=True)}" data-mangad-page-image="1">'
