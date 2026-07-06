@@ -18,6 +18,7 @@ type HTTPClientOptions struct {
 	CookieFile  string
 	Transport   http.RoundTripper
 	State       *BrowserState
+	RateLimit   HostRateLimit
 	DebugLogger interface {
 		Debugf(string, ...any)
 	}
@@ -70,6 +71,7 @@ func NewHTTPClient(opts HTTPClientOptions) (*http.Client, error) {
 			ua:           opts.UserAgent,
 			cookieHeader: joinCookies(opts.Cookie, opts.CookieFile),
 			state:        opts.State,
+			rateLimit:    opts.RateLimit,
 			log:          opts.DebugLogger,
 		},
 		Jar: jar,
@@ -88,6 +90,7 @@ type roundTripper struct {
 	ua           string
 	cookieHeader string
 	state        *BrowserState
+	rateLimit    HostRateLimit
 	log          interface{ Debugf(string, ...any) }
 }
 
@@ -110,6 +113,9 @@ func (rt roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	if rt.log != nil {
 		rt.log.Debugf("HTTP %s %s", req.Method, req.URL.String())
+	}
+	if err := waitHost(req.Context(), req.URL.Host, rt.rateLimit); err != nil {
+		return nil, err
 	}
 
 	return rt.base.RoundTrip(req)
