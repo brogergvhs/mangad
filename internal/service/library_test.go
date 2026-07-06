@@ -16,6 +16,11 @@ import (
 func TestConfigForTitleOutput(t *testing.T) {
 	t.Parallel()
 
+	root := t.TempDir()
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name  string
 		cfg   *config.Config
@@ -24,13 +29,13 @@ func TestConfigForTitleOutput(t *testing.T) {
 	}{
 		{
 			name: "explicit title output wins",
-			cfg:  &config.Config{Output: "Solo_leveling", DownloadDir: "/downloads"},
+			cfg:  &config.Config{Output: "Solo_leveling", DownloadDir: root},
 			title: library.Title{
 				ID:           2,
 				DisplayTitle: "Gachiakuta",
 				OutputPath:   "custom/Gachiakuta",
 			},
-			want: "custom/Gachiakuta",
+			want: filepath.Join(root, "custom/Gachiakuta"),
 		},
 		{
 			name: "default output is title directory",
@@ -39,16 +44,16 @@ func TestConfigForTitleOutput(t *testing.T) {
 				ID:           2,
 				DisplayTitle: "Gachiakuta",
 			},
-			want: "Gachiakuta",
+			want: filepath.Join(cwd, "Gachiakuta"),
 		},
 		{
 			name: "download dir prefixes title directory",
-			cfg:  &config.Config{Output: "Solo_leveling", DownloadDir: "/downloads"},
+			cfg:  &config.Config{Output: "Solo_leveling", DownloadDir: root},
 			title: library.Title{
 				ID:           2,
 				DisplayTitle: "Gachiakuta",
 			},
-			want: "/downloads/Gachiakuta",
+			want: filepath.Join(root, "Gachiakuta"),
 		},
 		{
 			name: "display title is path safe",
@@ -57,7 +62,7 @@ func TestConfigForTitleOutput(t *testing.T) {
 				ID:           3,
 				DisplayTitle: "Solo Leveling!",
 			},
-			want: "Solo_Leveling",
+			want: filepath.Join(cwd, "Solo_Leveling"),
 		},
 		{
 			name: "empty title fallback",
@@ -65,7 +70,7 @@ func TestConfigForTitleOutput(t *testing.T) {
 			title: library.Title{
 				ID: 4,
 			},
-			want: "title_4",
+			want: filepath.Join(cwd, "title_4"),
 		},
 	}
 
@@ -73,7 +78,10 @@ func TestConfigForTitleOutput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := configForTitle(tt.cfg, tt.title)
+			got, err := configForTitle(tt.cfg, tt.title)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if got.Output != tt.want {
 				t.Fatalf("configForTitle().Output = %q, want %q", got.Output, tt.want)
 			}
@@ -84,6 +92,15 @@ func TestConfigForTitleOutput(t *testing.T) {
 				t.Fatalf("configForTitle reused active config output %q", tt.cfg.Output)
 			}
 		})
+	}
+}
+
+func TestConfigForTitleRejectsOutputOutsideDownloadRoot(t *testing.T) {
+	t.Parallel()
+
+	_, err := configForTitle(&config.Config{DownloadDir: t.TempDir()}, library.Title{OutputPath: "../outside"})
+	if err == nil {
+		t.Fatal("configForTitle() error = nil")
 	}
 }
 

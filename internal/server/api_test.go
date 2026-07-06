@@ -53,6 +53,25 @@ func TestAPIJobs(t *testing.T) {
 	}
 }
 
+func TestAPIKey(t *testing.T) {
+	api, closeDB := testAPIWithKey(t, "secret")
+	defer closeDB()
+
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	req.Header.Set("X-API-Key", "secret")
+	rec = httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAPISolverHealthDisabled(t *testing.T) {
 	api, closeDB := testAPI(t)
 	defer closeDB()
@@ -102,6 +121,10 @@ func TestAPISourcesLocal(t *testing.T) {
 }
 
 func testAPI(t *testing.T) (http.Handler, func()) {
+	return testAPIWithKey(t, "")
+}
+
+func testAPIWithKey(t *testing.T, apiKey string) (http.Handler, func()) {
 	t.Helper()
 	svc, closeDB, err := service.OpenJobs(context.Background(), filepath.Join(t.TempDir(), "mangad.db"))
 	if err != nil {
@@ -113,6 +136,7 @@ func testAPI(t *testing.T) (http.Handler, func()) {
 		func(context.Context, string) (service.SourceVerifyResult, error) {
 			return service.SourceVerifyResult{}, nil
 		},
+		apiKey,
 	), closeDB
 }
 

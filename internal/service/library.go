@@ -176,7 +176,10 @@ func (s *LibraryService) DownloadMissing(
 		return nil, err
 	}
 
-	cfg = configForTitle(cfg, title)
+	cfg, err = configForTitle(cfg, title)
+	if err != nil {
+		return nil, err
+	}
 	results := make([]ChapterDownloadResult, 0, len(missing))
 	for _, chapter := range missing {
 		result, err := s.downloadChapter(ctx, cfg, logSvc, chapter)
@@ -232,7 +235,11 @@ func (s *LibraryService) DownloadChapterLabel(
 		return ChapterDownloadResult{}, err
 	}
 
-	return s.downloadChapter(ctx, configForTitle(cfg, title), logSvc, chapter)
+	titleCfg, err := configForTitle(cfg, title)
+	if err != nil {
+		return ChapterDownloadResult{}, err
+	}
+	return s.downloadChapter(ctx, titleCfg, logSvc, chapter)
 }
 
 func (s *LibraryService) downloadChapter(
@@ -273,14 +280,29 @@ func serviceChapter(chapter library.Chapter) chapters.Chapter {
 	}}
 }
 
-func configForTitle(cfg *config.Config, title library.Title) *config.Config {
+func configForTitle(cfg *config.Config, title library.Title) (*config.Config, error) {
 	next := *cfg
-	if title.OutputPath != "" {
-		next.Output = title.OutputPath
-	} else {
-		next.Output = filepath.Join(next.DownloadDir, titleOutputDir(title))
+	root, err := filepath.Abs(next.DownloadDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve download root: %w", err)
 	}
-	return &next
+	if title.OutputPath != "" {
+		output := title.OutputPath
+		if !filepath.IsAbs(output) {
+			output = filepath.Join(root, output)
+		}
+		output, err = filepath.Abs(output)
+		if err != nil {
+			return nil, fmt.Errorf("resolve output path: %w", err)
+		}
+		if output != root && !strings.HasPrefix(output, root+string(os.PathSeparator)) {
+			return nil, fmt.Errorf("output path %q is outside download root %q", title.OutputPath, next.DownloadDir)
+		}
+		next.Output = output
+	} else {
+		next.Output = filepath.Join(root, titleOutputDir(title))
+	}
+	return &next, nil
 }
 
 func titleOutputDir(title library.Title) string {

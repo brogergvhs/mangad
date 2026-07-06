@@ -3,9 +3,11 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/jobs"
@@ -18,6 +20,7 @@ func New(
 	svc *service.JobService,
 	runJobs func(context.Context) (service.RunSummary, error),
 	verifySource func(context.Context, string) (service.SourceVerifyResult, error),
+	apiKeys ...string,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -361,7 +364,24 @@ func New(
 		}
 		writeJSON(w, status, map[string]any{"ok": ok, "error": errorString(err)})
 	})
-	return mux
+	if len(apiKeys) == 0 || strings.TrimSpace(apiKeys[0]) == "" {
+		return mux
+	}
+	return requireAPIKey(mux, strings.TrimSpace(apiKeys[0]))
+}
+
+func requireAPIKey(next http.Handler, key string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("X-API-Key")
+		if token == "" {
+			token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		}
+		if subtle.ConstantTimeCompare([]byte(token), []byte(key)) != 1 {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func serveSettings(r *http.Request, svc *service.JobService) map[string]string {
