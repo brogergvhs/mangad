@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,13 +42,15 @@ func EncodeProfileYAML(profile Profile) ([]byte, error) {
 	return body, nil
 }
 
+var registryClient = &http.Client{Timeout: 15 * time.Second}
+
 // FetchRegistry downloads a JSON or YAML profile registry.
 func FetchRegistry(ctx context.Context, registryURL string) ([]Profile, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create registry request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := registryClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch registry: %w", err)
 	}
@@ -55,7 +58,7 @@ func FetchRegistry(ctx context.Context, registryURL string) ([]Profile, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, fmt.Errorf("fetch registry: HTTP %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read registry: %w", err)
 	}

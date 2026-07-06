@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -83,10 +86,31 @@ func (c *AniListClient) do(ctx context.Context, query string, variables map[stri
 		return fmt.Errorf("anilist request: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		msg := "anilist rate limited (HTTP 429)"
+		if after := strings.TrimSpace(resp.Header.Get("Retry-After")); after != "" {
+			msg += ", retry after " + after + "s"
+		}
+		return errors.New(msg)
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("anilist HTTP %d", resp.StatusCode)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return fmt.Errorf("read anilist response: %w", err)
+	}
+	// GraphQL failures come back as HTTP 200 with an errors array.
+	var failure struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(data, &failure); err == nil && len(failure.Errors) > 0 {
+		return fmt.Errorf("anilist: %s", failure.Errors[0].Message)
+	}
+	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("decode anilist response: %w", err)
 	}
 	return nil
