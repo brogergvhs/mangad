@@ -24,10 +24,32 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// Enqueue creates a queued job.
+// Enqueue creates a queued job. An identical pending job is reused instead
+// of duplicated; its run_after moves forward when an earlier one is asked.
 func (r *Repository) Enqueue(ctx context.Context, typ string, payload string, runAfter time.Time) (Job, error) {
 	if runAfter.IsZero() {
 		runAfter = time.Now()
+	}
+
+	var id int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM jobs
+		WHERE type = ? AND payload_json = ? AND status IN ('queued', 'running', 'failed')
+		ORDER BY id
+		LIMIT 1
+	`, typ, payload).Scan(&id)
+	if err == nil {
+		if _, err := r.db.ExecContext(ctx, `
+			UPDATE jobs
+			SET run_after = MIN(run_after, ?), updated_at = CURRENT_TIMESTAMP
+			WHERE id = ? AND status != 'running'
+		`, sqliteTime(runAfter), id); err != nil {
+			return Job{}, fmt.Errorf("reschedule pending job %d: %w", id, err)
+		}
+		return r.Get(ctx, id)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Job{}, fmt.Errorf("find pending job: %w", err)
 	}
 
 	row := r.db.QueryRowContext(ctx, `
@@ -36,7 +58,6 @@ func (r *Repository) Enqueue(ctx context.Context, typ string, payload string, ru
 		RETURNING id
 	`, typ, payload, sqliteTime(runAfter))
 
-	var id int64
 	if err := row.Scan(&id); err != nil {
 		return Job{}, fmt.Errorf("enqueue job: %w", err)
 	}
@@ -134,6 +155,23 @@ func (r *Repository) ClaimNext(ctx context.Context) (Job, bool, error) {
 	}
 
 	return job, true, nil
+}
+
+// ReconcileRunning requeues jobs left in running state by a process that
+// exited before marking them; jobs already at the attempt cap become dead.
+func (r *Repository) ReconcileRunning(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE jobs
+		SET status = CASE WHEN attempts >= ? THEN 'dead' ELSE 'queued' END,
+			last_error = 'interrupted',
+			updated_at = CURRENT_TIMESTAMP
+		WHERE status = 'running'
+	`, MaxAttempts)
+	if err != nil {
+		return 0, fmt.Errorf("reconcile running jobs: %w", err)
+	}
+
+	return result.RowsAffected()
 }
 
 // MarkDone marks a job as completed.
