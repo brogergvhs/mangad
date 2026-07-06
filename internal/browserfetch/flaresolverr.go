@@ -73,7 +73,9 @@ func (f *FlareSolverr) Health(ctx context.Context) error {
 }
 
 func (f *FlareSolverr) call(ctx context.Context, payload map[string]any, out *flaresolverrResponse) error {
-	ctx, cancel := context.WithTimeout(ctx, f.timeout)
+	// The solver may use the full maxTimeout budget; leave headroom to
+	// transfer and decode the solved HTML.
+	ctx, cancel := context.WithTimeout(ctx, f.timeout+15*time.Second)
 	defer cancel()
 
 	body, err := json.Marshal(payload)

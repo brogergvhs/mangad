@@ -8,6 +8,7 @@ import (
 
 	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/browserfetch"
+	"github.com/brogergvhs/mangad/internal/util"
 
 	"gopkg.in/yaml.v3"
 )
@@ -122,7 +123,7 @@ func SaveYAML(cfg *Config, path string) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return util.WriteFileAtomic(path, data, 0644)
 }
 
 func loadYAML(path string) (*Config, error) {
@@ -337,7 +338,7 @@ func (c *Config) Print() {
 		fmt.Printf(" -check_js: %t\n", c.CheckJS)
 	}
 	if c.Cookie != "" {
-		fmt.Printf(" -cookie: %s\n", c.Cookie)
+		fmt.Printf(" -cookie: (set, %d chars)\n", len(c.Cookie))
 	}
 	if c.CookieFile != "" {
 		fmt.Printf(" -cookie_file: %s\n", c.CookieFile)

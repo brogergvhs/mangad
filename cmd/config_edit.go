@@ -31,7 +31,7 @@ var configEditCmd = &cobra.Command{
 			return fmt.Errorf("failed to get config path: %w", err)
 		}
 
-		cmdExec := exec.Command("nvim", path)
+		cmdExec := exec.Command(preferredEditor(), path)
 		cmdExec.Stdin = os.Stdin
 		cmdExec.Stdout = os.Stdout
 		cmdExec.Stderr = os.Stderr
@@ -42,6 +42,15 @@ var configEditCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func preferredEditor() string {
+	for _, env := range []string{"VISUAL", "EDITOR"} {
+		if editor := os.Getenv(env); editor != "" {
+			return editor
+		}
+	}
+	return "vi"
 }
 
 func init() {

@@ -20,7 +20,7 @@ func New(
 	svc *service.JobService,
 	runJobs func(context.Context) (service.RunSummary, error),
 	verifySource func(context.Context, string) (service.SourceVerifyResult, error),
-	apiKeys ...string,
+	apiKey string,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -364,10 +364,21 @@ func New(
 		}
 		writeJSON(w, status, map[string]any{"ok": ok, "error": errorString(err)})
 	})
-	if len(apiKeys) == 0 || strings.TrimSpace(apiKeys[0]) == "" {
-		return mux
+	handler := limitBody(mux)
+	if key := strings.TrimSpace(apiKey); key != "" {
+		handler = requireAPIKey(handler, key)
 	}
-	return requireAPIKey(mux, strings.TrimSpace(apiKeys[0]))
+	return handler
+}
+
+// limitBody caps request bodies; every handler decodes small JSON payloads.
+func limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func requireAPIKey(next http.Handler, key string) http.Handler {

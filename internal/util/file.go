@@ -79,3 +79,17 @@ func addFileToZip(z *zip.Writer, file string) error {
 
 	return nil
 }
+
+// WriteFileAtomic writes data to path via a temp file and rename so readers
+// never observe a partially written file.
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}

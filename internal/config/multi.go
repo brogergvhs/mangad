@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/brogergvhs/mangad/internal/util"
 )
 
 var ErrNoConfig = errors.New("no config selected")
@@ -127,7 +129,7 @@ func SwitchConfig(label string) error {
 		return fmt.Errorf("config %q does not exist", cfgPath)
 	}
 
-	return os.WriteFile(CurrentLabelFile(), []byte(label), 0644)
+	return util.WriteFileAtomic(CurrentLabelFile(), []byte(label), 0644)
 }
 
 func RenameConfig(oldLabel, newLabel string) error {
@@ -154,7 +156,7 @@ func RenameConfig(oldLabel, newLabel string) error {
 
 	active, _ := CurrentLabel()
 	if active == oldLabel {
-		return os.WriteFile(CurrentLabelFile(), []byte(newLabel), 0644)
+		return util.WriteFileAtomic(CurrentLabelFile(), []byte(newLabel), 0644)
 	}
 
 	return nil

@@ -124,7 +124,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		return doDryRun(ctx, downloadSvc, selected)
 	}
 
-	downloadSvc.SetProgressManager(service.NewTerminalProgressManager(cfg.ChapterWorkers))
+	downloadSvc.SetProgressManager(service.NewTerminalProgressManager())
 	summary, err := downloadSvc.Download(ctx, selected)
 	if ctx.Err() != nil {
 		// Workers have stopped; now removing partial temp folders is safe.
@@ -141,7 +141,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, string, error) {
+func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, ui.Log, string, error) {
 	cfg, usedPath, err := config.LoadMerged(config.Options{
 		IgnoreConfig:        flagIgnoreConfig,
 		Debug:               flagDebug,
@@ -169,6 +169,20 @@ func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, *ui.Logger, str
 	}
 	if cmd.Flags().Changed("chapter-workers") {
 		cfg.ChapterWorkers = flagChapterWorkers
+	}
+	// Explicit boolean flags override the config file in both directions;
+	// the Options merge can only turn them on.
+	if cmd.Flags().Changed("keep-folders") {
+		cfg.KeepFolders = flagKeepFolders
+	}
+	if cmd.Flags().Changed("skip-broken") {
+		cfg.SkipBroken = flagSkipBroken
+	}
+	if cmd.Flags().Changed("check-js") {
+		cfg.CheckJS = flagCheckJS
+	}
+	if cmd.Flags().Changed("debug") {
+		cfg.Debug = flagDebug
 	}
 	if flagAllowExt != "" {
 		cfg.AllowExt = splitExt(flagAllowExt)
