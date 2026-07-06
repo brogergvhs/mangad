@@ -140,6 +140,41 @@ func TestDownloadUsesBrowserDownloaderFallback(t *testing.T) {
 	}
 }
 
+func TestDownloadCleansTempFolderOnCBZFailure(t *testing.T) {
+	output := t.TempDir()
+	cbzPath := filepath.Join(output, "1_chapter_1.cbz")
+	if err := os.Mkdir(cbzPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewDownloadService(
+		&config.Config{Output: output, ImageWorkers: 1, ChapterWorkers: 1},
+		&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     http.Header{"Content-Type": []string{"image/jpeg"}},
+				Body:       io.NopCloser(strings.NewReader("jpg")),
+			}, nil
+		})},
+		fakeScraper{images: []string{"https://cdn.test/1.jpg"}},
+		noopLogger{},
+		nil,
+	)
+
+	_, err := svc.DownloadChapter(context.Background(), chapters.Chapter{Chapter: providers.Chapter{
+		URL:   "https://manga.test/chapter-1",
+		Title: "Chapter 1",
+		Label: "1",
+	}})
+	if err == nil {
+		t.Fatal("DownloadChapter() error = nil")
+	}
+	if _, err := os.Stat(filepath.Join(output, "1_chapter_1_tmp")); !os.IsNotExist(err) {
+		t.Fatalf("temp folder still exists or stat failed: %v", err)
+	}
+}
+
 type fakeScraper struct {
 	images []string
 }

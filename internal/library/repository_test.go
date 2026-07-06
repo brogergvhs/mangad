@@ -101,6 +101,23 @@ func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	if err := repo.MarkDownloadFailed(ctx, byLabel.ID, assertErr("boom")); err != nil {
 		t.Fatalf("MarkDownloadFailed() error = %v", err)
 	}
+	if err := repo.MarkDownloadStarted(ctx, byLabel.ID); err != nil {
+		t.Fatalf("MarkDownloadStarted(stale) error = %v", err)
+	}
+	reconciled, err := repo.ReconcileStartedDownloads(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileStartedDownloads() error = %v", err)
+	}
+	if reconciled != 1 {
+		t.Fatalf("ReconcileStartedDownloads() = %d, want 1", reconciled)
+	}
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM downloads WHERE chapter_id = ?`, byLabel.ID).Scan(&status); err != nil {
+		t.Fatalf("query reconciled status error = %v", err)
+	}
+	if status != "failed" {
+		t.Fatalf("reconciled status = %q, want failed", status)
+	}
 
 	if err := repo.RemoveTitle(ctx, title.ID); err != nil {
 		t.Fatalf("RemoveTitle() error = %v", err)

@@ -47,11 +47,21 @@ func OpenLibrary(ctx context.Context, dbPath string) (*LibraryService, func(), e
 		return nil, nil, err
 	}
 
-	return newLibraryService(db), func() { _ = db.Close() }, nil
+	svc := newLibraryService(db)
+	if _, err := svc.ReconcileStartedDownloads(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	return svc, func() { _ = db.Close() }, nil
 }
 
 func newLibraryService(db *sql.DB) *LibraryService {
 	return &LibraryService{repo: library.NewRepository(db), sources: sources.NewRepository(db)}
+}
+
+// ReconcileStartedDownloads marks interrupted downloads as failed.
+func (s *LibraryService) ReconcileStartedDownloads(ctx context.Context) (int64, error) {
+	return s.repo.ReconcileStartedDownloads(ctx)
 }
 
 // AddTitle tracks a source URL.
@@ -273,7 +283,9 @@ func (s *LibraryService) downloadChapter(
 
 	result, err := downloadSvc.DownloadChapter(ctx, serviceChapter(chapter))
 	if err != nil {
-		_ = s.repo.MarkDownloadFailed(ctx, chapter.ID, err)
+		if markErr := s.repo.MarkDownloadFailed(ctx, chapter.ID, err); markErr != nil {
+			return ChapterDownloadResult{}, fmt.Errorf("%w; mark download failed: %v", err, markErr)
+		}
 		return ChapterDownloadResult{}, err
 	}
 	if err := s.repo.MarkDownloadCompleted(ctx, chapter.ID, result.OutputFile, result.Bytes); err != nil {

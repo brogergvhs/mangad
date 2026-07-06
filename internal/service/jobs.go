@@ -53,6 +53,8 @@ const (
 	SettingBrowserSolverEndpoint       = "browser_solver.endpoint"
 	SettingBrowserSolverTimeoutSeconds = "browser_solver.timeout_seconds"
 	SettingSourceRegistryURL           = "sources.registry_url"
+
+	jobTimeout = 10 * time.Minute
 )
 
 // SettingDefault returns the built-in value for an app setting.
@@ -166,7 +168,12 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 		return nil, nil, err
 	}
 
-	return newJobService(db), func() { _ = db.Close() }, nil
+	svc := newJobService(db)
+	if _, err := svc.lib.ReconcileStartedDownloads(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	return svc, func() { _ = db.Close() }, nil
 }
 
 func newJobService(db *sql.DB) *JobService {
@@ -358,7 +365,10 @@ func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc *ui.
 			return summary, err
 		}
 
-		if err := s.run(ctx, cfg, logSvc, job); err != nil {
+		jobCtx, cancel := context.WithTimeout(ctx, jobTimeout)
+		err = s.run(jobCtx, cfg, logSvc, job)
+		cancel()
+		if err != nil {
 			summary.Failed++
 			if markErr := s.jobs.MarkFailed(ctx, job.ID, err); markErr != nil {
 				return summary, markErr

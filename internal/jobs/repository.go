@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+const (
+	MaxAttempts = 3
+	baseBackoff = time.Minute
+	maxBackoff  = time.Hour
+)
+
 // Repository persists and claims background jobs.
 type Repository struct {
 	db *sql.DB
@@ -102,12 +108,21 @@ func (r *Repository) ClaimNext(ctx context.Context) (Job, bool, error) {
 		return Job{}, false, fmt.Errorf("select job to claim: %w", err)
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		UPDATE jobs
 		SET status = 'running', attempts = attempts + 1, last_error = '', updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, id); err != nil {
+		WHERE id = ? AND status IN ('queued', 'failed') AND run_after <= CURRENT_TIMESTAMP
+	`, id)
+	if err != nil {
 		return Job{}, false, fmt.Errorf("claim job %d: %w", id, err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return Job{}, false, fmt.Errorf("check claimed rows: %w", err)
+	}
+	if changed == 0 {
+		_ = tx.Rollback()
+		return Job{}, false, nil
 	}
 	if err = tx.Commit(); err != nil {
 		return Job{}, false, fmt.Errorf("commit claim: %w", err)
@@ -132,15 +147,36 @@ func (r *Repository) MarkFailed(ctx context.Context, id int64, cause error) erro
 	if cause != nil {
 		msg = cause.Error()
 	}
-	return r.mark(ctx, id, "failed", msg)
+	job, err := r.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	status := "failed"
+	runAfter := time.Now().Add(jobBackoff(job.Attempts))
+	if job.Attempts >= MaxAttempts {
+		status = "dead"
+		runAfter = job.RunAfter
+	}
+	return r.markWithRunAfter(ctx, id, status, msg, runAfter)
 }
 
 func (r *Repository) mark(ctx context.Context, id int64, status, msg string) error {
+	return r.markWithRunAfter(ctx, id, status, msg, time.Time{})
+}
+
+func (r *Repository) markWithRunAfter(ctx context.Context, id int64, status, msg string, runAfter time.Time) error {
+	runAfterSQL := "run_after"
+	args := []any{status, msg}
+	if !runAfter.IsZero() {
+		runAfterSQL = "?"
+		args = append(args, sqliteTime(runAfter))
+	}
+	args = append(args, id)
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE jobs
-		SET status = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+		SET status = ?, last_error = ?, run_after = `+runAfterSQL+`, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, status, msg, id)
+	`, args...)
 	if err != nil {
 		return fmt.Errorf("mark job %d %s: %w", id, status, err)
 	}
@@ -153,6 +189,17 @@ func (r *Repository) mark(ctx context.Context, id int64, status, msg string) err
 	}
 
 	return nil
+}
+
+func jobBackoff(attempts int) time.Duration {
+	backoff := baseBackoff
+	for i := 1; i < attempts; i++ {
+		backoff *= 2
+		if backoff >= maxBackoff {
+			return maxBackoff
+		}
+	}
+	return backoff
 }
 
 func jobSelect() string {

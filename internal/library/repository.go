@@ -266,6 +266,26 @@ func (r *Repository) MarkDownloadFailed(ctx context.Context, chapterID int64, ca
 	return r.markDownload(ctx, chapterID, "failed", "", 0, msg)
 }
 
+// ReconcileStartedDownloads marks interrupted downloads as failed.
+func (r *Repository) ReconcileStartedDownloads(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE downloads
+		SET status = 'failed',
+			error = 'download interrupted before completion',
+			completed_at = NULL,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE status = 'started'
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("reconcile started downloads: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count reconciled downloads: %w", err)
+	}
+	return count, nil
+}
+
 // ListCompletedDownloads returns completed downloads, optionally scoped to a title.
 func (r *Repository) ListCompletedDownloads(ctx context.Context, titleID int64) ([]CompletedDownload, error) {
 	q := `

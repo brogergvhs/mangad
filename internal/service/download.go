@@ -413,6 +413,9 @@ func (s *DownloadService) downloadChapter(
 
 	tmpFolder := filepath.Join(s.cfg.Output, ch.FolderName())
 	cbzOut := filepath.Join(s.cfg.Output, ch.OutputCBZ())
+	if !s.cfg.KeepFolders {
+		defer util.CleanupFolder(tmpFolder)
+	}
 
 	files, bytes, err := dl.DownloadImagesConcurrently(ctx, images, tmpFolder, ch.URL, max(1, s.cfg.ImageWorkers), handle)
 	if err != nil {
@@ -424,10 +427,6 @@ func (s *DownloadService) downloadChapter(
 
 	if err := util.CreateCBZ(files, cbzOut); err != nil {
 		return ChapterDownloadResult{}, fmt.Errorf("create cbz: %w", err)
-	}
-
-	if !s.cfg.KeepFolders {
-		util.CleanupFolder(tmpFolder)
 	}
 
 	handle.MarkDone()
@@ -452,9 +451,6 @@ func (s *DownloadService) downloadChapterWithBrowser(
 	}, cbzOut)
 	if err != nil {
 		return ChapterDownloadResult{}, fmt.Errorf("%w; browser downloader fallback failed: %v", cause, err)
-	}
-	if !s.cfg.KeepFolders {
-		util.CleanupFolder(tmpFolder)
 	}
 	return ChapterDownloadResult{Chapter: ch, OutputFile: cbzOut, Images: result.Images, Bytes: result.Bytes}, nil
 }
