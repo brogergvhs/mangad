@@ -3,6 +3,10 @@ package library
 
 import "time"
 
+// MaxDownloadAttempts is how often a failed chapter download is retried
+// before it stops counting as missing; a completed download resets it.
+const MaxDownloadAttempts = 3
+
 // Title is a tracked manga source URL.
 type Title struct {
 	ID              int64

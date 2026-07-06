@@ -144,3 +144,72 @@ type assertErr string
 func (e assertErr) Error() string {
 	return string(e)
 }
+
+func TestRepositoryDownloadAttemptCap(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	repo := NewRepository(db)
+	title, err := repo.AddTitle(ctx, AddTitleParams{
+		SourceURL:    "https://example.test/manga",
+		DisplayTitle: "Example Manga",
+		Monitored:    true,
+	})
+	if err != nil {
+		t.Fatalf("AddTitle() error = %v", err)
+	}
+	if _, err := repo.UpsertChapters(ctx, title.ID, []chapters.Chapter{
+		{Chapter: providers.Chapter{URL: "https://example.test/ch-1", Label: "1", NumMain: 1}},
+	}); err != nil {
+		t.Fatalf("UpsertChapters() error = %v", err)
+	}
+	missing, err := repo.ListMissingChapters(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ListMissingChapters() error = %v", err)
+	}
+	if len(missing) != 1 {
+		t.Fatalf("missing = %d, want 1", len(missing))
+	}
+	chapterID := missing[0].ID
+
+	for i := 0; i < MaxDownloadAttempts; i++ {
+		if err := repo.MarkDownloadStarted(ctx, chapterID); err != nil {
+			t.Fatalf("MarkDownloadStarted() error = %v", err)
+		}
+		if err := repo.MarkDownloadFailed(ctx, chapterID, context.DeadlineExceeded); err != nil {
+			t.Fatalf("MarkDownloadFailed() error = %v", err)
+		}
+		missing, err = repo.ListMissingChapters(ctx, title.ID)
+		if err != nil {
+			t.Fatalf("ListMissingChapters() error = %v", err)
+		}
+		want := 1
+		if i == MaxDownloadAttempts-1 {
+			want = 0
+		}
+		if len(missing) != want {
+			t.Fatalf("after %d failures missing = %d, want %d", i+1, len(missing), want)
+		}
+	}
+
+	// A completed download resets the attempt counter.
+	if err := repo.MarkDownloadCompleted(ctx, chapterID, "out.cbz", 1); err != nil {
+		t.Fatalf("MarkDownloadCompleted() error = %v", err)
+	}
+	var attempts int
+	if err := db.QueryRowContext(ctx, `SELECT attempts FROM downloads WHERE chapter_id = ?`, chapterID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 0 {
+		t.Fatalf("attempts after completion = %d, want 0", attempts)
+	}
+}

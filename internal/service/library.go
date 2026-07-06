@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/brogergvhs/mangad/internal/chapters"
@@ -20,8 +22,9 @@ import (
 
 // LibraryService coordinates tracked titles and chapter discovery.
 type LibraryService struct {
-	repo    *library.Repository
-	sources *sources.Repository
+	repo     *library.Repository
+	sources  *sources.Repository
+	syncOnce sync.Once
 }
 
 // RefreshResult describes one refreshed title.
@@ -147,18 +150,23 @@ func (s *LibraryService) RefreshMonitored(
 	}
 
 	results := make([]RefreshResult, 0, len(titles))
+	var errs []error
 	for _, title := range titles {
 		if !title.Monitored {
 			continue
 		}
 		result, err := s.RefreshTitle(ctx, cfg, logSvc, title)
 		if err != nil {
-			return nil, fmt.Errorf("refresh %s: %w", title.DisplayTitle, err)
+			errs = append(errs, fmt.Errorf("refresh %s: %w", title.DisplayTitle, err))
+			if ctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		results = append(results, result)
 	}
 
-	return results, nil
+	return results, errors.Join(errs...)
 }
 
 // ScanDownloads verifies completed download files still exist.
@@ -207,15 +215,20 @@ func (s *LibraryService) DownloadMissing(
 		return nil, err
 	}
 	results := make([]ChapterDownloadResult, 0, len(missing))
+	var errs []error
 	for _, chapter := range missing {
 		result, err := s.downloadChapter(ctx, downloadSvc, chapter)
 		if err != nil {
-			return results, err
+			errs = append(errs, fmt.Errorf("chapter %s: %w", chapter.Label, err))
+			if ctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		results = append(results, result)
 	}
 
-	return results, nil
+	return results, errors.Join(errs...)
 }
 
 // DownloadMonitoredMissing downloads missing chapters for every monitored title.
@@ -230,18 +243,22 @@ func (s *LibraryService) DownloadMonitoredMissing(
 	}
 
 	var results []ChapterDownloadResult
+	var errs []error
 	for _, title := range titles {
 		if !title.Monitored {
 			continue
 		}
 		titleResults, err := s.DownloadMissing(ctx, cfg, logSvc, title.ID)
-		if err != nil {
-			return results, fmt.Errorf("download missing for %s: %w", title.DisplayTitle, err)
-		}
 		results = append(results, titleResults...)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("download missing for %s: %w", title.DisplayTitle, err))
+			if ctx.Err() != nil {
+				break
+			}
+		}
 	}
 
-	return results, nil
+	return results, errors.Join(errs...)
 }
 
 // DownloadChapterLabel downloads one discovered chapter by label.
@@ -342,8 +359,13 @@ func (s *LibraryService) listSources(ctx context.Context) ([]sources.Source, err
 		}
 		return out, nil
 	}
-	if err := s.sources.Sync(ctx, profiles, sources.OriginBuiltin); err != nil {
-		return nil, err
+	// Built-in profiles only change with the binary; one sync per process.
+	var syncErr error
+	s.syncOnce.Do(func() {
+		syncErr = s.sources.Sync(ctx, profiles, sources.OriginBuiltin)
+	})
+	if syncErr != nil {
+		return nil, syncErr
 	}
 	return s.sources.List(ctx)
 }

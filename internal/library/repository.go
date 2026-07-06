@@ -62,7 +62,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(source_url) DO UPDATE SET
 			catalog_manga_id = COALESCE(excluded.catalog_manga_id, titles.catalog_manga_id),
-			source_id = excluded.source_id,
+			source_id = COALESCE(excluded.source_id, titles.source_id),
 			display_title = excluded.display_title,
 			output_path = excluded.output_path,
 			monitored = excluded.monitored,
@@ -203,16 +203,18 @@ func (r *Repository) UpsertChapters(
 	return len(discovered), nil
 }
 
-// ListMissingChapters returns discovered chapters without a completed download.
+// ListMissingChapters returns discovered chapters without a completed
+// download, skipping chapters that already failed MaxDownloadAttempts times.
 func (r *Repository) ListMissingChapters(ctx context.Context, titleID int64) ([]Chapter, error) {
 	rows, err := r.db.QueryContext(ctx, chapterSelectQuery()+`
 		LEFT JOIN downloads d
 			ON d.chapter_id = c.id
-			AND d.status = 'completed'
+			AND (d.status = 'completed'
+				OR (d.status = 'failed' AND d.attempts >= ?))
 		WHERE c.title_id = ?
 			AND d.id IS NULL
 		ORDER BY c.number_main, c.suffix_type, c.suffix_num, c.label
-	`, titleID)
+	`, MaxDownloadAttempts, titleID)
 	if err != nil {
 		return nil, fmt.Errorf("list missing chapters: %w", err)
 	}
@@ -272,6 +274,7 @@ func (r *Repository) ReconcileStartedDownloads(ctx context.Context) (int64, erro
 		UPDATE downloads
 		SET status = 'failed',
 			error = 'download interrupted before completion',
+			attempts = attempts + 1,
 			completed_at = NULL,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE status = 'started'
@@ -329,20 +332,26 @@ func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, 
 			status,
 			output_file,
 			bytes,
+			attempts,
 			error,
 			started_at,
 			completed_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP END, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, CASE WHEN ? = 'failed' THEN 1 ELSE 0 END, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP END, CURRENT_TIMESTAMP)
 		ON CONFLICT(chapter_id) DO UPDATE SET
 			status = excluded.status,
 			output_file = excluded.output_file,
 			bytes = excluded.bytes,
+			attempts = CASE excluded.status
+				WHEN 'failed' THEN downloads.attempts + 1
+				WHEN 'completed' THEN 0
+				ELSE downloads.attempts
+			END,
 			error = excluded.error,
 			started_at = CASE WHEN excluded.status = 'started' THEN CURRENT_TIMESTAMP ELSE downloads.started_at END,
 			completed_at = CASE WHEN excluded.status = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
 			updated_at = CURRENT_TIMESTAMP
-	`, chapterID, status, outputFile, bytes, msg, status)
+	`, chapterID, status, outputFile, bytes, status, msg, status)
 	if err != nil {
 		return fmt.Errorf("mark download %s for chapter %d: %w", status, chapterID, err)
 	}
