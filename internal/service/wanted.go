@@ -58,7 +58,7 @@ func newWantedService(db *sql.DB) *WantedService {
 		catalog: catalog.NewRepository(db),
 		sources: sources.NewRepository(db),
 		library: library.NewRepository(db),
-		anilist: catalog.NewAniListClient(http.DefaultClient),
+		anilist: catalog.NewAniListClient(nil),
 	}
 }
 
@@ -167,13 +167,15 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source) (catalog.Match, bool) {
 	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
 	candidates, searched := searchSourceURLs(ctx, probeCfg, logSvc, src, manga)
+	method := "search"
 	if !searched {
+		method = "slug_probe"
 		candidates = append(candidates, candidateSourceURLs(src, manga)...)
 	} else if len(candidates) == 0 && logSvc != nil {
 		logSvc.Debugf("Source search %s completed with no candidates; skipping guessed slug probes.\n", src.ID)
 	}
 	for _, candidate := range uniqueStrings(candidates) {
-		match, ok := s.verifyCandidate(ctx, cfg, logSvc, manga, src, candidate)
+		match, ok := s.verifyCandidate(ctx, cfg, logSvc, manga, src, candidate, method)
 		if ok {
 			return match, true
 		}
@@ -207,14 +209,26 @@ func (s *WantedService) TrackMatch(ctx context.Context, matchID int64, outputPat
 	})
 }
 
-func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source, sourceURL string) (catalog.Match, bool) {
+func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source, sourceURL, method string) (catalog.Match, bool) {
 	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
 	downloadSvc, err := NewSourceDownloadService(&probeCfg, logSvc, nil, src.Scraper)
 	if err != nil {
+		if logSvc != nil {
+			logSvc.Debugf("Candidate %s skipped, scraper setup failed: %v\n", sourceURL, err)
+		}
 		return catalog.Match{}, false
 	}
 	chapters, err := downloadSvc.FetchChapters(ctx, sourceURL)
-	if err != nil || len(chapters) == 0 {
+	if err != nil {
+		if logSvc != nil {
+			logSvc.Debugf("Candidate %s failed chapter fetch: %v\n", sourceURL, err)
+		}
+		return catalog.Match{}, false
+	}
+	if len(chapters) == 0 {
+		if logSvc != nil {
+			logSvc.Debugf("Candidate %s has no chapters.\n", sourceURL)
+		}
 		return catalog.Match{}, false
 	}
 	return catalog.Match{
@@ -223,7 +237,7 @@ func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config,
 		SourceURL:      sourceURL,
 		Title:          displayMangaTitle(manga),
 		Confidence:     matchConfidence(manga, sourceURL, len(chapters)),
-		MatchMethod:    "slug_probe",
+		MatchMethod:    method,
 		ChaptersFound:  len(chapters),
 	}, true
 }
@@ -281,6 +295,7 @@ func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (str
 		UserAgent:  util.PickUserAgent(cfg.UserAgent),
 		Cookie:     cfg.Cookie,
 		CookieFile: cfg.CookieFile,
+		RateLimit:  hostRateLimit(&cfg),
 	})
 	if err != nil {
 		return "", err
