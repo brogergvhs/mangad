@@ -11,7 +11,61 @@ import (
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/mangad/internal/ui"
 )
+
+func TestLibraryAddTitleResolvesSourceID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	svc := newLibraryService(db)
+	title, err := svc.AddTitle(ctx, library.AddTitleParams{
+		SourceURL:    "https://mangakatana.com/manga/the-great-mage-returns-after-4000-years.24531",
+		DisplayTitle: "The Great Mage Returns After 4000 Years",
+		Monitored:    true,
+	})
+	if err != nil {
+		t.Fatalf("AddTitle() error = %v", err)
+	}
+	if title.SourceID != "mangakatana" {
+		t.Fatalf("SourceID = %q, want mangakatana", title.SourceID)
+	}
+}
+
+func TestLibraryDownloadServiceUsesTitleSource(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	svc := newLibraryService(db)
+	downloadSvc, err := svc.downloadServiceForTitle(ctx, &config.Config{}, ui.NewLogger(false), nil, library.Title{
+		SourceID:  "comickz",
+		SourceURL: "https://comickz.co.uk/comic/02-the-great-mage-returns-after-4000-years",
+	})
+	if err != nil {
+		t.Fatalf("downloadServiceForTitle() error = %v", err)
+	}
+	if !downloadSvc.cfg.BrowserDownload.Enabled {
+		t.Fatal("BrowserDownload.Enabled = false, want source profile enabled")
+	}
+}
 
 func TestConfigForTitleOutput(t *testing.T) {
 	t.Parallel()

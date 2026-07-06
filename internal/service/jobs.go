@@ -173,7 +173,7 @@ func newJobService(db *sql.DB) *JobService {
 	return &JobService{
 		db:   db,
 		jobs: jobs.NewRepository(db),
-		lib:  &LibraryService{repo: library.NewRepository(db)},
+		lib:  newLibraryService(db),
 		src:  newSourceService(db),
 		want: newWantedService(db),
 	}

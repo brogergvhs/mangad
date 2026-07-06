@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,12 +14,14 @@ import (
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/mangad/internal/sources"
 	"github.com/brogergvhs/mangad/internal/ui"
 )
 
 // LibraryService coordinates tracked titles and chapter discovery.
 type LibraryService struct {
-	repo *library.Repository
+	repo    *library.Repository
+	sources *sources.Repository
 }
 
 // RefreshResult describes one refreshed title.
@@ -44,11 +47,20 @@ func OpenLibrary(ctx context.Context, dbPath string) (*LibraryService, func(), e
 		return nil, nil, err
 	}
 
-	return &LibraryService{repo: library.NewRepository(db)}, func() { _ = db.Close() }, nil
+	return newLibraryService(db), func() { _ = db.Close() }, nil
+}
+
+func newLibraryService(db *sql.DB) *LibraryService {
+	return &LibraryService{repo: library.NewRepository(db), sources: sources.NewRepository(db)}
 }
 
 // AddTitle tracks a source URL.
 func (s *LibraryService) AddTitle(ctx context.Context, params library.AddTitleParams) (library.Title, error) {
+	if params.SourceID == "" {
+		if src, ok := s.sourceForURL(ctx, params.SourceURL); ok {
+			params.SourceID = src.ID
+		}
+	}
 	return s.repo.AddTitle(ctx, params)
 }
 
@@ -96,7 +108,7 @@ func (s *LibraryService) RefreshTitle(
 	logSvc *ui.Logger,
 	title library.Title,
 ) (RefreshResult, error) {
-	downloadSvc, err := NewDefaultDownloadService(cfg, logSvc, nil)
+	downloadSvc, err := s.downloadServiceForTitle(ctx, cfg, logSvc, nil, title)
 	if err != nil {
 		return RefreshResult{}, err
 	}
@@ -180,9 +192,13 @@ func (s *LibraryService) DownloadMissing(
 	if err != nil {
 		return nil, err
 	}
+	downloadSvc, err := s.downloadServiceForTitle(ctx, cfg, logSvc, nil, title)
+	if err != nil {
+		return nil, err
+	}
 	results := make([]ChapterDownloadResult, 0, len(missing))
 	for _, chapter := range missing {
-		result, err := s.downloadChapter(ctx, cfg, logSvc, chapter)
+		result, err := s.downloadChapter(ctx, downloadSvc, chapter)
 		if err != nil {
 			return results, err
 		}
@@ -239,21 +255,19 @@ func (s *LibraryService) DownloadChapterLabel(
 	if err != nil {
 		return ChapterDownloadResult{}, err
 	}
-	return s.downloadChapter(ctx, titleCfg, logSvc, chapter)
+	downloadSvc, err := s.downloadServiceForTitle(ctx, titleCfg, logSvc, nil, title)
+	if err != nil {
+		return ChapterDownloadResult{}, err
+	}
+	return s.downloadChapter(ctx, downloadSvc, chapter)
 }
 
 func (s *LibraryService) downloadChapter(
 	ctx context.Context,
-	cfg *config.Config,
-	logSvc *ui.Logger,
+	downloadSvc *DownloadService,
 	chapter library.Chapter,
 ) (ChapterDownloadResult, error) {
 	if err := s.repo.MarkDownloadStarted(ctx, chapter.ID); err != nil {
-		return ChapterDownloadResult{}, err
-	}
-
-	downloadSvc, err := NewDefaultDownloadService(cfg, logSvc, nil)
-	if err != nil {
 		return ChapterDownloadResult{}, err
 	}
 
@@ -267,6 +281,59 @@ func (s *LibraryService) downloadChapter(
 	}
 
 	return result, nil
+}
+
+func (s *LibraryService) downloadServiceForTitle(
+	ctx context.Context,
+	cfg *config.Config,
+	logSvc *ui.Logger,
+	progress ProgressManager,
+	title library.Title,
+) (*DownloadService, error) {
+	if src, ok := s.sourceForTitle(ctx, title); ok {
+		next := ConfigForSource(*cfg, src, SourceConfigOptions{})
+		return NewSourceDownloadService(&next, logSvc, progress, src.Scraper)
+	}
+	return NewDefaultDownloadService(cfg, logSvc, progress)
+}
+
+func (s *LibraryService) sourceForTitle(ctx context.Context, title library.Title) (sources.Source, bool) {
+	if strings.TrimSpace(title.SourceID) != "" {
+		if list, err := s.listSources(ctx); err == nil {
+			for _, src := range list {
+				if src.ID == title.SourceID && src.Enabled {
+					return src, true
+				}
+			}
+		}
+	}
+	return s.sourceForURL(ctx, title.SourceURL)
+}
+
+func (s *LibraryService) sourceForURL(ctx context.Context, target string) (sources.Source, bool) {
+	list, err := s.listSources(ctx)
+	if err != nil {
+		return sources.Source{}, false
+	}
+	return MatchSourceForURL(list, target)
+}
+
+func (s *LibraryService) listSources(ctx context.Context) ([]sources.Source, error) {
+	profiles, err := sources.BuiltInProfiles()
+	if err != nil {
+		return nil, err
+	}
+	if s.sources == nil {
+		out := make([]sources.Source, 0, len(profiles))
+		for _, profile := range profiles {
+			out = append(out, sourceFromProfile(profile, sources.OriginBuiltin))
+		}
+		return out, nil
+	}
+	if err := s.sources.Sync(ctx, profiles, sources.OriginBuiltin); err != nil {
+		return nil, err
+	}
+	return s.sources.List(ctx)
 }
 
 func serviceChapter(chapter library.Chapter) chapters.Chapter {
