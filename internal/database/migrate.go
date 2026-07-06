@@ -252,31 +252,3 @@ func txHasColumn(ctx context.Context, tx *sql.Tx, table, column string) (bool, b
 	}
 	return false, exists, nil
 }
-
-func tableHasColumn(ctx context.Context, db *sql.DB, table, column string) (bool, bool, error) {
-	rows, err := db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
-	if err != nil {
-		return false, false, err
-	}
-	defer rows.Close()
-
-	var exists bool
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notNull int
-		var defaultValue any
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-			return false, false, err
-		}
-		exists = true
-		if name == column {
-			return true, true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, false, err
-	}
-	return false, exists, nil
-}

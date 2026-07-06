@@ -79,24 +79,6 @@ func (r *Repository) GetManga(ctx context.Context, id int64) (Manga, error) {
 }
 
 // ListWanted returns wanted canonical titles.
-// UpdateWanted sets the wanted flag for one catalog manga.
-func (r *Repository) UpdateWanted(ctx context.Context, id int64, wanted bool) error {
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE catalog_manga SET wanted = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-	`, database.BoolToInt(wanted), id)
-	if err != nil {
-		return fmt.Errorf("update wanted for manga %d: %w", id, err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("check wanted update for manga %d: %w", id, err)
-	}
-	if rows == 0 {
-		return fmt.Errorf("manga %d not found", id)
-	}
-	return nil
-}
-
 func (r *Repository) ListWanted(ctx context.Context) ([]Manga, error) {
 	rows, err := r.db.QueryContext(ctx, mangaSelect()+` WHERE wanted = 1 ORDER BY title_english COLLATE NOCASE, title_romaji COLLATE NOCASE`)
 	if err != nil {
