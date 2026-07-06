@@ -1,0 +1,43 @@
+// Package registry maps scraper names to constructors so profile validation
+// and scraper construction share one list; new scrapers register here once.
+package registry
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/mangad/internal/providers/comickz"
+	"github.com/brogergvhs/mangad/internal/providers/generic"
+	"github.com/brogergvhs/mangad/internal/ui"
+)
+
+// Constructor builds a scraper with the shared provider dependencies.
+type Constructor func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper
+
+var constructors = map[string]Constructor{
+	"generic": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
+		return generic.NewScraper(client, log, allowExt, checkJS, browser)
+	},
+	"comickz": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
+		return comickz.NewScraper(client, log, allowExt, checkJS, browser)
+	},
+}
+
+// Supported reports whether name is a known scraper.
+func Supported(name string) bool {
+	_, ok := constructors[name]
+	return ok
+}
+
+// New builds the named scraper; an empty name selects the generic one.
+func New(name string, client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) (providers.Scraper, error) {
+	if name == "" {
+		name = "generic"
+	}
+	build, ok := constructors[name]
+	if !ok {
+		return nil, fmt.Errorf("unsupported scraper %q", name)
+	}
+	return build(client, log, allowExt, checkJS, browser), nil
+}

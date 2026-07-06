@@ -8,8 +8,8 @@ type TerminalProgressManager struct {
 }
 
 // NewTerminalProgressManager creates a terminal progress manager.
-func NewTerminalProgressManager(workers int) *TerminalProgressManager {
-	return &TerminalProgressManager{inner: ui.NewProgressManager(workers)}
+func NewTerminalProgressManager() *TerminalProgressManager {
+	return &TerminalProgressManager{inner: ui.NewProgressManager()}
 }
 
 // Register creates a progress handle for one chapter.

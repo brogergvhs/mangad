@@ -16,7 +16,7 @@ type MPBProgressManager struct {
 	p *mpb.Progress
 }
 
-func NewProgressManager(_ int) *MPBProgressManager {
+func NewProgressManager() *MPBProgressManager {
 	p := mpb.New(
 		mpb.WithWidth(52),
 		mpb.WithOutput(os.Stdout),

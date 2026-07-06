@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"net/url"
 	"sort"
 )
 
@@ -30,4 +31,23 @@ func SortChapters(chapters []Chapter) {
 type Scraper interface {
 	GetChapters(ctx context.Context, url string) ([]Chapter, error)
 	GetImages(ctx context.Context, chapterURL string) ([]string, error)
+}
+
+// ResolveURL resolves href against baseURL, tolerating malformed input.
+func ResolveURL(baseURL, href string) string {
+	if href == "" {
+		return baseURL
+	}
+
+	u, err := url.Parse(href)
+	if err == nil && u.IsAbs() {
+		return u.String()
+	}
+
+	b, err := url.Parse(baseURL)
+	if err != nil {
+		return href
+	}
+
+	return b.ResolveReference(u).String()
 }

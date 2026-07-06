@@ -95,7 +95,7 @@ func (s *WantedService) ListWanted(ctx context.Context) ([]catalog.Manga, error)
 }
 
 // MatchSources finds source candidates for one wanted title.
-func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, catalogID int64) ([]catalog.Match, error) {
+func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, logSvc ui.Log, catalogID int64) ([]catalog.Match, error) {
 	manga, err := s.catalog.GetManga(ctx, catalogID)
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	return out, nil
 }
 
-func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source) (catalog.Match, bool) {
+func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, logSvc ui.Log, manga catalog.Manga, src sources.Source) (catalog.Match, bool) {
 	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
 	candidates, searched := searchSourceURLs(ctx, probeCfg, logSvc, src, manga)
 	method := "search"
@@ -209,7 +209,7 @@ func (s *WantedService) TrackMatch(ctx context.Context, matchID int64, outputPat
 	})
 }
 
-func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc *ui.Logger, manga catalog.Manga, src sources.Source, sourceURL, method string) (catalog.Match, bool) {
+func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc ui.Log, manga catalog.Manga, src sources.Source, sourceURL, method string) (catalog.Match, bool) {
 	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
 	downloadSvc, err := NewSourceDownloadService(&probeCfg, logSvc, nil, src.Scraper)
 	if err != nil {
@@ -242,7 +242,7 @@ func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config,
 	}, true
 }
 
-func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc *ui.Logger, src sources.Source, manga catalog.Manga) ([]string, bool) {
+func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src sources.Source, manga catalog.Manga) ([]string, bool) {
 	if strings.TrimSpace(src.SearchURL) == "" {
 		if logSvc != nil {
 			logSvc.Debugf("Source search skipped for %s: no search_url.\n", src.ID)

@@ -120,7 +120,7 @@ func (c browserCookieCache) save(ctx context.Context, target, userAgent string, 
 				http_only = excluded.http_only,
 				user_agent = excluded.user_agent,
 				updated_at = CURRENT_TIMESTAMP
-		`, domain, path, cookie.Name, cookie.Value, expires.UTC().Format(time.RFC3339), boolToInt(cookie.Secure), boolToInt(cookie.HttpOnly), userAgent); err != nil {
+		`, domain, path, cookie.Name, cookie.Value, expires.UTC().Format(time.RFC3339), database.BoolToInt(cookie.Secure), database.BoolToInt(cookie.HttpOnly), userAgent); err != nil {
 			return fmt.Errorf("save browser cookie %s: %w", cookie.Name, err)
 		}
 	}
@@ -164,11 +164,4 @@ func domainMatches(host, domain string) bool {
 		return false
 	}
 	return strings.HasSuffix(host, "."+domain)
-}
-
-func boolToInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }

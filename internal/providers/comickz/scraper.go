@@ -23,11 +23,11 @@ const maxChapterPages = 100
 
 type Scraper struct {
 	client   *http.Client
-	log      *ui.Logger
+	log      ui.Log
 	fallback providers.Scraper
 }
 
-func NewScraper(c *http.Client, log *ui.Logger, allowExt []string, checkJS bool, browser generic.BrowserFetcher) *Scraper {
+func NewScraper(c *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) *Scraper {
 	return &Scraper{
 		client:   c,
 		log:      log,
@@ -171,7 +171,7 @@ func chaptersFromRows(pageURL, slug string, rows []chapterRow) []providers.Chapt
 			title += " - " + extra
 		}
 		out = append(out, providers.Chapter{
-			URL:        resolveURL(pageURL, fmt.Sprintf("/comic/%s/%s-chapter-%s-%s", slug, hid, chap, lang)),
+			URL:        providers.ResolveURL(pageURL, fmt.Sprintf("/comic/%s/%s-chapter-%s-%s", slug, hid, chap, lang)),
 			Title:      title,
 			NumMain:    main,
 			SuffixType: suffixType,
@@ -226,18 +226,6 @@ func dedupeAndSort(chapters []providers.Chapter) []providers.Chapter {
 	}
 	providers.SortChapters(out)
 	return out
-}
-
-func resolveURL(baseURL, href string) string {
-	u, err := url.Parse(href)
-	if err == nil && u.IsAbs() {
-		return u.String()
-	}
-	b, err := url.Parse(baseURL)
-	if err != nil {
-		return href
-	}
-	return b.ResolveReference(u).String()
 }
 
 func stringValue(v any) string {

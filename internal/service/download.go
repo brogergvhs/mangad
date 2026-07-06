@@ -19,19 +19,13 @@ import (
 	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/downloader"
 	"github.com/brogergvhs/mangad/internal/providers"
-	comickzprovider "github.com/brogergvhs/mangad/internal/providers/comickz"
 	"github.com/brogergvhs/mangad/internal/providers/generic"
+	"github.com/brogergvhs/mangad/internal/providers/registry"
 	"github.com/brogergvhs/mangad/internal/ui"
 	"github.com/brogergvhs/mangad/internal/util"
 
 	cloudflarebp "github.com/DaRealFreak/cloudflare-bp-go"
 )
-
-// Logger is the logging contract needed by download services.
-type Logger interface {
-	Debugf(format string, args ...any)
-	Errorf(format string, args ...any)
-}
 
 // ProgressHandle receives per-chapter download progress.
 type ProgressHandle interface {
@@ -78,7 +72,7 @@ type DownloadService struct {
 	cfg      *config.Config
 	client   *http.Client
 	scraper  providers.Scraper
-	log      Logger
+	log      ui.Log
 	progress ProgressManager
 	browser  downloader.BrowserFetcher
 }
@@ -88,7 +82,7 @@ func NewDownloadService(
 	cfg *config.Config,
 	client *http.Client,
 	scraper providers.Scraper,
-	log Logger,
+	log ui.Log,
 	progress ProgressManager,
 ) *DownloadService {
 	if log == nil {
@@ -112,7 +106,7 @@ func (s *DownloadService) SetProgressManager(progress ProgressManager) {
 // NewDefaultDownloadService creates the default HTTP client and generic scraper.
 func NewDefaultDownloadService(
 	cfg *config.Config,
-	log *ui.Logger,
+	log ui.Log,
 	progress ProgressManager,
 ) (*DownloadService, error) {
 	return newDownloadServiceWithScraper(cfg, log, progress, "generic")
@@ -121,7 +115,7 @@ func NewDefaultDownloadService(
 // NewSourceDownloadService creates a download service using a source profile's scraper.
 func NewSourceDownloadService(
 	cfg *config.Config,
-	log *ui.Logger,
+	log ui.Log,
 	progress ProgressManager,
 	scraperName string,
 ) (*DownloadService, error) {
@@ -130,7 +124,7 @@ func NewSourceDownloadService(
 
 func newDownloadServiceWithScraper(
 	cfg *config.Config,
-	log *ui.Logger,
+	log ui.Log,
 	progress ProgressManager,
 	scraperName string,
 ) (*DownloadService, error) {
@@ -172,7 +166,7 @@ func newDownloadServiceWithScraper(
 		timeout := time.Duration(cfg.BrowserDownload.TimeoutSeconds) * time.Second
 		browser = browserdownload.New(cfg.BrowserDownload.Endpoint, timeout, nil)
 	}
-	scraper, err := newProviderScraper(scraperName, client, log, cfg.AllowExt, cfg.CheckJS, browser)
+	scraper, err := registry.New(scraperName, client, log, cfg.AllowExt, cfg.CheckJS, browser)
 	if err != nil {
 		return nil, err
 	}
@@ -190,17 +184,6 @@ func hostRateLimit(cfg *config.Config) util.HostRateLimit {
 	}
 }
 
-func newProviderScraper(scraperName string, client *http.Client, log *ui.Logger, allowExt []string, checkJS bool, browser generic.BrowserFetcher) (providers.Scraper, error) {
-	switch scraperName {
-	case "", "generic":
-		return generic.NewScraper(client, log, allowExt, checkJS, browser), nil
-	case "comickz":
-		return comickzprovider.NewScraper(client, log, allowExt, checkJS, browser), nil
-	default:
-		return nil, fmt.Errorf("unsupported scraper %q", scraperName)
-	}
-}
-
 func cookieDBPath(cfg *config.Config) string {
 	if cfg.CookieDBPath != "" {
 		return cfg.CookieDBPath
@@ -215,7 +198,7 @@ type flaresolverrFetcher struct {
 	cache    browserCookieCache
 	endpoint string
 	timeout  time.Duration
-	log      *ui.Logger
+	log      ui.Log
 }
 
 func (f flaresolverrFetcher) LoadCached(ctx context.Context, target string) {
@@ -399,7 +382,7 @@ func (s *DownloadService) DownloadChapter(ctx context.Context, ch chapters.Chapt
 }
 
 func (s *DownloadService) downloader() *downloader.Downloader {
-	dl := downloader.New(s.client, s.cfg.Debug, s.cfg.Output, s.cfg.SkipBroken)
+	dl := downloader.New(s.client, s.cfg.SkipBroken)
 	dl.SetBrowserFetcher(s.browser)
 	return dl
 }
@@ -512,5 +495,7 @@ func (noopProgressHandle) MarkDone() {}
 type noopLogger struct{}
 
 func (noopLogger) Debugf(_ string, _ ...any) {}
+
+func (noopLogger) Infof(_ string, _ ...any) {}
 
 func (noopLogger) Errorf(_ string, _ ...any) {}
