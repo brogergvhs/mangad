@@ -62,16 +62,18 @@ var (
 	reBaseLike  = regexp.MustCompile(`(?:/|^)c?0*([0-9]+)(?:/|$)`)
 )
 
-func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Document, string, error) {
+// fetchDOMBody returns the parsed page, its HTML, and whether the browser
+// solver produced it (so callers can skip a redundant re-solve).
+func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Document, string, bool, error) {
 	s.log.Debugf("Fetching URL: %s\n", target)
 
-	body, err := s.fetchBody(ctx, target)
+	body, fromBrowser, err := s.fetchBody(ctx, target)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
-	return doc, body, err
+	return doc, body, fromBrowser, err
 }
 
 func (s *Scraper) fetchHTMXDOMBody(ctx context.Context, target, referer string) (*goquery.Document, string, error) {
@@ -105,7 +107,8 @@ func (s *Scraper) fetchHTMXDOMBody(ctx context.Context, target, referer string) 
 	return doc, body, err
 }
 
-func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) {
+// fetchBody returns the page HTML and whether it came from the browser solver.
+func (s *Scraper) fetchBody(ctx context.Context, target string) (string, bool, error) {
 	s.log.Debugf("Fetching body for URL: %s\n", target)
 	if loader, ok := s.browser.(BrowserCacheLoader); ok {
 		loader.LoadCached(ctx, target)
@@ -113,7 +116,7 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 
 	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	s.log.Debugf("HTTP Request: %s %s\n", req.Method, req.URL.String())
 
@@ -124,10 +127,11 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 		var statusErr *util.StatusError
 		definitive := errors.As(err, &statusErr) && statusErr.Code < http.StatusInternalServerError
 		if definitive || s.browser == nil {
-			return "", err
+			return "", false, err
 		}
 		s.log.Infof("Normal HTTP fetch failed for %s: %v\n", target, err)
-		return s.fetchViaBrowser(ctx, target)
+		html, berr := s.fetchViaBrowser(ctx, target)
+		return html, true, berr
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
@@ -139,20 +143,21 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, error) 
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	body := string(data)
 
 	if resp.StatusCode == http.StatusForbidden || isCloudflareBlock(body) {
 		s.log.Infof("Cloudflare protection detected for %s.\n", target)
 		if s.browser != nil {
-			return s.fetchViaBrowser(ctx, target)
+			html, berr := s.fetchViaBrowser(ctx, target)
+			return html, true, berr
 		}
 		s.log.Infof("Browser solver is disabled. Enable FlareSolverr with browser_solver.enabled: true and browser_solver.endpoint: http://localhost:8191/v1.\n")
-		return "", fmt.Errorf("cloudflare challenge blocked; enable FlareSolverr with browser_solver.enabled: true")
+		return "", false, fmt.Errorf("cloudflare challenge blocked; enable FlareSolverr with browser_solver.enabled: true")
 	}
 
-	return body, nil
+	return body, false, nil
 }
 
 func isCloudflareBlock(body string) bool {
@@ -363,7 +368,7 @@ func looksLikeChapterLink(href, title string) bool {
 }
 
 func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.Chapter, error) {
-	doc, body, err := s.fetchDOMBody(ctx, pageURL)
+	doc, body, fromBrowser, err := s.fetchDOMBody(ctx, pageURL)
 	if err != nil {
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
@@ -371,7 +376,7 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 
 	out := scanChapterLinks(doc, pageURL, s.log)
 	out = s.expandChapterListIfGapped(ctx, pageURL, doc, out)
-	if len(out) == 0 && s.browser != nil {
+	if len(out) == 0 && s.browser != nil && !fromBrowser {
 		s.log.Infof("No static chapter links found for %s; trying browser-rendered HTML.\n", pageURL)
 		body, err = s.fetchViaBrowser(ctx, pageURL)
 		if err != nil {
@@ -397,7 +402,7 @@ func (s *Scraper) expandChapterListIfGapped(ctx context.Context, pageURL string,
 	}
 	for _, u := range chapterExpansionURLs(doc, pageURL) {
 		s.log.Infof("Chapter gap detected; trying expanded chapter list %s.\n", u)
-		nextDoc, _, err := s.fetchDOMBody(ctx, u)
+		nextDoc, _, _, err := s.fetchDOMBody(ctx, u)
 		if err != nil {
 			s.log.Debugf("Skipping chapter expansion %s: %v\n", u, err)
 			continue
@@ -614,13 +619,12 @@ func pathParts(p string) []string {
 }
 
 func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, error) {
-	doc, body, err := s.fetchDOMBody(ctx, chapterURL)
+	doc, body, usedBrowser, err := s.fetchDOMBody(ctx, chapterURL)
 	if err != nil {
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
 	}
-	usedBrowser := false
-	if looksDynamicApp(body) && s.browser != nil {
+	if looksDynamicApp(body) && s.browser != nil && !usedBrowser {
 		s.log.Infof("JS-rendered chapter page detected for %s; trying browser-rendered HTML.\n", chapterURL)
 		body, err = s.fetchViaBrowser(ctx, chapterURL)
 		if err != nil {
@@ -646,7 +650,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 			continue
 		}
 		visited[pageURL] = true
-		nextDoc, nextBody, err := s.fetchDOMBody(ctx, pageURL)
+		nextDoc, nextBody, _, err := s.fetchDOMBody(ctx, pageURL)
 		if err != nil {
 			s.log.Debugf("Skipping chapter page %s: %v\n", pageURL, err)
 			continue
