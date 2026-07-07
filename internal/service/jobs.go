@@ -24,13 +24,14 @@ import (
 
 // JobService enqueues and runs jobs.
 type JobService struct {
-	db      *sql.DB
-	dbPath  string
-	runtime func() (*config.Config, ui.Log, error)
-	jobs    *jobs.Repository
-	lib     *LibraryService
-	src     *sourceService
-	want    *WantedService
+	db         *sql.DB
+	dbPath     string
+	jobTimeout time.Duration
+	runtime    func() (*config.Config, ui.Log, error)
+	jobs       *jobs.Repository
+	lib        *LibraryService
+	src        *sourceService
+	want       *WantedService
 }
 
 // JobPayload is the common payload for background jobs.
@@ -58,7 +59,11 @@ const (
 	SettingBrowserSolverTimeoutSeconds = "browser_solver.timeout_seconds"
 	SettingSourceRegistryURL           = "sources.registry_url"
 
-	jobTimeout = 10 * time.Minute
+	SettingJobsMaxAttempts      = "jobs.max_attempts"
+	SettingJobsTimeout          = "jobs.timeout"
+	SettingDownloadsMaxAttempts = "downloads.max_attempts"
+
+	defaultJobTimeout = 10 * time.Minute
 )
 
 // SettingDefault returns the built-in value for an app setting.
@@ -82,6 +87,10 @@ func SettingDefault(key string) string {
 		return "60"
 	case SettingSourceRegistryURL:
 		return ""
+	case SettingJobsMaxAttempts, SettingDownloadsMaxAttempts:
+		return "3"
+	case SettingJobsTimeout:
+		return "10m"
 	default:
 		return ""
 	}
@@ -99,6 +108,9 @@ func SettingKeys() []string {
 		SettingBrowserSolverEndpoint,
 		SettingBrowserSolverTimeoutSeconds,
 		SettingSourceRegistryURL,
+		SettingJobsMaxAttempts,
+		SettingJobsTimeout,
+		SettingDownloadsMaxAttempts,
 	}
 }
 
@@ -136,6 +148,14 @@ func ValidateSetting(key, value string) error {
 		u, err := url.ParseRequestURI(value)
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("invalid registry url for %s", key)
+		}
+	case SettingJobsMaxAttempts, SettingDownloadsMaxAttempts:
+		if n, err := strconv.Atoi(value); err != nil || n <= 0 {
+			return fmt.Errorf("invalid positive integer for %s", key)
+		}
+	case SettingJobsTimeout:
+		if d, err := time.ParseDuration(value); err != nil || d <= 0 {
+			return fmt.Errorf("invalid positive duration for %s", key)
 		}
 	}
 	return nil
@@ -185,13 +205,15 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 		_ = db.Close()
 		return nil, nil, err
 	}
+	svc.applyLimits(ctx)
 	return svc, func() { _ = db.Close() }, nil
 }
 
 func newJobService(db *sql.DB) *JobService {
 	return &JobService{
-		db:     db,
-		dbPath: database.DefaultPath(),
+		db:         db,
+		dbPath:     database.DefaultPath(),
+		jobTimeout: defaultJobTimeout,
 		runtime: func() (*config.Config, ui.Log, error) {
 			return config.DefaultConfig(), ui.NewLogger(false), nil
 		},
@@ -199,6 +221,19 @@ func newJobService(db *sql.DB) *JobService {
 		lib:  newLibraryService(db),
 		src:  newSourceService(db),
 		want: newWantedService(db),
+	}
+}
+
+// applyLimits seeds the retry/timeout tunables from stored settings.
+func (s *JobService) applyLimits(ctx context.Context) {
+	if n, err := strconv.Atoi(s.Setting(ctx, SettingJobsMaxAttempts, SettingDefault(SettingJobsMaxAttempts))); err == nil && n > 0 {
+		s.jobs.MaxAttempts = n
+	}
+	if n, err := strconv.Atoi(s.Setting(ctx, SettingDownloadsMaxAttempts, SettingDefault(SettingDownloadsMaxAttempts))); err == nil && n > 0 {
+		s.lib.repo.MaxDownloadAttempts = n
+	}
+	if d, err := time.ParseDuration(s.Setting(ctx, SettingJobsTimeout, SettingDefault(SettingJobsTimeout))); err == nil && d > 0 {
+		s.jobTimeout = d
 	}
 }
 
@@ -407,7 +442,7 @@ func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc ui.L
 			return summary, err
 		}
 
-		jobCtx, cancel := context.WithTimeout(ctx, jobTimeout)
+		jobCtx, cancel := context.WithTimeout(ctx, s.jobTimeout)
 		err = s.run(jobCtx, cfg, logSvc, job)
 		cancel()
 		if err != nil {

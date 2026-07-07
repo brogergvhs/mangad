@@ -11,19 +11,21 @@ import (
 )
 
 const (
-	MaxAttempts = 3
-	baseBackoff = time.Minute
-	maxBackoff  = time.Hour
+	DefaultMaxAttempts = 3
+	baseBackoff        = time.Minute
+	maxBackoff         = time.Hour
 )
 
 // Repository persists and claims background jobs.
 type Repository struct {
 	db *sql.DB
+	// MaxAttempts caps retries before a job becomes dead.
+	MaxAttempts int
 }
 
 // NewRepository creates a jobs repository.
 func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{db: db, MaxAttempts: DefaultMaxAttempts}
 }
 
 // Enqueue creates a queued job. An identical pending job is reused instead
@@ -143,7 +145,7 @@ func (r *Repository) ReconcileRunning(ctx context.Context) (int64, error) {
 			last_error = 'interrupted',
 			updated_at = CURRENT_TIMESTAMP
 		WHERE status = 'running'
-	`, MaxAttempts)
+	`, r.MaxAttempts)
 	if err != nil {
 		return 0, fmt.Errorf("reconcile running jobs: %w", err)
 	}
@@ -168,7 +170,7 @@ func (r *Repository) MarkFailed(ctx context.Context, id int64, cause error) erro
 	}
 	status := "failed"
 	runAfter := time.Now().Add(jobBackoff(job.Attempts))
-	if job.Attempts >= MaxAttempts {
+	if job.Attempts >= r.MaxAttempts {
 		status = "dead"
 		runAfter = job.RunAfter
 	}

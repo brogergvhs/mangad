@@ -94,7 +94,7 @@ func TestRepositoryRetryBackoffAndCap(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	for attempt := 1; attempt <= MaxAttempts; attempt++ {
+	for attempt := 1; attempt <= DefaultMaxAttempts; attempt++ {
 		claimed, ok, err := repo.ClaimNext(ctx)
 		if err != nil {
 			t.Fatalf("ClaimNext(%d) error = %v", attempt, err)
@@ -110,13 +110,13 @@ func TestRepositoryRetryBackoffAndCap(t *testing.T) {
 			t.Fatalf("Get(%d) error = %v", attempt, err)
 		}
 		wantStatus := "failed"
-		if attempt == MaxAttempts {
+		if attempt == DefaultMaxAttempts {
 			wantStatus = "dead"
 		}
 		if got.Status != wantStatus {
 			t.Fatalf("attempt %d status = %q, want %q", attempt, got.Status, wantStatus)
 		}
-		if attempt < MaxAttempts && !got.RunAfter.After(time.Now()) {
+		if attempt < DefaultMaxAttempts && !got.RunAfter.After(time.Now()) {
 			t.Fatalf("attempt %d run_after = %s, want future retry", attempt, got.RunAfter)
 		}
 		_, _ = db.ExecContext(ctx, `UPDATE jobs SET run_after = CURRENT_TIMESTAMP WHERE id = ?`, job.ID)
@@ -162,7 +162,7 @@ func TestRepositoryReconcileRunning(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE jobs SET status = 'running' WHERE id = ?`, stranded.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE jobs SET status = 'running', attempts = ? WHERE id = ?`, MaxAttempts, exhausted.ID); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE jobs SET status = 'running', attempts = ? WHERE id = ?`, DefaultMaxAttempts, exhausted.ID); err != nil {
 		t.Fatal(err)
 	}
 

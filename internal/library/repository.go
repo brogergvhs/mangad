@@ -16,6 +16,9 @@ import (
 // Repository persists tracked titles and chapters.
 type Repository struct {
 	db *sql.DB
+	// MaxDownloadAttempts caps failed retries before a chapter stops
+	// counting as missing.
+	MaxDownloadAttempts int
 }
 
 // CompletedDownload is a persisted completed download record.
@@ -28,7 +31,7 @@ type CompletedDownload struct {
 
 // NewRepository creates a library repository.
 func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{db: db, MaxDownloadAttempts: DefaultDownloadAttempts}
 }
 
 // AddTitle creates or updates a tracked title by source URL.
@@ -226,7 +229,7 @@ func (r *Repository) ListMissingChapters(ctx context.Context, titleID int64) ([]
 		WHERE c.title_id = ?
 			AND d.id IS NULL
 		ORDER BY c.number_main, c.suffix_type, c.suffix_num, c.label
-	`, MaxDownloadAttempts, titleID)
+	`, r.MaxDownloadAttempts, titleID)
 	if err != nil {
 		return nil, fmt.Errorf("list missing chapters: %w", err)
 	}

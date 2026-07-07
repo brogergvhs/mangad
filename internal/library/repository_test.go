@@ -181,7 +181,7 @@ func TestRepositoryDownloadAttemptCap(t *testing.T) {
 	}
 	chapterID := missing[0].ID
 
-	for i := 0; i < MaxDownloadAttempts; i++ {
+	for i := 0; i < DefaultDownloadAttempts; i++ {
 		if err := repo.MarkDownloadStarted(ctx, chapterID); err != nil {
 			t.Fatalf("MarkDownloadStarted() error = %v", err)
 		}
@@ -193,7 +193,7 @@ func TestRepositoryDownloadAttemptCap(t *testing.T) {
 			t.Fatalf("ListMissingChapters() error = %v", err)
 		}
 		want := 1
-		if i == MaxDownloadAttempts-1 {
+		if i == DefaultDownloadAttempts-1 {
 			want = 0
 		}
 		if len(missing) != want {
