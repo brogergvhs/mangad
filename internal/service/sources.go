@@ -97,6 +97,7 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 	}
 	chapters, err := downloadSvc.FetchChapters(ctx, src.SampleMangaURL)
 	if err != nil {
+		result.Status = fetchFailureStatus(err)
 		return err
 	}
 	result.ChaptersFound = len(chapters)
@@ -104,10 +105,12 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 		return fmt.Errorf("no chapters found")
 	}
 	if len(chapters) < src.MinChapters {
+		result.Status = sources.StatusDegraded
 		return fmt.Errorf("found %d chapters, expected at least %d", len(chapters), src.MinChapters)
 	}
 	images, err := downloadSvc.FetchImages(ctx, chapters[0])
 	if err != nil {
+		result.Status = fetchFailureStatus(err)
 		return err
 	}
 	result.ImagesFound = len(images)
@@ -117,6 +120,15 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 	}
 	result.Status = sources.StatusHealthy
 	return nil
+}
+
+// fetchFailureStatus maps a fetch error to a health status: a Cloudflare wall
+// is distinct from a generically broken source.
+func fetchFailureStatus(err error) string {
+	if strings.Contains(strings.ToLower(err.Error()), "cloudflare") {
+		return sources.StatusRequiresCF
+	}
+	return sources.StatusBroken
 }
 
 func imageExtensions(images []string) []string {

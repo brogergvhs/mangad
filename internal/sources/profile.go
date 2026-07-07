@@ -10,8 +10,10 @@ import (
 )
 
 const (
-	StatusHealthy = "healthy"
-	StatusBroken  = "broken"
+	StatusHealthy    = "healthy"
+	StatusDegraded   = "degraded"
+	StatusRequiresCF = "requires_cf"
+	StatusBroken     = "broken"
 
 	OriginBuiltin  = "builtin"
 	OriginRegistry = "registry"
