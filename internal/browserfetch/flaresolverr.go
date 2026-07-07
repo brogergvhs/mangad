@@ -47,8 +47,19 @@ func NewFlareSolverr(endpoint string, timeout time.Duration, client *http.Client
 	return &FlareSolverr{endpoint: endpoint, client: client, timeout: timeout}
 }
 
+// solveGate caps concurrent solves across all clients; a FlareSolverr endpoint
+// serializes a browser per request, so piling requests on only adds latency.
+var solveGate = make(chan struct{}, 2)
+
 // Fetch returns the browser-rendered HTML for target.
 func (f *FlareSolverr) Fetch(ctx context.Context, target string) (Result, error) {
+	select {
+	case solveGate <- struct{}{}:
+		defer func() { <-solveGate }()
+	case <-ctx.Done():
+		return Result{}, ctx.Err()
+	}
+
 	var resp flaresolverrResponse
 	if err := f.call(ctx, map[string]any{
 		"cmd":        "request.get",

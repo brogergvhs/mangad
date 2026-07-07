@@ -17,9 +17,9 @@ import (
 	"time"
 	"unicode"
 
+	cloudflarebp "github.com/DaRealFreak/cloudflare-bp-go"
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/database"
@@ -126,7 +126,7 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	matches := make(chan catalog.Match, len(enabled))
 	jobs := make(chan sources.Source)
 	var wg sync.WaitGroup
-	for range min(len(enabled), 4) {
+	for range min(len(enabled), matchSourceWorkers) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -195,8 +195,27 @@ func (s *WantedService) freshMatches(ctx context.Context, catalogID int64) map[s
 	return out
 }
 
+const (
+	matchSourceWorkers    = 8
+	matchCandidateWorkers = 4
+	sourceMatchTimeout    = 45 * time.Second
+)
+
 func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, logSvc ui.Log, manga catalog.Manga, src sources.Source) (catalog.Match, bool) {
+	ctx, cancel := context.WithTimeout(ctx, sourceMatchTimeout)
+	defer cancel()
+
+	// ConfigForSource routes unknown sources by their profile hint and known
+	// ones by the method verify learned; no discovery probe needed here.
 	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
+	downloadSvc, err := NewSourceDownloadService(&probeCfg, logSvc, nil, src.Scraper)
+	if err != nil {
+		if logSvc != nil {
+			logSvc.Debugf("Source %s scraper setup failed: %v\n", src.ID, err)
+		}
+		return catalog.Match{}, false
+	}
+
 	candidates, searched := searchSourceURLs(ctx, probeCfg, logSvc, src, manga)
 	method := "search"
 	if !searched {
@@ -205,13 +224,39 @@ func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, log
 	} else if len(candidates) == 0 && logSvc != nil {
 		logSvc.Debugf("Source search %s completed with no candidates; skipping guessed slug probes.\n", src.ID)
 	}
-	for _, candidate := range uniqueStrings(candidates) {
-		match, ok := s.verifyCandidate(ctx, cfg, logSvc, manga, src, candidate, method)
-		if ok {
-			return match, true
+	return s.bestCandidate(ctx, downloadSvc, logSvc, manga, src, uniqueStrings(candidates), method)
+}
+
+// bestCandidate verifies candidates concurrently (bounded) and returns the
+// highest-confidence match; the per-source timeout bounds the total work.
+func (s *WantedService) bestCandidate(ctx context.Context, downloadSvc *DownloadService, logSvc ui.Log, manga catalog.Manga, src sources.Source, candidates []string, method string) (catalog.Match, bool) {
+	found := make([]catalog.Match, len(candidates))
+	ok := make([]bool, len(candidates))
+	sem := make(chan struct{}, matchCandidateWorkers)
+	var wg sync.WaitGroup
+	for i, candidate := range candidates {
+		wg.Add(1)
+		go func(i int, candidate string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			found[i], ok[i] = s.verifyCandidate(ctx, downloadSvc, logSvc, manga, src, candidate, method)
+		}(i, candidate)
+	}
+	wg.Wait()
+
+	best := catalog.Match{}
+	matched := false
+	for i := range candidates {
+		if ok[i] && (!matched || found[i].Confidence > best.Confidence) {
+			best, matched = found[i], true
 		}
 	}
-	return catalog.Match{}, false
+	return best, matched
 }
 
 // ListMatches returns persisted source matches.
@@ -240,15 +285,7 @@ func (s *WantedService) TrackMatch(ctx context.Context, matchID int64, outputPat
 	})
 }
 
-func (s *WantedService) verifyCandidate(ctx context.Context, cfg *config.Config, logSvc ui.Log, manga catalog.Manga, src sources.Source, sourceURL, method string) (catalog.Match, bool) {
-	probeCfg := ConfigForSource(*cfg, src, SourceConfigOptions{})
-	downloadSvc, err := NewSourceDownloadService(&probeCfg, logSvc, nil, src.Scraper)
-	if err != nil {
-		if logSvc != nil {
-			logSvc.Debugf("Candidate %s skipped, scraper setup failed: %v\n", sourceURL, err)
-		}
-		return catalog.Match{}, false
-	}
+func (s *WantedService) verifyCandidate(ctx context.Context, downloadSvc *DownloadService, logSvc ui.Log, manga catalog.Manga, src sources.Source, sourceURL, method string) (catalog.Match, bool) {
 	chapters, err := downloadSvc.FetchChapters(ctx, sourceURL)
 	if err != nil {
 		if logSvc != nil {
@@ -317,15 +354,16 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 	return out, searched
 }
 
+// fetchSearchPage fetches a source search page over plain HTTP only; a
+// solver-only source falls through to slug probing rather than paying the
+// slow browser path for search.
 func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (string, error) {
-	if cfg.BrowserDownload.Enabled {
-		return browserdownload.New(cfg.BrowserDownload.Endpoint, time.Duration(cfg.BrowserDownload.TimeoutSeconds)*time.Second, nil).Fetch(ctx, target)
-	}
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
 		Timeout:    30 * time.Second,
 		UserAgent:  util.PickUserAgent(cfg.UserAgent),
 		Cookie:     cfg.Cookie,
 		CookieFile: cfg.CookieFile,
+		Transport:  cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
 		RateLimit:  hostRateLimit(&cfg),
 	})
 	if err != nil {

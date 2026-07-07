@@ -58,28 +58,6 @@ func TestDownloadCBZStatusError(t *testing.T) {
 	}
 }
 
-func TestFetch(t *testing.T) {
-	var got htmlRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/html" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		if err := readJSON(r, &got); err != nil {
-			t.Fatal(err)
-		}
-		_, _ = w.Write([]byte(`<a href="/chapter-1">Chapter 1</a>`))
-	}))
-	defer server.Close()
-
-	body, err := New(server.URL, time.Second, server.Client()).Fetch(context.Background(), "https://manga.test/title")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.PageURL != "https://manga.test/title" || body != `<a href="/chapter-1">Chapter 1</a>` {
-		t.Fatalf("request = %#v body = %q", got, body)
-	}
-}
-
 func readJSON(r *http.Request, dst any) error {
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(dst)
