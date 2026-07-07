@@ -109,11 +109,19 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	if err != nil {
 		return nil, err
 	}
+	fresh := s.freshMatches(ctx, catalogID)
 	var enabled []sources.Source
+	var cached []catalog.Match
 	for _, src := range sourceList {
-		if src.Enabled {
-			enabled = append(enabled, src)
+		if !src.Enabled {
+			continue
 		}
+		if match, ok := fresh[src.ID]; ok {
+			logSvc.Debugf("Reusing cached match for source %s (verified %s).\n", src.ID, match.VerifiedAt)
+			cached = append(cached, match)
+			continue
+		}
+		enabled = append(enabled, src)
 	}
 	matches := make(chan catalog.Match, len(enabled))
 	jobs := make(chan sources.Source)
@@ -147,7 +155,7 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	wg.Wait()
 	close(matches)
 
-	var out []catalog.Match
+	out := cached
 	for match := range matches {
 		stored, err := s.catalog.UpsertMatch(ctx, match)
 		if err != nil {
@@ -162,6 +170,29 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 		return out[i].Confidence > out[j].Confidence
 	})
 	return out, nil
+}
+
+// matchCacheTTL is how long a verified match is reused before re-scraping.
+const matchCacheTTL = 24 * time.Hour
+
+// freshMatches returns recently verified successful matches keyed by source ID.
+func (s *WantedService) freshMatches(ctx context.Context, catalogID int64) map[string]catalog.Match {
+	stored, err := s.catalog.ListMatches(ctx, catalogID)
+	if err != nil {
+		return nil
+	}
+	out := map[string]catalog.Match{}
+	for _, match := range stored {
+		if match.SourceID == "" || match.ChaptersFound == 0 {
+			continue
+		}
+		verifiedAt, err := database.ParseTime(match.VerifiedAt)
+		if err != nil || time.Since(verifiedAt) > matchCacheTTL {
+			continue
+		}
+		out[match.SourceID] = match
+	}
+	return out
 }
 
 func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, logSvc ui.Log, manga catalog.Manga, src sources.Source) (catalog.Match, bool) {
