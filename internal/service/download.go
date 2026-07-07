@@ -143,6 +143,8 @@ func newDownloadServiceWithScraper(
 		return nil, fmt.Errorf("create HTTP client: %w", err)
 	}
 
+	// HTML fetches escalate http -> FlareSolverr only; the Selenium
+	// downloader is reserved for image capture, never HTML.
 	var browser generic.BrowserFetcher
 	var downloadBrowser downloader.BrowserFetcher
 	if cfg.BrowserSolver.Enabled {
@@ -161,10 +163,6 @@ func newDownloadServiceWithScraper(
 		}
 		browser = solver
 		downloadBrowser = solver
-	}
-	if browser == nil && cfg.BrowserDownload.Enabled {
-		timeout := time.Duration(cfg.BrowserDownload.TimeoutSeconds) * time.Second
-		browser = browserdownload.New(cfg.BrowserDownload.Endpoint, timeout, nil)
 	}
 	scraper, err := registry.New(scraperName, client, log, cfg.AllowExt, cfg.CheckJS, browser)
 	if err != nil {

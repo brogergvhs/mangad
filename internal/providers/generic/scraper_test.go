@@ -408,7 +408,7 @@ func TestGetChaptersDynamicAppNeedsBrowser(t *testing.T) {
 	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
 	if _, err := scraper.GetChapters(context.Background(), "https://comix.to/title/vyd0-title"); err == nil {
 		t.Fatal("GetChapters() error = nil")
-	} else if !strings.Contains(err.Error(), "browser_downloader.enabled") {
+	} else if !strings.Contains(err.Error(), "browser_solver.enabled") {
 		t.Fatalf("GetChapters() error = %v", err)
 	}
 }

@@ -82,3 +82,48 @@ func TestConfigForSourceCanPreserveAllowedExtensions(t *testing.T) {
 		t.Fatalf("AllowExt = %#v", got.AllowExt)
 	}
 }
+
+func TestConfigForSourceLearnedFetchMethods(t *testing.T) {
+	base := config.Config{}
+	base.BrowserSolver.Enabled = true // runtime has a solver available
+
+	cases := []struct {
+		name         string
+		src          sources.Source
+		wantSolver   bool
+		wantDownload bool
+	}{
+		{
+			name:       "learned http disables solver despite hint",
+			src:        sources.Source{Profile: sources.Profile{RequiresBrowserSolver: true}, ChapterFetch: sources.FetchHTTP},
+			wantSolver: false,
+		},
+		{
+			name:       "learned solver enables solver",
+			src:        sources.Source{ChapterFetch: sources.FetchSolver},
+			wantSolver: true,
+		},
+		{
+			name:         "learned browser enables image downloader",
+			src:          sources.Source{ChapterFetch: sources.FetchHTTP, ImageFetch: sources.FetchBrowser},
+			wantSolver:   false,
+			wantDownload: true,
+		},
+		{
+			name:       "unknown falls back to profile hint",
+			src:        sources.Source{Profile: sources.Profile{RequiresBrowserSolver: true}},
+			wantSolver: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ConfigForSource(base, tc.src, SourceConfigOptions{})
+			if got.BrowserSolver.Enabled != tc.wantSolver {
+				t.Errorf("BrowserSolver.Enabled = %v, want %v", got.BrowserSolver.Enabled, tc.wantSolver)
+			}
+			if got.BrowserDownload.Enabled != tc.wantDownload {
+				t.Errorf("BrowserDownload.Enabled = %v, want %v", got.BrowserDownload.Enabled, tc.wantDownload)
+			}
+		})
+	}
+}

@@ -22,11 +22,22 @@ func ConfigForSource(cfg config.Config, src sources.Source, opts SourceConfigOpt
 	if len(src.AllowedExtensions) > 0 && !opts.PreserveAllowedExtensions {
 		cfg.AllowExt = src.AllowedExtensions
 	}
-	if src.RequiresBrowserSolver {
+	// A learned method wins; until one exists, fall back to the profile hint.
+	switch src.ChapterFetch {
+	case sources.FetchSolver:
 		cfg.BrowserSolver.Enabled = true
+	case sources.FetchHTTP:
+		cfg.BrowserSolver.Enabled = false
+	default:
+		cfg.BrowserSolver.Enabled = cfg.BrowserSolver.Enabled || src.RequiresBrowserSolver
 	}
-	if src.RequiresBrowserDownload {
+	switch src.ImageFetch {
+	case sources.FetchBrowser:
 		cfg.BrowserDownload.Enabled = true
+	case sources.FetchHTTP:
+		cfg.BrowserDownload.Enabled = false
+	default:
+		cfg.BrowserDownload.Enabled = cfg.BrowserDownload.Enabled || src.RequiresBrowserDownload
 	}
 	return cfg
 }

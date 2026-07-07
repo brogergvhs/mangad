@@ -385,7 +385,7 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 		out = s.expandChapterListIfGapped(ctx, pageURL, doc, out)
 	}
 	if len(out) == 0 && looksDynamicApp(body) {
-		return nil, fmt.Errorf("no static chapter links found; enable browser_downloader.enabled or browser_solver.enabled for JS-rendered chapter lists")
+		return nil, fmt.Errorf("no static chapter links found; enable browser_solver.enabled (FlareSolverr) for JS-rendered chapter lists")
 	}
 
 	return out, nil
