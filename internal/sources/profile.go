@@ -15,6 +15,12 @@ const (
 	StatusRequiresCF = "requires_cf"
 	StatusBroken     = "broken"
 
+	// Learned fetch methods. Chapter/HTML uses http or the CF solver;
+	// images use http or the browser (Selenium) downloader.
+	FetchHTTP    = "http"
+	FetchSolver  = "solver"
+	FetchBrowser = "browser"
+
 	OriginBuiltin  = "builtin"
 	OriginRegistry = "registry"
 	OriginLocal    = "local"
@@ -47,6 +53,10 @@ type Source struct {
 	ChaptersFound     int      `json:"chapters_found"`
 	SampleImagesFound int      `json:"sample_images_found"`
 	ImageExtensions   []string `json:"image_extensions"`
+	// ChapterFetch/ImageFetch are the methods learned from the last
+	// successful scrape; empty means not yet known.
+	ChapterFetch string `json:"chapter_fetch,omitempty"`
+	ImageFetch   string `json:"image_fetch,omitempty"`
 }
 
 // TemplateProfile returns a starter profile for local editing.

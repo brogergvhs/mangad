@@ -28,13 +28,16 @@ func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
 	if err := repo.Sync(ctx, []Profile{profile}, OriginLocal); err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
-	if err := repo.UpdateCheck(ctx, "example", StatusHealthy, "", 12, 4, []string{"webp"}); err != nil {
+	if err := repo.UpdateCheck(ctx, "example", StatusHealthy, "", 12, 4, []string{"webp"}, FetchHTTP, FetchBrowser); err != nil {
 		t.Fatalf("UpdateCheck() error = %v", err)
 	}
 
 	got, err := repo.Get(ctx, "example")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
+	}
+	if got.ChapterFetch != FetchHTTP || got.ImageFetch != FetchBrowser {
+		t.Fatalf("fetch methods = %q/%q, want http/browser", got.ChapterFetch, got.ImageFetch)
 	}
 	if got.Origin != OriginLocal || got.Status != StatusHealthy || got.ChaptersFound != 12 || got.SampleImagesFound != 4 {
 		t.Fatalf("source status = %#v", got)

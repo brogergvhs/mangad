@@ -23,6 +23,8 @@ type SourceVerifyResult struct {
 	ChaptersFound   int      `json:"chapters_found"`
 	ImagesFound     int      `json:"images_found"`
 	ImageExtensions []string `json:"image_extensions"`
+	ChapterFetch    string   `json:"chapter_fetch,omitempty"`
+	ImageFetch      string   `json:"image_fetch,omitempty"`
 	Error           string   `json:"error,omitempty"`
 }
 
@@ -76,7 +78,7 @@ func (s *sourceService) VerifySource(ctx context.Context, cfg *config.Config, lo
 	if checkErr != nil {
 		result.Error = checkErr.Error()
 	}
-	if err := s.repo.UpdateCheck(ctx, src.ID, result.Status, result.Error, result.ChaptersFound, result.ImagesFound, result.ImageExtensions); err != nil {
+	if err := s.repo.UpdateCheck(ctx, src.ID, result.Status, result.Error, result.ChaptersFound, result.ImagesFound, result.ImageExtensions, result.ChapterFetch, result.ImageFetch); err != nil {
 		return result, err
 	}
 	if checkErr != nil {
@@ -89,35 +91,27 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 	if !src.Enabled {
 		return fmt.Errorf("source %s is disabled", src.ID)
 	}
-	cfgCopy := ConfigForSource(*cfg, src, SourceConfigOptions{})
 
-	downloadSvc, err := NewSourceDownloadService(&cfgCopy, logSvc, nil, src.Scraper)
-	if err != nil {
-		return err
-	}
-	chapters, err := downloadSvc.FetchChapters(ctx, src.SampleMangaURL)
+	chapters, chapterMethod, err := discoverChapters(ctx, *cfg, logSvc, src, src.SampleMangaURL, cfg.BrowserSolver.Enabled)
 	if err != nil {
 		result.Status = fetchFailureStatus(err)
 		return err
 	}
+	result.ChapterFetch = chapterMethod
 	result.ChaptersFound = len(chapters)
-	if len(chapters) == 0 {
-		return fmt.Errorf("no chapters found")
-	}
 	if len(chapters) < src.MinChapters {
 		result.Status = sources.StatusDegraded
 		return fmt.Errorf("found %d chapters, expected at least %d", len(chapters), src.MinChapters)
 	}
-	images, err := downloadSvc.FetchImages(ctx, chapters[0])
+
+	images, imageMethod, err := discoverImages(ctx, *cfg, logSvc, src, chapters[0], chapterMethod, cfg.BrowserDownload.Enabled)
 	if err != nil {
 		result.Status = fetchFailureStatus(err)
 		return err
 	}
+	result.ImageFetch = imageMethod
 	result.ImagesFound = len(images)
 	result.ImageExtensions = imageExtensions(images)
-	if len(images) == 0 {
-		return fmt.Errorf("no images found in sample chapter")
-	}
 	result.Status = sources.StatusHealthy
 	return nil
 }

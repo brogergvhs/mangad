@@ -147,7 +147,7 @@ func (r *Repository) Get(ctx context.Context, id string) (Source, error) {
 }
 
 // UpdateCheck stores the latest source verification result.
-func (r *Repository) UpdateCheck(ctx context.Context, id, status, lastErr string, chapters, images int, extensions []string) error {
+func (r *Repository) UpdateCheck(ctx context.Context, id, status, lastErr string, chapters, images int, extensions []string, chapterFetch, imageFetch string) error {
 	id = strings.ToLower(strings.TrimSpace(id))
 	encoded, err := encodeList(extensions)
 	if err != nil {
@@ -161,9 +161,11 @@ func (r *Repository) UpdateCheck(ctx context.Context, id, status, lastErr string
 			chapters_found = ?,
 			sample_images_found = ?,
 			image_extensions_json = ?,
+			chapter_fetch = CASE WHEN ? = '' THEN chapter_fetch ELSE ? END,
+			image_fetch = CASE WHEN ? = '' THEN image_fetch ELSE ? END,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, status, lastErr, chapters, images, encoded, id)
+	`, status, lastErr, chapters, images, encoded, chapterFetch, chapterFetch, imageFetch, imageFetch, id)
 	if err != nil {
 		return fmt.Errorf("update source check %s: %w", id, err)
 	}
@@ -199,7 +201,9 @@ func sourceSelect() string {
 			last_error,
 			chapters_found,
 			sample_images_found,
-			image_extensions_json
+			image_extensions_json,
+			chapter_fetch,
+			image_fetch
 		FROM sources`
 }
 
@@ -230,6 +234,8 @@ func scanSource(scanner interface {
 		&src.ChaptersFound,
 		&src.SampleImagesFound,
 		&imageExtensionsJSON,
+		&src.ChapterFetch,
+		&src.ImageFetch,
 	)
 	if err != nil {
 		return Source{}, err
