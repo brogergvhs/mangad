@@ -96,6 +96,20 @@ func (r *Repository) ListWanted(ctx context.Context) ([]Manga, error) {
 	return out, rows.Err()
 }
 
+// RecordMatchMiss marks that a source yielded no match for a title, so it is
+// skipped on the next attempt until the cache expires. The synthetic URL keeps
+// the marker distinct from real matches and out of the public match list.
+func (r *Repository) RecordMatchMiss(ctx context.Context, catalogMangaID int64, sourceID string) error {
+	_, err := r.UpsertMatch(ctx, Match{
+		CatalogMangaID: catalogMangaID,
+		SourceID:       sourceID,
+		SourceURL:      "miss:" + sourceID,
+		MatchMethod:    "miss",
+		Error:          "no match",
+	})
+	return err
+}
+
 // UpsertMatch stores a source match.
 func (r *Repository) UpsertMatch(ctx context.Context, m Match) (Match, error) {
 	m.SourceID = strings.TrimSpace(m.SourceID)

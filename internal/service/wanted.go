@@ -109,16 +109,20 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	if err != nil {
 		return nil, err
 	}
-	fresh := s.freshMatches(ctx, catalogID)
+	reuse, skip := s.recentDecisions(ctx, catalogID)
 	var enabled []sources.Source
 	var cached []catalog.Match
 	for _, src := range sourceList {
 		if !src.Enabled {
 			continue
 		}
-		if match, ok := fresh[src.ID]; ok {
+		if match, ok := reuse[src.ID]; ok {
 			logSvc.Debugf("Reusing cached match for source %s (verified %s).\n", src.ID, match.VerifiedAt)
 			cached = append(cached, match)
+			continue
+		}
+		if skip[src.ID] {
+			logSvc.Debugf("Skipping source %s: recently found no match.\n", src.ID)
 			continue
 		}
 		enabled = append(enabled, src)
@@ -156,12 +160,22 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	close(matches)
 
 	out := cached
+	matched := map[string]bool{}
 	for match := range matches {
 		stored, err := s.catalog.UpsertMatch(ctx, match)
 		if err != nil {
 			return out, err
 		}
+		matched[stored.SourceID] = true
 		out = append(out, stored)
+	}
+	for _, src := range enabled {
+		if matched[src.ID] {
+			continue
+		}
+		if err := s.catalog.RecordMatchMiss(ctx, catalogID, src.ID); err != nil {
+			logSvc.Debugf("Recording match miss for %s failed: %v\n", src.ID, err)
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].ChaptersFound != out[j].ChaptersFound {
@@ -172,27 +186,32 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 	return out, nil
 }
 
-// matchCacheTTL is how long a verified match is reused before re-scraping.
+// matchCacheTTL is how long a match attempt is reused before re-scraping.
 const matchCacheTTL = 24 * time.Hour
 
-// freshMatches returns recently verified successful matches keyed by source ID.
-func (s *WantedService) freshMatches(ctx context.Context, catalogID int64) map[string]catalog.Match {
+// recentDecisions partitions recent attempts per source into successes to
+// reuse and misses to skip, from a single query.
+func (s *WantedService) recentDecisions(ctx context.Context, catalogID int64) (reuse map[string]catalog.Match, skip map[string]bool) {
+	reuse, skip = map[string]catalog.Match{}, map[string]bool{}
 	stored, err := s.catalog.ListMatches(ctx, catalogID)
 	if err != nil {
-		return nil
+		return
 	}
-	out := map[string]catalog.Match{}
 	for _, match := range stored {
-		if match.SourceID == "" || match.ChaptersFound == 0 {
+		if match.SourceID == "" {
 			continue
 		}
 		verifiedAt, err := database.ParseTime(match.VerifiedAt)
 		if err != nil || time.Since(verifiedAt) > matchCacheTTL {
 			continue
 		}
-		out[match.SourceID] = match
+		if match.ChaptersFound > 0 {
+			reuse[match.SourceID] = match
+		} else {
+			skip[match.SourceID] = true
+		}
 	}
-	return out
+	return
 }
 
 const (
@@ -220,7 +239,13 @@ func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, log
 	method := "search"
 	if !searched {
 		method = "slug_probe"
-		candidates = append(candidates, candidateSourceURLs(src, manga)...)
+		guesses := candidateSourceURLs(src, manga)
+		// On a solver source each probe costs a full CF solve, so only the
+		// best guess is worth trying; wrong guesses can't be told apart cheaply.
+		if probeCfg.BrowserSolver.Enabled && len(guesses) > 1 {
+			guesses = guesses[:1]
+		}
+		candidates = append(candidates, guesses...)
 	} else if len(candidates) == 0 && logSvc != nil {
 		logSvc.Debugf("Source search %s completed with no candidates; skipping guessed slug probes.\n", src.ID)
 	}
@@ -259,9 +284,19 @@ func (s *WantedService) bestCandidate(ctx context.Context, downloadSvc *Download
 	return best, matched
 }
 
-// ListMatches returns persisted source matches.
+// ListMatches returns persisted source matches, excluding miss markers.
 func (s *WantedService) ListMatches(ctx context.Context, catalogID int64) ([]catalog.Match, error) {
-	return s.catalog.ListMatches(ctx, catalogID)
+	all, err := s.catalog.ListMatches(ctx, catalogID)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0]
+	for _, m := range all {
+		if m.ChaptersFound > 0 {
+			out = append(out, m)
+		}
+	}
+	return out, nil
 }
 
 // TrackMatch adds a selected source match to the library.
