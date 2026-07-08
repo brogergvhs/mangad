@@ -212,9 +212,11 @@ func cbzFiles(dir string) []string {
 
 var (
 	// A leading number keyed to the chapter, e.g. "12: Title", "12 - Title",
-	// "012.cbz". Requires punctuation or end-of-name after it so titles that
-	// merely start with a number (e.g. "100 Bullets 5") don't false-match.
-	reFileLead    = regexp.MustCompile(`^\s*([0-9]+(?:\.[0-9]+)?)\s*(?:[:.)\]_-]|$)`)
+	// "33 Kyoto ... part 0", "012.cbz". Ripped collections almost always lead
+	// with the chapter number, so a separator (space or punctuation) or the end
+	// of the name after it is enough — the leading number wins over any trailing
+	// "part N" (which is a sub-part, not a chapter).
+	reFileLead    = regexp.MustCompile(`^\s*([0-9]+(?:\.[0-9]+)?)(?:[\s:.)\]_-]|$)`)
 	reFileChapter = regexp.MustCompile(`(?i)(?:chapter|episode|ch|ep|c)[\s._-]*([0-9]+(?:\.[0-9]+)?)`)
 	reFileNumber  = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`)
 )
