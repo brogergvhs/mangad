@@ -40,7 +40,7 @@ func (c *AniListClient) Search(ctx context.Context, query string, limit int) ([]
 			Page(page: 1, perPage: $perPage) {
 				media(search: $search, type: MANGA) {
 					id title { romaji english native } description(asHtml: false)
-					coverImage { large } status format chapters synonyms
+					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
 				}
 			}
 		}`, map[string]any{"search": query, "perPage": limit}, &resp); err != nil {
@@ -56,7 +56,7 @@ func (c *AniListClient) Get(ctx context.Context, id int) (Manga, error) {
 		query ($id: Int) {
 			Media(id: $id, type: MANGA) {
 				id title { romaji english native } description(asHtml: false)
-				coverImage { large } status format chapters synonyms
+				coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
 			}
 		}`, map[string]any{"id": id}, &resp); err != nil {
 		return Manga{}, err
@@ -141,10 +141,26 @@ type anilistMedia struct {
 	CoverImage  struct {
 		Large string `json:"large"`
 	} `json:"coverImage"`
-	Status   string   `json:"status"`
-	Format   string   `json:"format"`
-	Chapters *int     `json:"chapters"`
-	Synonyms []string `json:"synonyms"`
+	Status       string   `json:"status"`
+	Format       string   `json:"format"`
+	Chapters     *int     `json:"chapters"`
+	Volumes      *int     `json:"volumes"`
+	Synonyms     []string `json:"synonyms"`
+	Genres       []string `json:"genres"`
+	AverageScore *int     `json:"averageScore"`
+	StartDate    struct {
+		Year *int `json:"year"`
+	} `json:"startDate"`
+	Staff struct {
+		Edges []struct {
+			Role string `json:"role"`
+			Node struct {
+				Name struct {
+					Full string `json:"full"`
+				} `json:"name"`
+			} `json:"node"`
+		} `json:"edges"`
+	} `json:"staff"`
 }
 
 func anilistMediaToManga(media []anilistMedia) ([]Manga, error) {
@@ -168,9 +184,40 @@ func anilistMediaToManga(media []anilistMedia) ([]Manga, error) {
 			Status:       item.Status,
 			Format:       item.Format,
 			Chapters:     item.Chapters,
+			Volumes:      item.Volumes,
 			Synonyms:     item.Synonyms,
+			Genres:       item.Genres,
+			Authors:      anilistAuthors(item),
+			Year:         intOrZero(item.StartDate.Year),
+			AverageScore: intOrZero(item.AverageScore),
 			RawJSON:      string(raw),
 		})
 	}
 	return out, nil
+}
+
+func intOrZero(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// anilistAuthors collects the Story/Art credits from the staff edges.
+func anilistAuthors(m anilistMedia) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range m.Staff.Edges {
+		role := strings.ToLower(e.Role)
+		if !strings.Contains(role, "story") && !strings.Contains(role, "art") {
+			continue
+		}
+		name := strings.TrimSpace(e.Node.Name.Full)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
 }

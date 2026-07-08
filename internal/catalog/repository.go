@@ -32,16 +32,27 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 	if err != nil {
 		return Manga{}, fmt.Errorf("encode synonyms: %w", err)
 	}
-	var chapters any
+	genres, err := json.Marshal(cleanStrings(m.Genres))
+	if err != nil {
+		return Manga{}, fmt.Errorf("encode genres: %w", err)
+	}
+	authors, err := json.Marshal(m.Authors)
+	if err != nil {
+		return Manga{}, fmt.Errorf("encode authors: %w", err)
+	}
+	var chapters, volumes any
 	if m.Chapters != nil {
 		chapters = *m.Chapters
+	}
+	if m.Volumes != nil {
+		volumes = *m.Volumes
 	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO catalog_manga (
 			provider, provider_id, title_romaji, title_english, title_native,
-			description, cover_image, status, format, chapters, synonyms_json,
-			wanted, raw_json, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			description, cover_image, status, format, chapters, volumes, synonyms_json,
+			genres_json, authors_json, year, average_score, wanted, raw_json, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(provider, provider_id) DO UPDATE SET
 			title_romaji = excluded.title_romaji,
 			title_english = excluded.title_english,
@@ -51,13 +62,19 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 			status = excluded.status,
 			format = excluded.format,
 			chapters = excluded.chapters,
+			volumes = excluded.volumes,
 			synonyms_json = excluded.synonyms_json,
+			genres_json = excluded.genres_json,
+			authors_json = excluded.authors_json,
+			year = excluded.year,
+			average_score = excluded.average_score,
 			wanted = CASE WHEN excluded.wanted != 0 THEN excluded.wanted ELSE catalog_manga.wanted END,
 			raw_json = excluded.raw_json,
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
 	`, m.Provider, m.ProviderID, m.TitleRomaji, m.TitleEnglish, m.TitleNative, m.Description,
-		m.CoverImage, m.Status, m.Format, chapters, string(synonyms), database.BoolToInt(m.Wanted), m.RawJSON)
+		m.CoverImage, m.Status, m.Format, chapters, volumes, string(synonyms),
+		string(genres), string(authors), m.Year, m.AverageScore, database.BoolToInt(m.Wanted), m.RawJSON)
 	var id int64
 	if err := row.Scan(&id); err != nil {
 		return Manga{}, fmt.Errorf("upsert manga: %w", err)
@@ -179,8 +196,8 @@ func (r *Repository) ListMatches(ctx context.Context, catalogMangaID int64) ([]M
 func mangaSelect() string {
 	return `
 		SELECT id, provider, provider_id, title_romaji, title_english, title_native,
-			description, cover_image, status, format, chapters, synonyms_json,
-			wanted, raw_json, updated_at
+			description, cover_image, status, format, chapters, volumes, synonyms_json,
+			genres_json, authors_json, year, average_score, wanted, raw_json, updated_at
 		FROM catalog_manga`
 }
 
@@ -194,21 +211,36 @@ func matchSelect() string {
 
 func scanManga(row interface{ Scan(...any) error }) (Manga, error) {
 	var m Manga
-	var chapters sql.NullInt64
-	var synonymsJSON string
+	var chapters, volumes sql.NullInt64
+	var synonymsJSON, genresJSON, authorsJSON string
 	var wanted int
 	var updated string
 	if err := row.Scan(&m.ID, &m.Provider, &m.ProviderID, &m.TitleRomaji, &m.TitleEnglish,
-		&m.TitleNative, &m.Description, &m.CoverImage, &m.Status, &m.Format, &chapters,
-		&synonymsJSON, &wanted, &m.RawJSON, &updated); err != nil {
+		&m.TitleNative, &m.Description, &m.CoverImage, &m.Status, &m.Format, &chapters, &volumes,
+		&synonymsJSON, &genresJSON, &authorsJSON, &m.Year, &m.AverageScore, &wanted, &m.RawJSON, &updated); err != nil {
 		return Manga{}, err
 	}
 	if chapters.Valid {
 		v := int(chapters.Int64)
 		m.Chapters = &v
 	}
-	if err := json.Unmarshal([]byte(synonymsJSON), &m.Synonyms); err != nil {
-		return Manga{}, fmt.Errorf("decode synonyms for manga %d: %w", m.ID, err)
+	if volumes.Valid {
+		v := int(volumes.Int64)
+		m.Volumes = &v
+	}
+	for name, dst := range map[string]*[]string{"synonyms": &m.Synonyms, "genres": &m.Genres, "authors": &m.Authors} {
+		var raw string
+		switch name {
+		case "synonyms":
+			raw = synonymsJSON
+		case "genres":
+			raw = genresJSON
+		case "authors":
+			raw = authorsJSON
+		}
+		if err := json.Unmarshal([]byte(raw), dst); err != nil {
+			return Manga{}, fmt.Errorf("decode %s for manga %d: %w", name, m.ID, err)
+		}
 	}
 	m.Wanted = wanted != 0
 	t, err := database.ParseTime(updated)

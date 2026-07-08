@@ -16,7 +16,12 @@ type Manga struct {
 	Status       string    `json:"status"`
 	Format       string    `json:"format"`
 	Chapters     *int      `json:"chapters,omitempty"`
+	Volumes      *int      `json:"volumes,omitempty"`
 	Synonyms     []string  `json:"synonyms,omitempty"`
+	Genres       []string  `json:"genres,omitempty"`
+	Authors      []string  `json:"authors,omitempty"`
+	Year         int       `json:"year,omitempty"`
+	AverageScore int       `json:"average_score,omitempty"`
 	Wanted       bool      `json:"wanted"`
 	RawJSON      string    `json:"-"`
 	UpdatedAt    time.Time `json:"updated_at"`
