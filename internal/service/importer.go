@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/providers"
@@ -159,6 +160,11 @@ func (s *WantedService) AddCatalogTitle(ctx context.Context, anilistID int) (lib
 		Monitored:       true,
 		RefreshInterval: "24h",
 	})
+}
+
+// GetManga returns stored catalog metadata.
+func (s *WantedService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {
+	return s.catalog.GetManga(ctx, catalogID)
 }
 
 // LinkTitleSource points an imported title at a real source so future refreshes

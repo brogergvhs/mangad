@@ -342,6 +342,11 @@ func (s *JobService) AddCatalogTitle(ctx context.Context, anilistID int) (librar
 	return s.want.AddCatalogTitle(ctx, anilistID)
 }
 
+// GetManga returns stored catalog metadata for a manga.
+func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {
+	return s.want.GetManga(ctx, catalogID)
+}
+
 // RemoveTitle removes a tracked title.
 func (s *JobService) RemoveTitle(ctx context.Context, id int64) (library.Title, error) {
 	return s.lib.RemoveTitle(ctx, id)

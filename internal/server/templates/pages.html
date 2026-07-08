@@ -6,7 +6,7 @@
   <div class="panel"><div class="muted small">Sources healthy</div><div style="font-size:26px">{{healthyCount .Sources}}/{{len .Sources}}</div></div>
 </div>
 <h2>Jobs</h2>
-{{template "jobsList" .}}
+<div hx-get="/ui/jobs/table" hx-trigger="load"></div>
 {{end}}
 
 {{define "search"}}
@@ -21,10 +21,7 @@
 
 {{define "library"}}
 <h1>Library</h1>
-<table class="panel" style="padding:0">
-  <tr><th></th><th>Title</th><th>Progress</th><th>Monitor</th><th>Activity</th><th></th></tr>
-  {{template "libraryRows" .}}
-</table>
+{{template "table" .}}
 {{end}}
 
 {{define "title"}}
@@ -53,6 +50,7 @@
       <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
       <table style="margin:0"><tr>{{template "titleActivity" .}}</tr></table>
     </div>
+    {{template "mangaDetail" .Manga}}
   </div>
 </div>
 

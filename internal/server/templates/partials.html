@@ -48,25 +48,6 @@
 {{end}}
 {{end}}
 
-{{define "libraryRows"}}
-{{range .}}
-<tr>
-  <td style="width:52px"><img class="cover" style="width:40px;height:56px" src="{{.Title.CoverImage}}" alt="" loading="lazy"></td>
-  <td><a href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a><div class="small muted">{{if linked .Title.SourceURL}}{{.Title.SourceID}}{{else if imported .Title.SourceURL}}imported{{else}}no source{{end}}</div></td>
-  <td style="min-width:140px">{{template "progressBar" .Title}}</td>
-  <td>{{template "monitorToggle" .Title}}</td>
-  {{template "titleActivity" .}}
-  <td class="nowrap">
-    {{if not (linked .Title.SourceURL)}}<a class="small" href="/library/{{.Title.ID}}">link source →</a>
-    {{else}}
-    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh</button>
-    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download</button>
-    {{end}}
-  </td>
-</tr>
-{{else}}<tr><td colspan="6" class="muted">Nothing in your library yet. Add manga from <a href="/search">Search</a> or <a href="/import">Import</a> an existing collection.</td></tr>{{end}}
-{{end}}
-
 {{define "progressBar"}}
 <div class="progressbar"><span style="width:{{pct .CompletedCount .DiscoveredCount}}%"></span></div>
 <div class="small muted">{{.CompletedCount}}/{{.DiscoveredCount}} · {{.MissingCount}} missing</div>
@@ -104,18 +85,3 @@
 </tr>
 {{end}}
 
-{{define "jobsList"}}
-<div id="jobs" {{if .AnyActive}}hx-get="/ui/jobs" hx-trigger="load delay:1500ms" hx-swap="outerHTML"{{end}}>
-  <table>
-    <tr><th>Job</th><th>Status</th><th>Attempts</th><th>When</th></tr>
-    {{range .Jobs}}
-    <tr>
-      <td>{{jobLabel .Type}}</td>
-      <td><span class="badge {{.Status}}">{{.Status}}</span>{{if .LastError}}<div class="small muted">{{.LastError}}</div>{{end}}</td>
-      <td>{{.Attempts}}</td>
-      <td class="small muted">{{since .UpdatedAt}}</td>
-    </tr>
-    {{else}}<tr><td colspan="4" class="muted">No jobs yet.</td></tr>{{end}}
-  </table>
-</div>
-{{end}}

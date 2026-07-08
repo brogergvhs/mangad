@@ -1,0 +1,40 @@
+{{define "cellCover"}}<img class="cover" style="width:40px;height:56px" src="{{.}}" alt="" loading="lazy">{{end}}
+
+{{define "cellTitle"}}
+<a href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a>
+<div class="small muted">{{if linked .Title.SourceURL}}{{.Title.SourceID}}{{else if imported .Title.SourceURL}}imported{{else}}no source{{end}}</div>
+{{end}}
+
+{{define "cellActivity"}}
+{{if .Running}}<span class="spin"></span> <span class="small">{{.ActiveLabel}}…</span>
+{{else if .Failed}}<span class="badge broken">failed</span>
+{{else}}<span class="small muted">idle</span>{{end}}
+{{end}}
+
+{{define "mangaDetail"}}
+<div class="detail">
+  {{if .Description}}<div class="desc">{{.Description}}</div>{{end}}
+  <div class="stats">
+    {{if .Authors}}<div><div class="k">Authors</div>{{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</div>{{end}}
+    {{if .Chapters}}<div><div class="k">AniList chapters</div>{{.Chapters}}</div>{{end}}
+    {{if .Volumes}}<div><div class="k">Volumes</div>{{.Volumes}}</div>{{end}}
+    {{if .Year}}<div><div class="k">Year</div>{{.Year}}</div>{{end}}
+    {{if .AverageScore}}<div><div class="k">Score</div>{{.AverageScore}}%</div>{{end}}
+    {{if .Status}}<div><div class="k">Status</div>{{.Status}}</div>{{end}}
+  </div>
+  {{if .Genres}}<div class="chip-list">{{range .Genres}}<span class="badge">{{.}}</span>{{end}}</div>{{end}}
+</div>
+{{end}}
+
+{{define "jobStatusBadge"}}<span class="badge {{.Status}}">{{.Status}}</span>{{end}}
+
+{{define "jobDetail"}}
+<div class="detail">
+  <div class="stats">
+    <div><div class="k">Payload</div><code class="small">{{.Payload}}</code></div>
+    <div><div class="k">Run after</div>{{since .RunAfter}}</div>
+    <div><div class="k">Created</div>{{since .CreatedAt}}</div>
+  </div>
+  {{if .LastError}}<div class="small" style="color:var(--bad)">{{.LastError}}</div>{{end}}
+</div>
+{{end}}

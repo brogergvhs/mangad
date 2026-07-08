@@ -45,6 +45,7 @@ type dashData struct {
 }
 type activityView struct {
 	Title       library.Title
+	Manga       catalog.Manga
 	Chapters    []library.ChapterStatus
 	Sources     matchView
 	Running     map[string]bool // job type -> active (for button locking)
@@ -121,7 +122,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
 	mux.HandleFunc("GET /ui/sources/{id}/row", u.srcRow)
 	mux.HandleFunc("POST /ui/sources/sync", u.srcSync)
-	mux.HandleFunc("GET /ui/jobs", u.jobsFragment)
+	mux.HandleFunc("GET /ui/library/table", u.libraryTable)
+	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
 	mux.HandleFunc("PUT /ui/settings", u.settingsSave)
 }
 
@@ -158,19 +160,95 @@ func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	u.page(w, r, "dashboard", "Dashboard", dashData{Titles: titles, Sources: srcs, Jobs: js, AnyActive: anyActive(js)})
 }
 
+const (
+	libraryPerPage = 20
+	jobsPerPage    = 15
+)
+
 func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
-	titles, err := u.svc.ListTitles(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	u.page(w, r, "library", "Library", u.buildLibraryTable(r.Context(), r.URL.Query()))
+}
+
+func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
+	u.frag(w, "table", u.buildLibraryTable(r.Context(), r.URL.Query()))
+}
+
+func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableData {
+	page, key, dir := tableParams(values, libraryPerPage)
+	titles, _ := u.svc.ListTitles(ctx)
+	sortTitles(titles, key, dir)
+	pageTitles, total := paginate(titles, page, libraryPerPage)
+	js := u.jobs(ctx)
+
+	t := tableData{
+		ID: "library-table", BaseURL: "/ui/library/table",
+		Page: page, PerPage: libraryPerPage, Total: total, Sort: key, Dir: dir,
+		Empty: "Nothing in your library yet — add manga from Search or Import a collection.",
+		Columns: []tableColumn{
+			{Label: ""},
+			{Label: "Title", SortKey: "title"},
+			{Label: "Progress", SortKey: "missing"},
+			{Label: "Monitor"},
+			{Label: "Status"},
+		},
 	}
-	js := u.jobs(r.Context())
-	views := make([]activityView, 0, len(titles))
-	for _, t := range titles {
-		running, label, failed, msg := titleActivityFrom(js, t.ID)
-		views = append(views, activityView{Title: t, Running: running, ActiveLabel: label, Failed: failed, Error: msg})
+	for _, tl := range pageTitles {
+		running, label, failed, msg := titleActivityFrom(js, tl.ID)
+		if len(running) > 0 {
+			t.Poll = true
+		}
+		view := activityView{Title: tl, Running: running, ActiveLabel: label, Failed: failed, Error: msg}
+		var detail template.HTML
+		if tl.CatalogMangaID != nil {
+			if m, err := u.svc.GetManga(ctx, *tl.CatalogMangaID); err == nil {
+				detail = u.renderToHTML("mangaDetail", m)
+			}
+		}
+		t.Rows = append(t.Rows, tableRow{
+			ID: strconv.FormatInt(tl.ID, 10),
+			Cells: []template.HTML{
+				u.renderToHTML("cellCover", tl.CoverImage),
+				u.renderToHTML("cellTitle", view),
+				u.renderToHTML("progressBar", tl),
+				u.renderToHTML("monitorToggle", tl),
+				u.renderToHTML("cellActivity", view),
+			},
+			Detail: detail,
+		})
 	}
-	u.page(w, r, "library", "Library", views)
+	return t
+}
+
+func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
+	page, key, dir := tableParams(r.URL.Query(), jobsPerPage)
+	all, _ := u.svc.List(r.Context())
+	sortJobs(all, key, dir)
+	rows, total := paginate(all, page, jobsPerPage)
+
+	t := tableData{
+		ID: "jobs-table", BaseURL: "/ui/jobs/table",
+		Page: page, PerPage: jobsPerPage, Total: total, Sort: key, Dir: dir,
+		Poll: anyActive(all), Empty: "No jobs yet.",
+		Columns: []tableColumn{
+			{Label: "Job", SortKey: "type"},
+			{Label: "Status"},
+			{Label: "Attempts"},
+			{Label: "When", SortKey: "updated"},
+		},
+	}
+	for _, j := range rows {
+		t.Rows = append(t.Rows, tableRow{
+			ID: strconv.FormatInt(j.ID, 10),
+			Cells: []template.HTML{
+				text(jobLabel(j.Type)),
+				u.renderToHTML("jobStatusBadge", j),
+				text(strconv.Itoa(j.Attempts)),
+				text(since(j.UpdatedAt)),
+			},
+			Detail: u.renderToHTML("jobDetail", j),
+		})
+	}
+	u.frag(w, "table", t)
 }
 
 func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +267,9 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	view.Title = title
 	view.Chapters = chapters
 	view.Sources = u.sourceView(r.Context(), title)
+	if title.CatalogMangaID != nil {
+		view.Manga, _ = u.svc.GetManga(r.Context(), *title.CatalogMangaID)
+	}
 	u.page(w, r, "title", title.DisplayTitle, view)
 }
 
@@ -465,12 +546,7 @@ func (u *webUI) srcSync(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "sourcesTable", srcs)
 }
 
-// --- jobs & settings ---
-
-func (u *webUI) jobsFragment(w http.ResponseWriter, r *http.Request) {
-	js, _ := u.svc.List(r.Context())
-	u.frag(w, "jobsList", dashData{Jobs: js, AnyActive: anyActive(js)})
-}
+// --- settings ---
 
 func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
