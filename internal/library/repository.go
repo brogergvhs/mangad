@@ -144,6 +144,37 @@ func (r *Repository) RemoveTitle(ctx context.Context, id int64) error {
 	return nil
 }
 
+// LinkSource repoints a title (e.g. an imported one) at a real source URL.
+func (r *Repository) LinkSource(ctx context.Context, id int64, sourceURL, sourceID string) error {
+	sourceURL = strings.TrimSpace(sourceURL)
+	if sourceURL == "" {
+		return errors.New("source URL cannot be empty")
+	}
+	var sid any
+	if strings.TrimSpace(sourceID) != "" {
+		sid = strings.TrimSpace(sourceID)
+	}
+	var other int64
+	switch err := r.db.QueryRowContext(ctx, `SELECT id FROM titles WHERE source_url = ? AND id != ?`, sourceURL, id).Scan(&other); {
+	case err == nil:
+		return fmt.Errorf("that source is already linked to another tracked title")
+	case !errors.Is(err, sql.ErrNoRows):
+		return fmt.Errorf("check existing source link: %w", err)
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE titles SET source_url = ?, source_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, sourceURL, sid, id)
+	if err != nil {
+		return fmt.Errorf("link source for title %d: %w", id, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check source link %d: %w", id, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("title %d not found", id)
+	}
+	return nil
+}
+
 // SetMonitored toggles monitoring for a title.
 func (r *Repository) SetMonitored(ctx context.Context, id int64, monitored bool) error {
 	result, err := r.db.ExecContext(ctx, `UPDATE titles SET monitored = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, database.BoolToInt(monitored), id)

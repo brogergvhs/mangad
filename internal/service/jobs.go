@@ -362,6 +362,29 @@ func (s *JobService) ListWanted(ctx context.Context) ([]catalog.Manga, error) {
 	return s.want.ListWanted(ctx)
 }
 
+// ExploreDownloads lists untracked folders in the download directory.
+func (s *JobService) ExploreDownloads(ctx context.Context) ([]ImportCandidate, error) {
+	cfg, _, err := s.RuntimeConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.want.ExploreDownloads(ctx, cfg.DownloadDir)
+}
+
+// ImportFolder tracks an existing download folder against an AniList entry.
+func (s *JobService) ImportFolder(ctx context.Context, folder string, anilistID int) (library.Title, error) {
+	cfg, _, err := s.RuntimeConfig(ctx)
+	if err != nil {
+		return library.Title{}, err
+	}
+	return s.want.ImportFolder(ctx, cfg.DownloadDir, folder, anilistID)
+}
+
+// LinkTitleSource links a tracked title to a matched source.
+func (s *JobService) LinkTitleSource(ctx context.Context, titleID, matchID int64) (library.Title, error) {
+	return s.want.LinkTitleSource(ctx, titleID, matchID)
+}
+
 // MatchSources finds source matches for one canonical title.
 func (s *JobService) MatchSources(ctx context.Context, catalogID int64) ([]catalog.Match, error) {
 	cfg, logSvc, err := s.RuntimeConfig(ctx)
