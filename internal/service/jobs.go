@@ -455,6 +455,15 @@ func (s *JobService) VerifySource(ctx context.Context, cfg *config.Config, logSv
 	return s.src.VerifySource(ctx, cfg, logSvc, sourceID)
 }
 
+// TestSource probes a candidate source profile with the chosen fetch methods.
+func (s *JobService) TestSource(ctx context.Context, profile sources.Profile, useSolver, useBrowser bool) (SourceTestResult, error) {
+	cfg, logSvc, err := s.RuntimeConfig(ctx)
+	if err != nil {
+		return SourceTestResult{}, err
+	}
+	return s.src.TestProfile(ctx, cfg, logSvc, profile, useSolver, useBrowser), nil
+}
+
 // Enqueue creates a job.
 func (s *JobService) Enqueue(ctx context.Context, typ string, titleID int64, runAfter time.Time) (jobs.Job, error) {
 	return s.enqueue(ctx, typ, JobPayload{TitleID: titleID}, runAfter)

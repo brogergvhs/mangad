@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -157,6 +158,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
 	mux.HandleFunc("GET /ui/sources/{id}/row", u.srcRow)
 	mux.HandleFunc("POST /ui/sources/sync", u.srcSync)
+	mux.HandleFunc("POST /ui/sources/test", u.srcTest)
+	mux.HandleFunc("POST /ui/sources/custom", u.srcAddCustom)
 	mux.HandleFunc("GET /ui/library/table", u.libraryTable)
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
 	mux.HandleFunc("PUT /ui/settings", u.settingsSave)
@@ -626,6 +629,95 @@ func (u *webUI) srcSync(w http.ResponseWriter, r *http.Request) {
 	}
 	srcs, _ := u.svc.ListSources(r.Context())
 	u.frag(w, "sourcesTable", srcs)
+}
+
+func (u *webUI) srcTest(w http.ResponseWriter, r *http.Request) {
+	profile, solver, browser, err := customProfileFromForm(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	res, err := u.svc.TestSource(r.Context(), profile, solver, browser)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "sourceTest", res)
+}
+
+func (u *webUI) srcAddCustom(w http.ResponseWriter, r *http.Request) {
+	profile, _, _, err := customProfileFromForm(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.ImportLocalSource(r.Context(), profile); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Refresh", "true")
+}
+
+// customProfileFromForm builds a local source profile from the add-source form.
+func customProfileFromForm(r *http.Request) (sources.Profile, bool, bool, error) {
+	_ = r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	base := strings.TrimSpace(r.FormValue("base_url"))
+	manga := strings.TrimSpace(r.FormValue("manga_url"))
+	if base == "" || manga == "" {
+		return sources.Profile{}, false, false, fmt.Errorf("site base URL and manga page URL are required")
+	}
+	var exts []string
+	for _, e := range r.Form["ext"] {
+		if e = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(e)), "."); e != "" {
+			exts = append(exts, e)
+		}
+	}
+	host := ""
+	if u, err := url.Parse(base); err == nil {
+		host = u.Host
+	}
+	id := slugify(name)
+	if id == "" {
+		id = slugify(host)
+	}
+	if id == "" {
+		return sources.Profile{}, false, false, fmt.Errorf("a name is required")
+	}
+	name = firstNonEmpty(name, host)
+	var domains []string
+	if host != "" {
+		domains = []string{host}
+	}
+	solver := formChecked(r, "solver")
+	browser := formChecked(r, "browser")
+	return sources.Profile{
+		ID: id, Name: name, Domains: domains,
+		BaseURL: base, SampleMangaURL: manga, Scraper: "generic",
+		AllowedExtensions: exts, MinChapters: 1,
+		RequiresBrowserSolver: solver, RequiresBrowserDownload: browser, Enabled: true,
+	}, solver, browser, nil
+}
+
+func formChecked(r *http.Request, name string) bool {
+	switch r.FormValue(name) {
+	case "on", "true", "1":
+		return true
+	}
+	return false
+}
+
+func firstNonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
+var reNonSlug = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(s string) string {
+	return strings.Trim(reNonSlug.ReplaceAllString(strings.ToLower(s), "-"), "-")
 }
 
 // --- settings ---

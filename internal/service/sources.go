@@ -32,6 +32,67 @@ func newSourceService(db *sql.DB) *sourceService {
 	return &sourceService{repo: sources.NewRepository(db)}
 }
 
+// SourceTestResult is a live probe of a candidate (possibly unsaved) source.
+type SourceTestResult struct {
+	ChaptersFound   int      `json:"chapters_found"`
+	SampleChapter   string   `json:"sample_chapter,omitempty"`
+	SampleURL       string   `json:"sample_url,omitempty"`
+	Images          []string `json:"images,omitempty"`
+	ImageExtensions []string `json:"image_extensions,omitempty"`
+	ChapterFetch    string   `json:"chapter_fetch"`
+	ImageFetch      string   `json:"image_fetch,omitempty"`
+	Error           string   `json:"error,omitempty"`
+}
+
+// TestProfile scrapes the profile's sample manga URL with the chosen fetch
+// methods and reports what it found, without persisting anything.
+func (s *sourceService) TestProfile(ctx context.Context, cfg *config.Config, logSvc ui.Log, profile sources.Profile, useSolver, useBrowser bool) SourceTestResult {
+	src := sources.Source{Profile: profile}
+	res := SourceTestResult{ChapterFetch: sources.FetchHTTP}
+	if useSolver {
+		res.ChapterFetch = sources.FetchSolver
+	}
+	probe := probeConfig(*cfg, src, useSolver, useBrowser)
+	svc, err := NewSourceDownloadService(&probe, logSvc, nil, profile.Scraper)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	list, err := svc.FetchChapters(ctx, profile.SampleMangaURL)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	res.ChaptersFound = len(list)
+	if len(list) == 0 {
+		res.Error = "no chapters found — the site may need FlareSolverr, or the manga URL is wrong"
+		return res
+	}
+	first := list[0]
+	res.SampleChapter = first.Label
+	if res.SampleChapter == "" {
+		res.SampleChapter = first.Title
+	}
+	res.SampleURL = first.URL
+	images, err := svc.FetchImages(ctx, first)
+	if err != nil {
+		res.Error = fmt.Sprintf("chapters read OK, but the first chapter failed: %v", err)
+		return res
+	}
+	res.Images = images
+	res.ImageExtensions = imageExtensions(images)
+	switch {
+	case len(images) > 0:
+		res.ImageFetch = sources.FetchHTTP
+	case useBrowser:
+		res.ImageFetch = sources.FetchBrowser
+		res.Error = "no image URLs in the chapter HTML — images will be captured by the browser downloader"
+	default:
+		res.Error = "no image URLs in the chapter HTML — enable browser image download to fetch them"
+	}
+	return res
+}
+
 func (s *sourceService) SyncBuiltIn(ctx context.Context) error {
 	profiles, err := sources.BuiltInProfiles()
 	if err != nil {
