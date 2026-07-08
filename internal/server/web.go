@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -55,12 +56,31 @@ type sourceRowView struct {
 	Active bool
 }
 type matchView struct {
-	CatalogID int64
-	Matches   []catalog.Match
-	Active    bool
-	Failed    bool
-	Error     string
+	DomID   string
+	PollURL string
+	Matches []catalog.Match
+	Active  bool
+	Failed  bool
+	Error   string
+	TitleID int64 // 0 => wanted list (Track); >0 => link to this title (Use)
 }
+
+func wantedMatchView(catalogID int64, active, failed bool, msg string, matches []catalog.Match) matchView {
+	return matchView{
+		DomID:   fmt.Sprintf("matches-%d", catalogID),
+		PollURL: fmt.Sprintf("/ui/wanted/%d/matches", catalogID),
+		Active:  active, Failed: failed, Error: msg, Matches: matches,
+	}
+}
+
+func titleSourceView(titleID int64, active, failed bool, msg string, matches []catalog.Match) matchView {
+	return matchView{
+		DomID:   fmt.Sprintf("sources-%d", titleID),
+		PollURL: fmt.Sprintf("/ui/library/%d/sources", titleID),
+		Active:  active, Failed: failed, Error: msg, Matches: matches, TitleID: titleID,
+	}
+}
+
 type settingsView struct {
 	Keys   []string
 	Values map[string]string
@@ -87,6 +107,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /wanted", u.wantedPage)
 	mux.HandleFunc("GET /library", u.libraryPage)
 	mux.HandleFunc("GET /library/{id}", u.titlePage)
+	mux.HandleFunc("GET /import", u.importPage)
 	mux.HandleFunc("GET /sources", u.sourcesPage)
 	mux.HandleFunc("GET /settings", u.settingsPage)
 
@@ -101,6 +122,11 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/library/{id}/activity", u.libActivity)
 	mux.HandleFunc("POST /ui/library/{id}/monitored", u.libMonitored)
 	mux.HandleFunc("POST /ui/library/{id}/remove", u.libRemove)
+	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
+	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
+	mux.HandleFunc("POST /ui/library/{id}/link", u.linkSource)
+	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
+	mux.HandleFunc("POST /ui/import", u.importDo)
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
 	mux.HandleFunc("GET /ui/sources/{id}/row", u.srcRow)
 	mux.HandleFunc("POST /ui/sources/sync", u.srcSync)
@@ -229,7 +255,7 @@ func (u *webUI) wantedMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.kick()
-	u.frag(w, "matches", matchView{CatalogID: id, Active: true})
+	u.frag(w, "matches", wantedMatchView(id, true, false, "", nil))
 }
 
 func (u *webUI) wantedMatches(w http.ResponseWriter, r *http.Request) {
@@ -240,11 +266,11 @@ func (u *webUI) wantedMatches(w http.ResponseWriter, r *http.Request) {
 	}
 	active, failed, msg := u.jobStateFor(r.Context(), jobs.TypeMatchSources, service.JobPayload{CatalogID: id})
 	if active {
-		u.frag(w, "matches", matchView{CatalogID: id, Active: true})
+		u.frag(w, "matches", wantedMatchView(id, true, false, "", nil))
 		return
 	}
 	matches, _ := u.svc.ListMatches(r.Context(), id)
-	u.frag(w, "matches", matchView{CatalogID: id, Matches: matches, Failed: failed, Error: msg})
+	u.frag(w, "matches", wantedMatchView(id, false, failed, msg, matches))
 }
 
 func (u *webUI) wantedTrack(w http.ResponseWriter, r *http.Request) {
@@ -330,6 +356,117 @@ func (u *webUI) libRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("HX-Redirect", "/library")
 	w.WriteHeader(http.StatusOK)
+}
+
+// --- import & source linking ---
+
+type importPickerView struct {
+	Folder  string
+	Query   string
+	Results []catalog.Manga
+}
+
+func (u *webUI) importPage(w http.ResponseWriter, r *http.Request) {
+	cands, err := u.svc.ExploreDownloads(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	u.page(w, r, "import", "Import", cands)
+}
+
+func (u *webUI) importSearch(w http.ResponseWriter, r *http.Request) {
+	folder := r.PathValue("folder")
+	query := strings.TrimSpace(r.FormValue("q"))
+	if query == "" {
+		query = importQuery(folder)
+	}
+	items, err := u.svc.SearchAniList(r.Context(), query, 10)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "importPicker", importPickerView{Folder: folder, Query: query, Results: items})
+}
+
+func (u *webUI) importDo(w http.ResponseWriter, r *http.Request) {
+	anilistID, err := strconv.Atoi(r.FormValue("anilist_id"))
+	if err != nil {
+		u.fail(w, fmt.Errorf("select an AniList match first"))
+		return
+	}
+	title, err := u.svc.ImportFolder(r.Context(), r.FormValue("folder"), anilistID)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", title.ID))
+}
+
+func (u *webUI) findSources(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	title, err := u.svc.GetTitle(r.Context(), id)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if title.CatalogMangaID == nil {
+		u.fail(w, fmt.Errorf("no catalog metadata to search from"))
+		return
+	}
+	if _, err := u.svc.EnqueueCatalog(r.Context(), jobs.TypeMatchSources, *title.CatalogMangaID, time.Now()); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.kick()
+	u.frag(w, "matches", titleSourceView(id, true, false, "", nil))
+}
+
+func (u *webUI) titleSources(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	title, err := u.svc.GetTitle(r.Context(), id)
+	if err != nil || title.CatalogMangaID == nil {
+		u.frag(w, "matches", titleSourceView(id, false, false, "", nil))
+		return
+	}
+	cid := *title.CatalogMangaID
+	active, failed, msg := u.jobStateFor(r.Context(), jobs.TypeMatchSources, service.JobPayload{CatalogID: cid})
+	if active {
+		u.frag(w, "matches", titleSourceView(id, true, false, "", nil))
+		return
+	}
+	matches, _ := u.svc.ListMatches(r.Context(), cid)
+	u.frag(w, "matches", titleSourceView(id, false, failed, msg, matches))
+}
+
+func (u *webUI) linkSource(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	matchID, err := strconv.ParseInt(r.FormValue("match_id"), 10, 64)
+	if err != nil {
+		u.fail(w, fmt.Errorf("invalid match id"))
+		return
+	}
+	if _, err := u.svc.LinkTitleSource(r.Context(), id, matchID); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
+}
+
+func importQuery(folder string) string {
+	return strings.TrimSpace(strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(folder))
 }
 
 // --- sources ---
@@ -488,6 +625,8 @@ func navFor(path string) string {
 		return "wanted"
 	case strings.HasPrefix(path, "/library"):
 		return "library"
+	case strings.HasPrefix(path, "/import"):
+		return "import"
 	case strings.HasPrefix(path, "/sources"):
 		return "sources"
 	case strings.HasPrefix(path, "/settings"):
@@ -508,6 +647,8 @@ func (u *webUI) funcs() template.FuncMap {
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
 		"orUnknown":  func(s string) string { return orDefault(s, "unknown") },
 		"orDash":     func(s string) string { return orDefault(s, "—") },
+		"isLocal":    func(s string) bool { return strings.HasPrefix(s, "local:") },
+		"pathEscape": url.PathEscape,
 		"pct":        func(done, total int64) int64 { return percent(done, total) },
 		"sourceRow":  func(s sources.Source) sourceRowView { return sourceRowView{Source: s} },
 		"missingTotal": func(ts []library.Title) int64 {

@@ -55,21 +55,64 @@
 </div>
 <div class="panel">
   <div class="row spread">
-    <div class="small muted">{{.Title.SourceID}} · <a href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a></div>
+    {{if isLocal .Title.SourceURL}}<div class="small muted">Imported from disk · no source linked yet</div>
+    {{else}}<div class="small muted">{{.Title.SourceID}} · <a href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a></div>{{end}}
     <div class="small muted">refresh every {{.Title.RefreshInterval}}</div>
   </div>
   <div style="margin:12px 0">{{template "progressBar" .Title}}</div>
   <div class="row">
+    {{if not (isLocal .Title.SourceURL)}}
     <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Refresh chapters</button>
     <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Download missing</button>
+    {{end}}
     <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Scan files</button>
     <table style="margin:0"><tr>{{template "titleActivity" .}}</tr></table>
   </div>
+  {{if isLocal .Title.SourceURL}}
+  <div style="margin-top:12px">
+    <button hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Find sources for updates</button>
+    <div id="sources-{{.Title.ID}}" hx-get="/ui/library/{{.Title.ID}}/sources" hx-trigger="load" hx-swap="outerHTML" style="margin-top:10px"></div>
+  </div>
+  {{end}}
 </div>
 <h2>Missing chapters ({{len .Missing}})</h2>
 <div class="panel">
   {{range .Missing}}<div class="row spread"><span>{{.Label}} · {{.Title}}</span><a class="small" href="{{.URL}}" target="_blank" rel="noreferrer noopener">↗</a></div>{{else}}<p class="muted">Nothing missing.</p>{{end}}
 </div>
+{{end}}
+
+{{define "import"}}
+<h1>Import from disk</h1>
+<p class="muted small">Folders in your download directory that aren't tracked yet. Match each to an AniList title to import it and recognize its existing chapters.</p>
+{{range $i, $c := .}}
+<div class="panel">
+  <div class="row spread">
+    <div><strong>{{$c.Folder}}</strong> <span class="small muted">· {{$c.ChapterFiles}} chapter files</span></div>
+    <button class="ghost" hx-post="/ui/import/{{pathEscape $c.Folder}}/search" hx-target="#picker-{{$i}}" hx-swap="innerHTML">Match on AniList</button>
+  </div>
+  <div id="picker-{{$i}}"></div>
+</div>
+{{else}}<p class="muted">No untracked folders with chapter files found in the download directory.</p>{{end}}
+{{end}}
+
+{{define "importPicker"}}
+<form hx-post="/ui/import" hx-swap="none" style="margin-top:12px">
+  <input type="hidden" name="folder" value="{{.Folder}}">
+  <div class="row">
+    <input name="q" value="{{.Query}}" style="flex:1"
+      hx-post="/ui/import/{{pathEscape .Folder}}/search" hx-target="closest form" hx-swap="outerHTML"
+      hx-trigger="keyup changed delay:500ms">
+    <span class="small muted">refine search</span>
+  </div>
+  <div class="stack" style="margin-top:10px">
+    {{range $i, $m := .Results}}
+    <label class="row"><input type="radio" name="anilist_id" value="{{$m.ProviderID}}" {{if eq $i 0}}checked{{end}}>
+      <img class="cover" src="{{$m.CoverImage}}" style="width:34px;height:48px" loading="lazy">
+      <span>{{mangaTitle $m}} <span class="small muted">{{$m.Format}} {{$m.Status}}{{if $m.Chapters}} · {{$m.Chapters}} ch{{end}}</span></span></label>
+    {{else}}<p class="muted small">No AniList results — refine the search above.</p>{{end}}
+  </div>
+  {{if .Results}}<button style="margin-top:10px">Import this folder</button>{{end}}
+</form>
 {{end}}
 
 {{define "sources"}}

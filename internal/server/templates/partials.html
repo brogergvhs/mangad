@@ -25,11 +25,11 @@
 
 {{define "matches"}}
 {{if .Active}}
-<div id="matches-{{.CatalogID}}" class="row" hx-get="/ui/wanted/{{.CatalogID}}/matches" hx-trigger="load delay:1200ms" hx-swap="outerHTML">
+<div id="{{.DomID}}" class="row" hx-get="{{.PollURL}}" hx-trigger="load delay:1200ms" hx-swap="outerHTML">
   <span class="spin"></span> <span class="muted small">Searching sources…</span>
 </div>
 {{else}}
-<div id="matches-{{.CatalogID}}">
+<div id="{{.DomID}}">
   {{if .Failed}}<p class="small" style="color:var(--bad)">Source search failed{{if .Error}}: {{.Error}}{{end}}</p>
   {{else if .Matches}}
   <table>
@@ -39,7 +39,10 @@
       <td>{{.SourceID}}<div class="small muted">{{.SourceURL}}</div></td>
       <td>{{.ChaptersFound}}</td>
       <td>{{confidence .Confidence}}</td>
-      <td class="nowrap"><button hx-post="/ui/wanted/track" hx-vals='{"match_id":{{.ID}}}' hx-target="this" hx-swap="outerHTML">Track</button></td>
+      <td class="nowrap">
+        {{if $.TitleID}}<button hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use this source</button>
+        {{else}}<button hx-post="/ui/wanted/track" hx-vals='{"match_id":{{.ID}}}' hx-target="this" hx-swap="outerHTML">Track</button>{{end}}
+      </td>
     </tr>
     {{end}}
   </table>
@@ -56,8 +59,11 @@
   <td>{{template "monitorToggle" .Title}}</td>
   {{template "titleActivity" .}}
   <td class="nowrap">
+    {{if isLocal .Title.SourceURL}}<a class="small" href="/library/{{.Title.ID}}">link source →</a>
+    {{else}}
     <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Refresh</button>
     <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Download</button>
+    {{end}}
   </td>
 </tr>
 {{else}}<tr><td colspan="5" class="muted">No tracked titles. Add one from <a href="/search">Search</a>.</td></tr>{{end}}
