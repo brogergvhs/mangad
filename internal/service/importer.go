@@ -136,6 +136,31 @@ func (s *WantedService) ImportFolder(ctx context.Context, root, folder string, a
 	return s.library.GetTitle(ctx, title.ID)
 }
 
+// AddCatalogTitle adds an AniList manga to the library as a source-less title
+// (deduped per manga) so its sources can be linked later.
+func (s *WantedService) AddCatalogTitle(ctx context.Context, anilistID int) (library.Title, error) {
+	manga, err := s.anilist.Get(ctx, anilistID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	manga, err = s.catalog.UpsertManga(ctx, manga)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if existing, ok, err := s.library.FindByCatalog(ctx, manga.ID); err != nil {
+		return library.Title{}, err
+	} else if ok {
+		return existing, nil
+	}
+	return s.library.AddTitle(ctx, library.AddTitleParams{
+		CatalogMangaID:  &manga.ID,
+		SourceURL:       fmt.Sprintf("pending:%d", manga.ID),
+		DisplayTitle:    displayMangaTitle(manga),
+		Monitored:       true,
+		RefreshInterval: "24h",
+	})
+}
+
 // LinkTitleSource points an imported title at a real source so future refreshes
 // and downloads work.
 func (s *WantedService) LinkTitleSource(ctx context.Context, titleID, matchID int64) (library.Title, error) {

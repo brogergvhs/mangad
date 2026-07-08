@@ -332,9 +332,14 @@ func (s *JobService) GetTitle(ctx context.Context, id int64) (library.Title, err
 	return s.lib.GetTitle(ctx, id)
 }
 
-// TitleMissing returns a title with its missing chapters.
-func (s *JobService) TitleMissing(ctx context.Context, id int64) (library.Title, []library.Chapter, error) {
-	return s.lib.MissingChapters(ctx, id)
+// TitleChapters returns all discovered chapters for a title with download state.
+func (s *JobService) TitleChapters(ctx context.Context, id int64) ([]library.ChapterStatus, error) {
+	return s.lib.ListChapters(ctx, id)
+}
+
+// AddCatalogTitle adds an AniList manga to the library as a source-less title.
+func (s *JobService) AddCatalogTitle(ctx context.Context, anilistID int) (library.Title, error) {
+	return s.want.AddCatalogTitle(ctx, anilistID)
 }
 
 // RemoveTitle removes a tracked title.
