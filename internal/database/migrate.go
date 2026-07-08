@@ -226,6 +226,13 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
 		}
 	}
+	// Backfill title_sources from titles already linked to a real (http) source.
+	if _, err = tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO title_sources (title_id, source_id, url)
+		SELECT id, COALESCE(source_id, ''), source_url FROM titles WHERE source_url LIKE 'http%'
+	`); err != nil {
+		return fmt.Errorf("backfill title_sources: %w", err)
+	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration: %w", err)
 	}
