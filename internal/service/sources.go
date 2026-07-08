@@ -52,6 +52,10 @@ func (s *sourceService) ListSources(ctx context.Context) ([]sources.Source, erro
 	return s.repo.List(ctx)
 }
 
+func (s *sourceService) GetSource(ctx context.Context, id string) (sources.Source, error) {
+	return s.repo.Get(ctx, strings.TrimSpace(id))
+}
+
 func (s *sourceService) ImportLocal(ctx context.Context, profile sources.Profile) error {
 	return s.repo.Sync(ctx, []sources.Profile{profile}, sources.OriginLocal)
 }

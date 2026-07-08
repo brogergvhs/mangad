@@ -327,6 +327,26 @@ func (s *JobService) ListTitles(ctx context.Context) ([]library.Title, error) {
 	return s.lib.ListTitles(ctx)
 }
 
+// GetTitle returns one tracked title.
+func (s *JobService) GetTitle(ctx context.Context, id int64) (library.Title, error) {
+	return s.lib.GetTitle(ctx, id)
+}
+
+// TitleMissing returns a title with its missing chapters.
+func (s *JobService) TitleMissing(ctx context.Context, id int64) (library.Title, []library.Chapter, error) {
+	return s.lib.MissingChapters(ctx, id)
+}
+
+// RemoveTitle removes a tracked title.
+func (s *JobService) RemoveTitle(ctx context.Context, id int64) (library.Title, error) {
+	return s.lib.RemoveTitle(ctx, id)
+}
+
+// SetMonitored toggles monitoring for a tracked title.
+func (s *JobService) SetMonitored(ctx context.Context, id int64, monitored bool) error {
+	return s.lib.SetMonitored(ctx, id, monitored)
+}
+
 // SearchAniList searches AniList and stores returned metadata locally.
 func (s *JobService) SearchAniList(ctx context.Context, query string, limit int) ([]catalog.Manga, error) {
 	return s.want.SearchAniList(ctx, query, limit)
@@ -375,6 +395,11 @@ func (s *JobService) SyncSources(ctx context.Context, registryURL string) error 
 // ListSources returns known source profiles.
 func (s *JobService) ListSources(ctx context.Context) ([]sources.Source, error) {
 	return s.src.ListSources(ctx)
+}
+
+// GetSource returns one source profile.
+func (s *JobService) GetSource(ctx context.Context, id string) (sources.Source, error) {
+	return s.src.GetSource(ctx, id)
 }
 
 // ImportLocalSource stores a local DB-backed source profile.

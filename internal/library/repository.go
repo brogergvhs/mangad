@@ -144,6 +144,22 @@ func (r *Repository) RemoveTitle(ctx context.Context, id int64) error {
 	return nil
 }
 
+// SetMonitored toggles monitoring for a title.
+func (r *Repository) SetMonitored(ctx context.Context, id int64, monitored bool) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE titles SET monitored = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, database.BoolToInt(monitored), id)
+	if err != nil {
+		return fmt.Errorf("set monitored %d: %w", id, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check monitored update %d: %w", id, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("title %d not found", id)
+	}
+	return nil
+}
+
 // UpsertChapters stores discovered chapters for a title.
 func (r *Repository) UpsertChapters(
 	ctx context.Context,

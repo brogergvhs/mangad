@@ -67,6 +67,11 @@ func (s *LibraryService) ReconcileStartedDownloads(ctx context.Context) (int64, 
 	return s.repo.ReconcileStartedDownloads(ctx)
 }
 
+// SetMonitored toggles monitoring for a tracked title.
+func (s *LibraryService) SetMonitored(ctx context.Context, id int64, monitored bool) error {
+	return s.repo.SetMonitored(ctx, id, monitored)
+}
+
 // AddTitle tracks a source URL.
 func (s *LibraryService) AddTitle(ctx context.Context, params library.AddTitleParams) (library.Title, error) {
 	if params.SourceID == "" {
