@@ -49,7 +49,8 @@ type activityView struct {
 	Manga         catalog.Manga
 	ChaptersTable tableData
 	Sources       matchView
-	Running       map[string]bool // job type -> active (for button locking)
+	SingleSources []sources.Source // single-manga sources selectable for linking
+	Running       map[string]bool  // job type -> active (for button locking)
 	ActiveLabel   string
 	Failed        bool
 	Error         string
@@ -154,6 +155,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
 	mux.HandleFunc("POST /ui/library/{id}/link", u.linkSource)
 	mux.HandleFunc("POST /ui/library/{id}/link-url", u.linkURL)
+	mux.HandleFunc("POST /ui/library/{id}/link-source", u.linkSourceByID)
 	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
 	mux.HandleFunc("POST /ui/import", u.importDo)
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
@@ -305,10 +307,23 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	view.Title = title
 	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
 	view.Sources = u.sourceView(r.Context(), title)
+	view.SingleSources = u.singleMangaSources(r.Context())
 	if title.CatalogMangaID != nil {
 		view.Manga, _ = u.svc.GetManga(r.Context(), *title.CatalogMangaID)
 	}
 	u.page(w, r, "title", title.DisplayTitle, view)
+}
+
+// singleMangaSources returns enabled sources flagged as single-manga.
+func (u *webUI) singleMangaSources(ctx context.Context) []sources.Source {
+	all, _ := u.svc.ListSources(ctx)
+	var out []sources.Source
+	for _, s := range all {
+		if s.SingleManga && s.Enabled {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 const chaptersPerPage = 25
@@ -603,6 +618,24 @@ func (u *webUI) linkURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
 }
 
+func (u *webUI) linkSourceByID(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	sourceID := strings.TrimSpace(r.FormValue("source_id"))
+	if sourceID == "" {
+		u.fail(w, fmt.Errorf("pick a source"))
+		return
+	}
+	if _, err := u.svc.LinkTitleToSource(r.Context(), id, sourceID); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
+}
+
 func importQuery(folder string) string {
 	return strings.TrimSpace(strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(folder))
 }
@@ -709,7 +742,8 @@ func customProfileFromForm(r *http.Request) (sources.Profile, bool, bool, error)
 		ID: id, Name: name, Domains: domains,
 		BaseURL: base, SampleMangaURL: manga, Scraper: "generic",
 		AllowedExtensions: exts, MinChapters: 1,
-		RequiresBrowserSolver: solver, RequiresBrowserDownload: browser, Enabled: true,
+		RequiresBrowserSolver: solver, RequiresBrowserDownload: browser,
+		SingleManga: formChecked(r, "single_manga"), Enabled: true,
 	}, solver, browser, nil
 }
 

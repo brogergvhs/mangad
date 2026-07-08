@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS sources (
 	min_chapters INTEGER NOT NULL DEFAULT 0,
 	requires_browser_solver INTEGER NOT NULL DEFAULT 0,
 	requires_browser_downloader INTEGER NOT NULL DEFAULT 0,
+	single_manga INTEGER NOT NULL DEFAULT 0,
 	enabled INTEGER NOT NULL DEFAULT 1,
 	profile_version TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT 'unknown',
@@ -188,6 +189,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}
 	if err = ensureColumn(ctx, tx, "sources", "search_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("migrate sources.search_url: %w", err)
+	}
+	if err = ensureColumn(ctx, tx, "sources", "single_manga", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("migrate sources.single_manga: %w", err)
 	}
 	for _, col := range []string{"chapter_fetch", "image_fetch"} {
 		if err = ensureColumn(ctx, tx, "sources", col, "TEXT NOT NULL DEFAULT ''"); err != nil {

@@ -58,11 +58,20 @@
   <div class="row spread"><h2 style="margin:0">Sources</h2>
     <button class="ghost small" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Find sources</button></div>
   {{template "matches" .Sources}}
+  {{if .SingleSources}}
+  <form class="row" hx-post="/ui/library/{{.Title.ID}}/link-source" hx-swap="none" style="margin-top:12px">
+    <select name="source_id" style="flex:1">
+      {{range .SingleSources}}<option value="{{.ID}}">{{.Name}} — {{.SampleMangaURL}}</option>{{end}}
+    </select>
+    <button class="ghost">Use this source</button>
+  </form>
+  <div class="small muted" style="margin-top:4px">Single-manga sources carry their own fetch methods and image types.</div>
+  {{end}}
   <form class="row" hx-post="/ui/library/{{.Title.ID}}/link-url" hx-swap="none" style="margin-top:12px">
     <input name="url" placeholder="https://site/manga/… (chapter-list page)" style="flex:1" required>
     <button class="ghost">Link this URL</button>
   </form>
-  <div class="small muted" style="margin-top:4px">For single-manga or custom sites where search doesn't apply, paste the manga's chapter-list URL. The site must be registered as a source first.</div>
+  <div class="small muted" style="margin-top:4px">Or paste the manga's chapter-list URL directly. The site must be registered as a source first.</div>
 </div>
 
 <h2>Chapters ({{.ChaptersTable.Total}})</h2>
@@ -141,6 +150,10 @@
   <div class="setting">
     <label class="small"><input type="checkbox" name="browser"> Download images with a browser</label>
     <div class="small muted">Capture images via the browser downloader when they aren't present in the page HTML.</div>
+  </div>
+  <div class="setting">
+    <label class="small"><input type="checkbox" name="single_manga"> Single manga source</label>
+    <div class="small muted">This site hosts only the one manga above (no search). It can then be picked directly on a library title.</div>
   </div>
   <div class="row">
     <button type="button" class="ghost" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run</button>

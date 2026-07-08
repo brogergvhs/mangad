@@ -469,6 +469,19 @@ func (s *JobService) LinkTitleURL(ctx context.Context, titleID int64, rawURL str
 	return s.want.LinkTitleURL(ctx, titleID, rawURL, src.ID)
 }
 
+// LinkTitleToSource links a title to a registered source by ID, using that
+// source's manga URL. Its fetch methods and image extensions then apply.
+func (s *JobService) LinkTitleToSource(ctx context.Context, titleID int64, sourceID string) (library.Title, error) {
+	src, err := s.src.GetSource(ctx, sourceID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if _, err := url.ParseRequestURI(src.SampleMangaURL); err != nil {
+		return library.Title{}, fmt.Errorf("source %q has no manga URL to link", src.Name)
+	}
+	return s.want.LinkTitleURL(ctx, titleID, src.SampleMangaURL, src.ID)
+}
+
 // TestSource probes a candidate source profile with the chosen fetch methods.
 func (s *JobService) TestSource(ctx context.Context, profile sources.Profile, useSolver, useBrowser bool) (SourceTestResult, error) {
 	cfg, logSvc, err := s.RuntimeConfig(ctx)

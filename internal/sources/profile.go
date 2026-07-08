@@ -39,6 +39,7 @@ type Profile struct {
 	MinChapters             int      `json:"min_chapters" yaml:"min_chapters"`
 	RequiresBrowserSolver   bool     `json:"requires_browser_solver" yaml:"requires_browser_solver"`
 	RequiresBrowserDownload bool     `json:"requires_browser_downloader" yaml:"requires_browser_downloader"`
+	SingleManga             bool     `json:"single_manga" yaml:"single_manga"`
 	Enabled                 bool     `json:"enabled" yaml:"enabled"`
 	Version                 string   `json:"version" yaml:"version"`
 }
