@@ -45,7 +45,7 @@
     <div class="row">
       {{if linked .Title.SourceURL}}
       <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>
-      <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download missing</button>
+      {{if gt .Title.MissingCount 0}}<button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download {{.Title.MissingCount}} missing</button>{{end}}
       {{end}}
       <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
       <table style="margin:0"><tr>{{template "titleActivity" .}}</tr></table>
@@ -109,11 +109,14 @@
 {{define "settings"}}
 <h1>Settings</h1>
 <form class="panel stack" hx-put="/ui/settings" hx-target="#settings-msg">
-  {{range .Keys}}
-  <label class="row spread">
-    <span class="small">{{.}}</span>
-    <input name="{{.}}" value="{{index $.Values .}}" style="width:320px">
-  </label>
+  {{range .Fields}}
+  <div class="setting">
+    <div class="row spread">
+      <label for="set-{{.Key}}">{{.Label}}</label>
+      <input id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}" style="width:320px">
+    </div>
+    {{if .Desc}}<div class="small muted">{{.Desc}}</div>{{end}}
+  </div>
   {{end}}
   <div class="row"><button>Save</button><span id="settings-msg"></span></div>
 </form>

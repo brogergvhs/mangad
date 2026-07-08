@@ -78,9 +78,43 @@ func titleSourceView(title library.Title, active, failed bool, msg string, match
 }
 
 type settingsView struct {
-	Keys   []string
-	Values map[string]string
+	Fields []settingField
 }
+type settingField struct {
+	Key, Label, Desc, Value string
+}
+
+// settingMeta maps a technical setting key to a human label and description.
+func settingMeta(key string) (label, desc string) {
+	switch key {
+	case service.SettingServeRefreshEvery:
+		return "Check for new chapters", "How often each tracked manga's source is checked for newly released chapters (e.g. 1h, 30m)."
+	case service.SettingServeScanEvery:
+		return "Re-scan downloaded files", "How often the download folders are re-checked to reconcile which chapters are already on disk."
+	case service.SettingServeDownloadEvery:
+		return "Download missing chapters", "How often missing chapters of monitored manga are downloaded automatically."
+	case service.SettingServeRunEvery:
+		return "Background task interval", "How often the background worker wakes to run queued jobs. Lower is more responsive, higher is less busy."
+	case service.SettingBrowserSolverEnabled:
+		return "Use a browser solver for protected sites", "Enable a headless browser / Cloudflare solver for sources that block plain requests (true or false)."
+	case service.SettingBrowserSolverProvider:
+		return "Solver type", "Which solver to use for protected sites (e.g. flaresolverr)."
+	case service.SettingBrowserSolverEndpoint:
+		return "Solver address", "The URL where your solver (e.g. FlareSolverr) is reachable."
+	case service.SettingBrowserSolverTimeoutSeconds:
+		return "Solver timeout (seconds)", "How long to wait for the solver to load a page before giving up."
+	case service.SettingSourceRegistryURL:
+		return "Extra source list URL", "Optional URL to load additional scraper definitions from. Leave blank to use built-in sources."
+	case service.SettingJobsMaxAttempts:
+		return "Job retry limit", "How many times a failed background job (refresh, scan) is retried before it is given up."
+	case service.SettingJobsTimeout:
+		return "Job time limit", "Maximum time a single background job may run before it is aborted (e.g. 10m)."
+	case service.SettingDownloadsMaxAttempts:
+		return "Download retry limit", "How many times a failed chapter download is retried before giving up."
+	}
+	return key, ""
+}
+
 type toastView struct {
 	OK  bool
 	Msg string
@@ -619,11 +653,17 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) settings(ctx context.Context) settingsView {
 	keys := service.SettingKeys()
-	values := make(map[string]string, len(keys))
+	fields := make([]settingField, 0, len(keys))
 	for _, key := range keys {
-		values[key] = u.svc.Setting(ctx, key, service.SettingDefault(key))
+		label, desc := settingMeta(key)
+		fields = append(fields, settingField{
+			Key:   key,
+			Label: label,
+			Desc:  desc,
+			Value: u.svc.Setting(ctx, key, service.SettingDefault(key)),
+		})
 	}
-	return settingsView{Keys: keys, Values: values}
+	return settingsView{Fields: fields}
 }
 
 // jobState classifies a job status for the UI: active covers pending retries
