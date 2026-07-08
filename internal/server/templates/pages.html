@@ -58,6 +58,11 @@
   <div class="row spread"><h2 style="margin:0">Sources</h2>
     <button class="ghost small" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Find sources</button></div>
   {{template "matches" .Sources}}
+  <form class="row" hx-post="/ui/library/{{.Title.ID}}/link-url" hx-swap="none" style="margin-top:12px">
+    <input name="url" placeholder="https://site/manga/… (chapter-list page)" style="flex:1" required>
+    <button class="ghost">Link this URL</button>
+  </form>
+  <div class="small muted" style="margin-top:4px">For single-manga or custom sites where search doesn't apply, paste the manga's chapter-list URL. The site must be registered as a source first.</div>
 </div>
 
 <h2>Chapters ({{.ChaptersTable.Total}})</h2>

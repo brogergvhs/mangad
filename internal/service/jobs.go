@@ -455,6 +455,20 @@ func (s *JobService) VerifySource(ctx context.Context, cfg *config.Config, logSv
 	return s.src.VerifySource(ctx, cfg, logSvc, sourceID)
 }
 
+// LinkTitleURL links a title directly to a chapter-list URL, resolving which
+// registered source (built-in or custom) serves that site by domain.
+func (s *JobService) LinkTitleURL(ctx context.Context, titleID int64, rawURL string) (library.Title, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if u, err := url.ParseRequestURI(rawURL); err != nil || !strings.HasPrefix(u.Scheme, "http") {
+		return library.Title{}, fmt.Errorf("enter a full http(s) URL")
+	}
+	src, ok := ResolveSourceForURL(ctx, rawURL, s.dbPath, nil)
+	if !ok {
+		return library.Title{}, fmt.Errorf("no source is registered for that site — add it as a custom source first")
+	}
+	return s.want.LinkTitleURL(ctx, titleID, rawURL, src.ID)
+}
+
 // TestSource probes a candidate source profile with the chosen fetch methods.
 func (s *JobService) TestSource(ctx context.Context, profile sources.Profile, useSolver, useBrowser bool) (SourceTestResult, error) {
 	cfg, logSvc, err := s.RuntimeConfig(ctx)

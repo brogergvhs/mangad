@@ -180,6 +180,15 @@ func (s *WantedService) LinkTitleSource(ctx context.Context, titleID, matchID in
 	return s.library.GetTitle(ctx, titleID)
 }
 
+// LinkTitleURL points a title at a specific chapter-list URL, for single-manga
+// or custom sites that have no searchable catalog.
+func (s *WantedService) LinkTitleURL(ctx context.Context, titleID int64, rawURL, sourceID string) (library.Title, error) {
+	if err := s.library.LinkSource(ctx, titleID, rawURL, sourceID); err != nil {
+		return library.Title{}, err
+	}
+	return s.library.GetTitle(ctx, titleID)
+}
+
 // trackedDir is the folder name a tracked title downloads into.
 func trackedDir(t library.Title) string {
 	if t.OutputPath != "" {

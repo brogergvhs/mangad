@@ -153,6 +153,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
 	mux.HandleFunc("POST /ui/library/{id}/link", u.linkSource)
+	mux.HandleFunc("POST /ui/library/{id}/link-url", u.linkURL)
 	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
 	mux.HandleFunc("POST /ui/import", u.importDo)
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
@@ -583,6 +584,19 @@ func (u *webUI) linkSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := u.svc.LinkTitleSource(r.Context(), id, matchID); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
+}
+
+func (u *webUI) linkURL(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if _, err := u.svc.LinkTitleURL(r.Context(), id, r.FormValue("url")); err != nil {
 		u.fail(w, err)
 		return
 	}
