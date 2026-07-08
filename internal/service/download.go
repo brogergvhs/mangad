@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -317,6 +318,24 @@ func (s *DownloadService) FetchImages(ctx context.Context, chapter chapters.Chap
 	}
 
 	return images, nil
+}
+
+// VerifyImage downloads one image to a temporary folder to confirm the image
+// host is actually reachable (catching CDN 403s that URL extraction misses).
+func (s *DownloadService) VerifyImage(ctx context.Context, imageURL, referer string) error {
+	tmp, err := os.MkdirTemp("", "mangad-verify-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	files, _, err := s.downloader().DownloadImagesConcurrently(ctx, []string{imageURL}, tmp, referer, 1, s.progressHandle("verify"))
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("image not downloadable")
+	}
+	return nil
 }
 
 // Download downloads selected chapters and writes CBZ files.

@@ -157,26 +157,73 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 		return fmt.Errorf("source %s is disabled", src.ID)
 	}
 
-	chapters, chapterMethod, err := discoverChapters(ctx, *cfg, logSvc, src, src.SampleMangaURL, cfg.BrowserSolver.Enabled)
+	// Try plain HTTP first; escalate to the solver when the HTML can't be read
+	// OR when a sample image won't download (e.g. a CDN that needs warmed
+	// cookies). Escalating on image failure means the learned solver method
+	// carries through to real downloads.
+	attempts := []bool{false}
+	if cfg.BrowserSolver.Enabled {
+		attempts = append(attempts, true)
+	}
+	var lastErr error
+	for _, useSolver := range attempts {
+		if err := s.verifyOnce(ctx, cfg, logSvc, src, useSolver, result); err != nil {
+			lastErr = err
+			result.Status = fetchFailureStatus(err)
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+// verifyOnce fetches the chapter list, extracts a sample chapter's images, and
+// downloads one image to prove the whole pipeline works with the given method.
+func (s *sourceService) verifyOnce(ctx context.Context, cfg *config.Config, logSvc ui.Log, src sources.Source, useSolver bool, result *SourceVerifyResult) error {
+	probe := probeConfig(*cfg, src, useSolver, false)
+	svc, err := NewSourceDownloadService(&probe, logSvc, nil, src.Scraper)
 	if err != nil {
-		result.Status = fetchFailureStatus(err)
 		return err
 	}
-	result.ChapterFetch = chapterMethod
-	result.ChaptersFound = len(chapters)
-	if len(chapters) < src.MinChapters {
-		result.Status = sources.StatusDegraded
-		return fmt.Errorf("found %d chapters, expected at least %d", len(chapters), src.MinChapters)
+	method := sources.FetchHTTP
+	if useSolver {
+		method = sources.FetchSolver
 	}
 
-	images, imageMethod, err := discoverImages(ctx, *cfg, logSvc, src, chapters[0], chapterMethod, cfg.BrowserDownload.Enabled)
+	list, err := svc.FetchChapters(ctx, src.SampleMangaURL)
 	if err != nil {
-		result.Status = fetchFailureStatus(err)
 		return err
 	}
-	result.ImageFetch = imageMethod
+	if len(list) == 0 {
+		return fmt.Errorf("no chapters found")
+	}
+	result.ChapterFetch = method
+	result.ChaptersFound = len(list)
+	if len(list) < src.MinChapters {
+		result.Status = sources.StatusDegraded
+		return fmt.Errorf("found %d chapters, expected at least %d", len(list), src.MinChapters)
+	}
+
+	images, err := svc.FetchImages(ctx, list[0])
+	if err != nil {
+		return err
+	}
 	result.ImagesFound = len(images)
 	result.ImageExtensions = imageExtensions(images)
+	if len(images) == 0 {
+		if cfg.BrowserDownload.Enabled {
+			result.ImageFetch = sources.FetchBrowser
+			result.Status = sources.StatusHealthy
+			return nil
+		}
+		return fmt.Errorf("no images found in sample chapter")
+	}
+	// Actually download a sample image so CDN 403s surface here, not at download.
+	if err := svc.VerifyImage(ctx, images[0], list[0].URL); err != nil {
+		result.ImageFetch = ""
+		return fmt.Errorf("sample image download failed: %w", err)
+	}
+	result.ImageFetch = sources.FetchHTTP
 	result.Status = sources.StatusHealthy
 	return nil
 }
