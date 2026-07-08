@@ -19,28 +19,10 @@
 <div id="search-results"></div>
 {{end}}
 
-{{define "wanted"}}
-<h1>Wanted</h1>
-<p class="muted small">Find and track download sources for the manga you want.</p>
-{{range .}}
-<div class="panel result">
-  <img class="cover" src="{{.CoverImage}}" alt="" loading="lazy">
-  <div class="meta">
-    <div class="row spread">
-      <strong>{{mangaTitle .}}</strong>
-      <button class="ghost" hx-post="/ui/wanted/{{.ID}}/match" hx-target="#matches-{{.ID}}" hx-swap="outerHTML">Find sources</button>
-    </div>
-    <div class="small muted">{{.Format}} · {{.Status}}{{if .Chapters}} · {{.Chapters}} ch{{end}}</div>
-    <div id="matches-{{.ID}}" style="margin-top:10px" hx-get="/ui/wanted/{{.ID}}/matches" hx-trigger="load" hx-swap="outerHTML"></div>
-  </div>
-</div>
-{{else}}<p class="muted">Nothing wanted yet. Add titles from <a href="/search">Search</a>.</p>{{end}}
-{{end}}
-
 {{define "library"}}
 <h1>Library</h1>
 <table class="panel" style="padding:0">
-  <tr><th>Title</th><th>Progress</th><th>Monitor</th><th>Activity</th><th></th></tr>
+  <tr><th></th><th>Title</th><th>Progress</th><th>Monitor</th><th>Activity</th><th></th></tr>
   {{template "libraryRows" .}}
 </table>
 {{end}}
@@ -53,32 +35,43 @@
     <button class="danger" hx-post="/ui/library/{{.Title.ID}}/remove" hx-confirm="Remove this title?">Remove</button>
   </div>
 </div>
-<div class="panel">
-  <div class="row spread">
-    {{if isLocal .Title.SourceURL}}<div class="small muted">Imported from disk · no source linked yet</div>
-    {{else}}<div class="small muted">{{.Title.SourceID}} · <a href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a></div>{{end}}
-    <div class="small muted">refresh every {{.Title.RefreshInterval}}</div>
+<div class="panel result">
+  <img class="cover lg" src="{{.Title.CoverImage}}" alt="" loading="lazy">
+  <div class="meta">
+    <div class="row spread">
+      {{if linked .Title.SourceURL}}<div class="small muted">{{.Title.SourceID}} · <a href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a></div>
+      {{else if imported .Title.SourceURL}}<div class="small muted">Imported from disk · no source linked</div>
+      {{else}}<div class="small muted">No source linked</div>{{end}}
+      <div class="small muted">refresh every {{.Title.RefreshInterval}}</div>
+    </div>
+    <div style="margin:12px 0">{{template "progressBar" .Title}}</div>
+    <div class="row">
+      {{if linked .Title.SourceURL}}
+      <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>
+      <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download missing</button>
+      {{end}}
+      <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
+      <table style="margin:0"><tr>{{template "titleActivity" .}}</tr></table>
+    </div>
   </div>
-  <div style="margin:12px 0">{{template "progressBar" .Title}}</div>
-  <div class="row">
-    {{if not (isLocal .Title.SourceURL)}}
-    <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Refresh chapters</button>
-    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Download missing</button>
-    {{end}}
-    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Scan files</button>
-    <table style="margin:0"><tr>{{template "titleActivity" .}}</tr></table>
-  </div>
-  {{if isLocal .Title.SourceURL}}
-  <div style="margin-top:12px">
-    <button hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Find sources for updates</button>
-    <div id="sources-{{.Title.ID}}" hx-get="/ui/library/{{.Title.ID}}/sources" hx-trigger="load" hx-swap="outerHTML" style="margin-top:10px"></div>
-  </div>
-  {{end}}
 </div>
-<h2>Missing chapters ({{len .Missing}})</h2>
+
 <div class="panel">
-  {{range .Missing}}<div class="row spread"><span>{{.Label}} · {{.Title}}</span><a class="small" href="{{.URL}}" target="_blank" rel="noreferrer noopener">↗</a></div>{{else}}<p class="muted">Nothing missing.</p>{{end}}
+  <div class="row spread"><h2 style="margin:0">Sources</h2>
+    <button class="ghost small" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Find sources</button></div>
+  {{template "matches" .Sources}}
 </div>
+
+<h2>Chapters ({{len .Chapters}})</h2>
+<table class="panel" style="padding:0">
+  {{range .Chapters}}
+  <tr>
+    <td class="nowrap"><strong>{{.Label}}</strong> <span class="small muted">{{.Title}}</span></td>
+    <td class="nowrap">{{if .Downloaded}}<span class="badge done">downloaded</span>{{else}}<span class="badge">missing</span>{{end}}</td>
+    <td class="small muted">{{chapterSource .URL}}</td>
+  </tr>
+  {{else}}<tr><td class="muted">No chapters yet. {{if linked $.Title.SourceURL}}Refresh to discover them.{{else}}Link a source to discover chapters.{{end}}</td></tr>{{end}}
+</table>
 {{end}}
 
 {{define "import"}}

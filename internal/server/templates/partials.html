@@ -12,16 +12,13 @@
       </div>
       <div class="desc small">{{.Description}}</div>
     </div>
-    <div>{{template "wantedButton" .}}</div>
+    <div><button hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add to Library</button></div>
   </div>
   {{else}}<p class="muted">No results.</p>{{end}}
 </div>
 {{end}}
 
-{{define "wantedButton"}}
-{{if .Wanted}}<span class="badge done">✓ Wanted</span>
-{{else}}<button hx-post="/ui/wanted/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add to Wanted</button>{{end}}
-{{end}}
+{{define "addedButton"}}<a class="badge done" href="/library/{{.ID}}">✓ In library →</a>{{end}}
 
 {{define "matches"}}
 {{if .Active}}
@@ -40,8 +37,8 @@
       <td>{{.ChaptersFound}}</td>
       <td>{{confidence .Confidence}}</td>
       <td class="nowrap">
-        {{if $.TitleID}}<button hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use this source</button>
-        {{else}}<button hx-post="/ui/wanted/track" hx-vals='{"match_id":{{.ID}}}' hx-target="this" hx-swap="outerHTML">Track</button>{{end}}
+        {{if eq .SourceURL $.LinkedURL}}<span class="badge done">✓ linked</span>
+        {{else}}<button hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use this source</button>{{end}}
       </td>
     </tr>
     {{end}}
@@ -54,19 +51,20 @@
 {{define "libraryRows"}}
 {{range .}}
 <tr>
-  <td><a href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a><div class="small muted">{{.Title.SourceID}}</div></td>
+  <td style="width:52px"><img class="cover" style="width:40px;height:56px" src="{{.Title.CoverImage}}" alt="" loading="lazy"></td>
+  <td><a href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a><div class="small muted">{{if linked .Title.SourceURL}}{{.Title.SourceID}}{{else if imported .Title.SourceURL}}imported{{else}}no source{{end}}</div></td>
   <td style="min-width:140px">{{template "progressBar" .Title}}</td>
   <td>{{template "monitorToggle" .Title}}</td>
   {{template "titleActivity" .}}
   <td class="nowrap">
-    {{if isLocal .Title.SourceURL}}<a class="small" href="/library/{{.Title.ID}}">link source →</a>
+    {{if not (linked .Title.SourceURL)}}<a class="small" href="/library/{{.Title.ID}}">link source →</a>
     {{else}}
-    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Refresh</button>
-    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Download</button>
+    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh</button>
+    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download</button>
     {{end}}
   </td>
 </tr>
-{{else}}<tr><td colspan="5" class="muted">No tracked titles. Add one from <a href="/search">Search</a>.</td></tr>{{end}}
+{{else}}<tr><td colspan="6" class="muted">Nothing in your library yet. Add manga from <a href="/search">Search</a> or <a href="/import">Import</a> an existing collection.</td></tr>{{end}}
 {{end}}
 
 {{define "progressBar"}}
@@ -82,8 +80,8 @@
 {{end}}
 
 {{define "titleActivity"}}
-<td id="act-{{.Title.ID}}" {{if .Active}}hx-get="/ui/library/{{.Title.ID}}/activity" hx-trigger="load delay:1200ms" hx-swap="outerHTML"{{end}}>
-  {{if .Active}}<span class="spin"></span> <span class="small">{{.ActiveLabel}}…</span>
+<td id="act-{{.Title.ID}}" {{if .Running}}hx-get="/ui/library/{{.Title.ID}}/activity" hx-trigger="load delay:1200ms" hx-swap="outerHTML"{{end}}>
+  {{if .Running}}<span class="spin"></span> <span class="small">{{.ActiveLabel}}…</span>
   {{else if .Failed}}<span class="badge broken">failed</span>{{if .Error}}<div class="small muted">{{.Error}}</div>{{end}}
   {{else}}<span class="small muted">idle</span>{{end}}
 </td>

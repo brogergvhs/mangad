@@ -297,6 +297,60 @@ func (r *Repository) ListMissingChapters(ctx context.Context, titleID int64) ([]
 	return out, nil
 }
 
+// ChapterStatus is a discovered chapter plus its download state.
+type ChapterStatus struct {
+	Chapter
+	Downloaded bool
+	OutputFile string
+}
+
+// ListChapters returns all discovered chapters for a title with download state.
+func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]ChapterStatus, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.id, c.title_id, c.label, c.title, c.url, c.number_main, c.suffix_type, c.suffix_num,
+			c.discovered_at, c.updated_at,
+			CASE WHEN d.status = 'completed' THEN 1 ELSE 0 END,
+			COALESCE(d.output_file, '')
+		FROM chapters c
+		LEFT JOIN downloads d ON d.chapter_id = c.id
+		WHERE c.title_id = ?
+		ORDER BY c.number_main, c.suffix_type, c.suffix_num, c.label
+	`, titleID)
+	if err != nil {
+		return nil, fmt.Errorf("list chapters: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ChapterStatus
+	for rows.Next() {
+		var cs ChapterStatus
+		var discoveredAt, updatedAt string
+		var downloaded int
+		if err := rows.Scan(&cs.ID, &cs.TitleID, &cs.Label, &cs.Title, &cs.URL, &cs.NumberMain,
+			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt, &downloaded, &cs.OutputFile); err != nil {
+			return nil, fmt.Errorf("scan chapter: %w", err)
+		}
+		cs.Downloaded = downloaded != 0
+		cs.DiscoveredAt, _ = database.ParseTime(discoveredAt)
+		cs.UpdatedAt, _ = database.ParseTime(updatedAt)
+		out = append(out, cs)
+	}
+	return out, rows.Err()
+}
+
+// FindByCatalog returns the tracked title for a catalog manga, if any.
+func (r *Repository) FindByCatalog(ctx context.Context, catalogID int64) (Title, bool, error) {
+	row := r.db.QueryRowContext(ctx, titleSelectQuery()+` WHERE t.catalog_manga_id = ? GROUP BY t.id LIMIT 1`, catalogID)
+	title, err := scanTitle(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Title{}, false, nil
+	}
+	if err != nil {
+		return Title{}, false, fmt.Errorf("find title by catalog %d: %w", catalogID, err)
+	}
+	return title, true, nil
+}
+
 // GetChapterByLabel returns one discovered chapter by title and label.
 func (r *Repository) GetChapterByLabel(ctx context.Context, titleID int64, label string) (Chapter, error) {
 	row := r.db.QueryRowContext(ctx, chapterSelectQuery()+` WHERE c.title_id = ? AND c.label = ?`, titleID, label)
@@ -483,10 +537,12 @@ func titleSelectQuery() string {
 			COUNT(DISTINCT CASE WHEN d.status = 'completed' THEN d.id END) AS completed_count,
 			COUNT(DISTINCT CASE WHEN d.id IS NULL OR d.status != 'completed' THEN c.id END) AS missing_count,
 			t.created_at,
-			t.updated_at
+			t.updated_at,
+			COALESCE(m.cover_image, '')
 		FROM titles t
 		LEFT JOIN chapters c ON c.title_id = t.id
 		LEFT JOIN downloads d ON d.chapter_id = c.id
+		LEFT JOIN catalog_manga m ON m.id = t.catalog_manga_id
 	`
 }
 
@@ -513,6 +569,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&title.MissingCount,
 		&createdAt,
 		&updatedAt,
+		&title.CoverImage,
 	); err != nil {
 		return Title{}, err
 	}

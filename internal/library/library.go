@@ -14,6 +14,7 @@ type Title struct {
 	SourceID        string
 	SourceURL       string
 	DisplayTitle    string
+	CoverImage      string
 	OutputPath      string
 	Monitored       bool
 	RefreshInterval string

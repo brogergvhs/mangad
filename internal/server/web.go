@@ -45,8 +45,9 @@ type dashData struct {
 }
 type activityView struct {
 	Title       library.Title
-	Missing     []library.Chapter
-	Active      bool
+	Chapters    []library.ChapterStatus
+	Sources     matchView
+	Running     map[string]bool // job type -> active (for button locking)
 	ActiveLabel string
 	Failed      bool
 	Error       string
@@ -56,28 +57,22 @@ type sourceRowView struct {
 	Active bool
 }
 type matchView struct {
-	DomID   string
-	PollURL string
-	Matches []catalog.Match
-	Active  bool
-	Failed  bool
-	Error   string
-	TitleID int64 // 0 => wanted list (Track); >0 => link to this title (Use)
+	DomID     string
+	PollURL   string
+	Matches   []catalog.Match
+	Active    bool
+	Failed    bool
+	Error     string
+	TitleID   int64  // link target for "Use this source"
+	LinkedURL string // the title's current source URL (marked as linked)
 }
 
-func wantedMatchView(catalogID int64, active, failed bool, msg string, matches []catalog.Match) matchView {
+func titleSourceView(title library.Title, active, failed bool, msg string, matches []catalog.Match) matchView {
 	return matchView{
-		DomID:   fmt.Sprintf("matches-%d", catalogID),
-		PollURL: fmt.Sprintf("/ui/wanted/%d/matches", catalogID),
+		DomID:   fmt.Sprintf("sources-%d", title.ID),
+		PollURL: fmt.Sprintf("/ui/library/%d/sources", title.ID),
 		Active:  active, Failed: failed, Error: msg, Matches: matches,
-	}
-}
-
-func titleSourceView(titleID int64, active, failed bool, msg string, matches []catalog.Match) matchView {
-	return matchView{
-		DomID:   fmt.Sprintf("sources-%d", titleID),
-		PollURL: fmt.Sprintf("/ui/library/%d/sources", titleID),
-		Active:  active, Failed: failed, Error: msg, Matches: matches, TitleID: titleID,
+		TitleID: title.ID, LinkedURL: title.SourceURL,
 	}
 }
 
@@ -104,7 +99,6 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 
 	mux.HandleFunc("GET /{$}", u.dashboard)
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) { u.page(w, r, "search", "Search", nil) })
-	mux.HandleFunc("GET /wanted", u.wantedPage)
 	mux.HandleFunc("GET /library", u.libraryPage)
 	mux.HandleFunc("GET /library/{id}", u.titlePage)
 	mux.HandleFunc("GET /import", u.importPage)
@@ -112,10 +106,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /settings", u.settingsPage)
 
 	mux.HandleFunc("POST /ui/search", u.search)
-	mux.HandleFunc("POST /ui/wanted/add", u.wantedAdd)
-	mux.HandleFunc("POST /ui/wanted/{id}/match", u.wantedMatch)
-	mux.HandleFunc("GET /ui/wanted/{id}/matches", u.wantedMatches)
-	mux.HandleFunc("POST /ui/wanted/track", u.wantedTrack)
+	mux.HandleFunc("POST /ui/library/add", u.addToLibrary)
 	mux.HandleFunc("POST /ui/library/{id}/refresh", u.libAction(jobs.TypeRefreshTitle, "refreshing"))
 	mux.HandleFunc("POST /ui/library/{id}/download", u.libAction(jobs.TypeDownloadMissing, "downloading"))
 	mux.HandleFunc("POST /ui/library/{id}/scan", u.libAction(jobs.TypeScanDownloads, "scanning"))
@@ -167,15 +158,6 @@ func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	u.page(w, r, "dashboard", "Dashboard", dashData{Titles: titles, Sources: srcs, Jobs: js, AnyActive: anyActive(js)})
 }
 
-func (u *webUI) wantedPage(w http.ResponseWriter, r *http.Request) {
-	items, err := u.svc.ListWanted(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	u.page(w, r, "wanted", "Wanted", items)
-}
-
 func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 	titles, err := u.svc.ListTitles(r.Context())
 	if err != nil {
@@ -185,8 +167,8 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 	js := u.jobs(r.Context())
 	views := make([]activityView, 0, len(titles))
 	for _, t := range titles {
-		label, active, failed, msg := titleStateFrom(js, t.ID)
-		views = append(views, activityView{Title: t, Active: active, ActiveLabel: label, Failed: failed, Error: msg})
+		running, label, failed, msg := titleActivityFrom(js, t.ID)
+		views = append(views, activityView{Title: t, Running: running, ActiveLabel: label, Failed: failed, Error: msg})
 	}
 	u.page(w, r, "library", "Library", views)
 }
@@ -197,13 +179,31 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	title, missing, err := u.svc.TitleMissing(r.Context(), id)
+	title, err := u.svc.GetTitle(r.Context(), id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	label, active, failed, msg := u.titleState(r.Context(), id)
-	u.page(w, r, "title", title.DisplayTitle, activityView{Title: title, Missing: missing, Active: active, ActiveLabel: label, Failed: failed, Error: msg})
+	chapters, _ := u.svc.TitleChapters(r.Context(), id)
+	view := u.titleActivity(r.Context(), id)
+	view.Title = title
+	view.Chapters = chapters
+	view.Sources = u.sourceView(r.Context(), title)
+	u.page(w, r, "title", title.DisplayTitle, view)
+}
+
+// sourceView builds the linkable-source list for a title's detail page.
+func (u *webUI) sourceView(ctx context.Context, title library.Title) matchView {
+	if title.CatalogMangaID == nil {
+		return titleSourceView(title, false, false, "", nil)
+	}
+	cid := *title.CatalogMangaID
+	active, failed, msg := u.jobStateFor(ctx, jobs.TypeMatchSources, service.JobPayload{CatalogID: cid})
+	if active {
+		return titleSourceView(title, true, false, "", nil)
+	}
+	matches, _ := u.svc.ListMatches(ctx, cid)
+	return titleSourceView(title, false, failed, msg, matches)
 }
 
 func (u *webUI) sourcesPage(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +219,7 @@ func (u *webUI) settingsPage(w http.ResponseWriter, r *http.Request) {
 	u.page(w, r, "settings", "Settings", u.settings(r.Context()))
 }
 
-// --- search & wanted ---
+// --- search & add ---
 
 func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 	items, err := u.svc.SearchAniList(r.Context(), r.FormValue("q"), 10)
@@ -230,60 +230,18 @@ func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "searchResults", items)
 }
 
-func (u *webUI) wantedAdd(w http.ResponseWriter, r *http.Request) {
+func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.FormValue("provider_id"))
 	if err != nil {
 		u.fail(w, fmt.Errorf("invalid id"))
 		return
 	}
-	manga, err := u.svc.AddAniListWanted(r.Context(), id)
+	title, err := u.svc.AddCatalogTitle(r.Context(), id)
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "wantedButton", manga)
-}
-
-func (u *webUI) wantedMatch(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		u.fail(w, err)
-		return
-	}
-	if _, err := u.svc.EnqueueCatalog(r.Context(), jobs.TypeMatchSources, id, time.Now()); err != nil {
-		u.fail(w, err)
-		return
-	}
-	u.kick()
-	u.frag(w, "matches", wantedMatchView(id, true, false, "", nil))
-}
-
-func (u *webUI) wantedMatches(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		u.fail(w, err)
-		return
-	}
-	active, failed, msg := u.jobStateFor(r.Context(), jobs.TypeMatchSources, service.JobPayload{CatalogID: id})
-	if active {
-		u.frag(w, "matches", wantedMatchView(id, true, false, "", nil))
-		return
-	}
-	matches, _ := u.svc.ListMatches(r.Context(), id)
-	u.frag(w, "matches", wantedMatchView(id, false, failed, msg, matches))
-}
-
-func (u *webUI) wantedTrack(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.FormValue("match_id"), 10, 64)
-	if err != nil {
-		u.fail(w, fmt.Errorf("invalid match id"))
-		return
-	}
-	if _, err := u.svc.TrackMatch(r.Context(), id, "", true, ""); err != nil {
-		u.fail(w, err)
-		return
-	}
-	u.frag(w, "toast", toastView{OK: true, Msg: "Tracked ✓"})
+	u.frag(w, "addedButton", title)
 }
 
 // --- library ---
@@ -305,7 +263,13 @@ func (u *webUI) libAction(typ, label string) http.HandlerFunc {
 			return
 		}
 		u.kick()
-		u.frag(w, "titleActivity", activityView{Title: title, Active: true, ActiveLabel: label})
+		view := u.titleActivity(r.Context(), id)
+		view.Title = title
+		if view.Running == nil {
+			view.Running = map[string]bool{typ: true}
+			view.ActiveLabel = label
+		}
+		u.frag(w, "titleActivity", view)
 	}
 }
 
@@ -315,9 +279,9 @@ func (u *webUI) libActivity(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
-	label, active, _, _ := u.titleState(r.Context(), id)
-	if !active {
-		// Job finished: reload so counts, progress, and the missing list refresh.
+	view := u.titleActivity(r.Context(), id)
+	if len(view.Running) == 0 {
+		// Job finished: reload so counts, progress, and the chapter list refresh.
 		w.Header().Set("HX-Refresh", "true")
 		return
 	}
@@ -326,7 +290,8 @@ func (u *webUI) libActivity(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "titleActivity", activityView{Title: title, Active: true, ActiveLabel: label})
+	view.Title = title
+	u.frag(w, "titleActivity", view)
 }
 
 func (u *webUI) libMonitored(w http.ResponseWriter, r *http.Request) {
@@ -423,7 +388,7 @@ func (u *webUI) findSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.kick()
-	u.frag(w, "matches", titleSourceView(id, true, false, "", nil))
+	u.frag(w, "matches", titleSourceView(title, true, false, "", nil))
 }
 
 func (u *webUI) titleSources(w http.ResponseWriter, r *http.Request) {
@@ -433,18 +398,11 @@ func (u *webUI) titleSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title, err := u.svc.GetTitle(r.Context(), id)
-	if err != nil || title.CatalogMangaID == nil {
-		u.frag(w, "matches", titleSourceView(id, false, false, "", nil))
+	if err != nil {
+		u.frag(w, "matches", matchView{DomID: fmt.Sprintf("sources-%d", id), PollURL: fmt.Sprintf("/ui/library/%d/sources", id)})
 		return
 	}
-	cid := *title.CatalogMangaID
-	active, failed, msg := u.jobStateFor(r.Context(), jobs.TypeMatchSources, service.JobPayload{CatalogID: cid})
-	if active {
-		u.frag(w, "matches", titleSourceView(id, true, false, "", nil))
-		return
-	}
-	matches, _ := u.svc.ListMatches(r.Context(), cid)
-	u.frag(w, "matches", titleSourceView(id, false, failed, msg, matches))
+	u.frag(w, "matches", u.sourceView(r.Context(), title))
 }
 
 func (u *webUI) linkSource(w http.ResponseWriter, r *http.Request) {
@@ -556,25 +514,39 @@ func jobState(status string) (active, failed bool) {
 	return false, false
 }
 
-// titleState reports the most recent refresh/download/scan job for a title.
-func (u *webUI) titleState(ctx context.Context, id int64) (label string, active, failed bool, msg string) {
-	return titleStateFrom(u.jobs(ctx), id)
+// titleActivity reports which of a title's job types are running (for button
+// locking), a verb for the spinner, and the most recent terminal failure.
+func (u *webUI) titleActivity(ctx context.Context, id int64) activityView {
+	running, label, failed, msg := titleActivityFrom(u.jobs(ctx), id)
+	return activityView{Running: running, ActiveLabel: label, Failed: failed, Error: msg}
 }
 
-func titleStateFrom(js []jobs.Job, id int64) (label string, active, failed bool, msg string) {
+func titleActivityFrom(js []jobs.Job, id int64) (running map[string]bool, label string, failed bool, msg string) {
+	running = map[string]bool{}
 	for _, j := range js { // List is newest-first
 		var p service.JobPayload
 		if json.Unmarshal([]byte(j.Payload), &p) != nil || p.TitleID != id {
 			continue
 		}
-		label = titleVerb(j.Type)
-		if label == "" {
+		verb := titleVerb(j.Type)
+		if verb == "" {
 			continue
 		}
-		active, failed = jobState(j.Status)
-		return label, active, failed, j.LastError
+		active, isFailed := jobState(j.Status)
+		switch {
+		case active:
+			running[j.Type] = true
+			if label == "" {
+				label = verb
+			}
+		case isFailed && !failed:
+			failed, msg = true, j.LastError
+		}
 	}
-	return "", false, false, ""
+	if len(running) > 0 {
+		failed = false // something is running; don't also show the last failure
+	}
+	return running, label, failed, msg
 }
 
 func titleVerb(typ string) string {
@@ -621,8 +593,6 @@ func navFor(path string) string {
 		return "dashboard"
 	case strings.HasPrefix(path, "/search"):
 		return "search"
-	case strings.HasPrefix(path, "/wanted"):
-		return "wanted"
 	case strings.HasPrefix(path, "/library"):
 		return "library"
 	case strings.HasPrefix(path, "/import"):
@@ -641,16 +611,18 @@ func pathID(r *http.Request) (int64, error) {
 
 func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
-		"mangaTitle": mangaTitle,
-		"jobLabel":   jobLabel,
-		"since":      since,
-		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
-		"orUnknown":  func(s string) string { return orDefault(s, "unknown") },
-		"orDash":     func(s string) string { return orDefault(s, "—") },
-		"isLocal":    func(s string) bool { return strings.HasPrefix(s, "local:") },
-		"pathEscape": url.PathEscape,
-		"pct":        func(done, total int64) int64 { return percent(done, total) },
-		"sourceRow":  func(s sources.Source) sourceRowView { return sourceRowView{Source: s} },
+		"mangaTitle":    mangaTitle,
+		"jobLabel":      jobLabel,
+		"since":         since,
+		"confidence":    func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
+		"orUnknown":     func(s string) string { return orDefault(s, "unknown") },
+		"orDash":        func(s string) string { return orDefault(s, "—") },
+		"linked":        func(s string) bool { return strings.HasPrefix(s, "http") },
+		"imported":      func(s string) bool { return strings.HasPrefix(s, "local:") },
+		"chapterSource": chapterSource,
+		"pathEscape":    url.PathEscape,
+		"pct":           func(done, total int64) int64 { return percent(done, total) },
+		"sourceRow":     func(s sources.Source) sourceRowView { return sourceRowView{Source: s} },
 		"missingTotal": func(ts []library.Title) int64 {
 			var n int64
 			for _, t := range ts {
@@ -668,6 +640,17 @@ func (u *webUI) funcs() template.FuncMap {
 			return n
 		},
 	}
+}
+
+// chapterSource names where a chapter came from, derived from its URL.
+func chapterSource(rawURL string) string {
+	if strings.HasPrefix(rawURL, "local:") {
+		return "imported"
+	}
+	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
+		return strings.TrimPrefix(u.Host, "www.")
+	}
+	return "—"
 }
 
 func mangaTitle(m catalog.Manga) string {

@@ -87,6 +87,11 @@ func (s *LibraryService) ListTitles(ctx context.Context) ([]library.Title, error
 	return s.repo.ListTitles(ctx)
 }
 
+// ListChapters returns all discovered chapters for a title with download state.
+func (s *LibraryService) ListChapters(ctx context.Context, titleID int64) ([]library.ChapterStatus, error) {
+	return s.repo.ListChapters(ctx, titleID)
+}
+
 // MissingChapters returns a title and its missing chapters.
 func (s *LibraryService) MissingChapters(ctx context.Context, id int64) (library.Title, []library.Chapter, error) {
 	title, err := s.repo.GetTitle(ctx, id)
