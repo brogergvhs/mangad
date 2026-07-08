@@ -44,14 +44,14 @@ type dashData struct {
 	AnyActive bool
 }
 type activityView struct {
-	Title       library.Title
-	Manga       catalog.Manga
-	Chapters    []library.ChapterStatus
-	Sources     matchView
-	Running     map[string]bool // job type -> active (for button locking)
-	ActiveLabel string
-	Failed      bool
-	Error       string
+	Title         library.Title
+	Manga         catalog.Manga
+	ChaptersTable tableData
+	Sources       matchView
+	Running       map[string]bool // job type -> active (for button locking)
+	ActiveLabel   string
+	Failed        bool
+	Error         string
 }
 type sourceRowView struct {
 	Source sources.Source
@@ -116,6 +116,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/remove", u.libRemove)
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
+	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
 	mux.HandleFunc("POST /ui/library/{id}/link", u.linkSource)
 	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
 	mux.HandleFunc("POST /ui/import", u.importDo)
@@ -187,7 +188,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 		Columns: []tableColumn{
 			{Label: ""},
 			{Label: "Title", SortKey: "title"},
-			{Label: "Progress", SortKey: "missing"},
+			{Label: "Chapters", SortKey: "missing"},
 			{Label: "Monitor"},
 			{Label: "Status"},
 		},
@@ -262,15 +263,62 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	chapters, _ := u.svc.TitleChapters(r.Context(), id)
 	view := u.titleActivity(r.Context(), id)
 	view.Title = title
-	view.Chapters = chapters
+	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
 	view.Sources = u.sourceView(r.Context(), title)
 	if title.CatalogMangaID != nil {
 		view.Manga, _ = u.svc.GetManga(r.Context(), *title.CatalogMangaID)
 	}
 	u.page(w, r, "title", title.DisplayTitle, view)
+}
+
+const chaptersPerPage = 25
+
+func (u *webUI) chaptersTable(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	title, err := u.svc.GetTitle(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	u.frag(w, "table", u.buildChaptersTable(r.Context(), title, r.URL.Query()))
+}
+
+func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, values url.Values) tableData {
+	page, key, dir := tableParams(values, chaptersPerPage)
+	chs, _ := u.svc.TitleChapters(ctx, title.ID)
+	sortChapters(chs, key, dir)
+	rows, total := paginate(chs, page, chaptersPerPage)
+
+	empty := "Link a source to discover chapters."
+	if strings.HasPrefix(title.SourceURL, "http") {
+		empty = "No chapters yet — refresh to discover them."
+	}
+	t := tableData{
+		ID: "chapters-table", BaseURL: fmt.Sprintf("/ui/library/%d/chapters", title.ID),
+		Page: page, PerPage: chaptersPerPage, Total: total, Sort: key, Dir: dir, Empty: empty,
+		Columns: []tableColumn{
+			{Label: "Chapter", SortKey: "number"},
+			{Label: "Status", SortKey: "status"},
+			{Label: "Source"},
+		},
+	}
+	for _, c := range rows {
+		t.Rows = append(t.Rows, tableRow{
+			ID: strconv.FormatInt(c.ID, 10),
+			Cells: []template.HTML{
+				u.renderToHTML("chapterName", c),
+				u.renderToHTML("chapterStatus", c),
+				text(chapterSource(c.URL)),
+			},
+		})
+	}
+	return t
 }
 
 // sourceView builds the linkable-source list for a title's detail page.

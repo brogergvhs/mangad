@@ -190,6 +190,29 @@ func sortTitles(ts []library.Title, key, dir string) {
 	})
 }
 
+func sortChapters(cs []library.ChapterStatus, key, dir string) {
+	var less func(a, b library.ChapterStatus) bool
+	switch key {
+	case "number":
+		less = func(a, b library.ChapterStatus) bool {
+			if a.NumberMain != b.NumberMain {
+				return a.NumberMain < b.NumberMain
+			}
+			return a.SuffixNum < b.SuffixNum
+		}
+	case "status":
+		less = func(a, b library.ChapterStatus) bool { return !a.Downloaded && b.Downloaded }
+	default:
+		return
+	}
+	sort.SliceStable(cs, func(i, j int) bool {
+		if dir == "desc" {
+			return less(cs[j], cs[i])
+		}
+		return less(cs[i], cs[j])
+	})
+}
+
 func sortJobs(js []jobs.Job, key, dir string) {
 	var less func(a, b jobs.Job) bool
 	switch key {

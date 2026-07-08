@@ -15,6 +15,13 @@ func TestParseChapterFile(t *testing.T) {
 		{"012.05.cbz", "12.05", 12},
 		{"Oneshot.cbz", "Oneshot", 0},
 		{"vol 2 ch 7.cbz", "7", 7},
+		// leading chapter number "N: Title; Part M" must win over the trailing part
+		{"1: The Boy And The Girl; Part 1.cbz", "1", 1},
+		{"11: The Girl; Part 1.cbz", "11", 11},
+		{"10: The Girl And The Boy; Part 2.cbz", "10", 10},
+		{"21.cbz", "21", 21},
+		{"5 - The Strange Man.cbz", "5", 5},
+		{"100 Bullets 5.cbz", "5", 5}, // title starting with a number, not a leading chapter
 	}
 	for _, tc := range cases {
 		label, num := parseChapterFile(tc.name)

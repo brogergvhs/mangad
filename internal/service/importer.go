@@ -211,6 +211,10 @@ func cbzFiles(dir string) []string {
 }
 
 var (
+	// A leading number keyed to the chapter, e.g. "12: Title", "12 - Title",
+	// "012.cbz". Requires punctuation or end-of-name after it so titles that
+	// merely start with a number (e.g. "100 Bullets 5") don't false-match.
+	reFileLead    = regexp.MustCompile(`^\s*([0-9]+(?:\.[0-9]+)?)\s*(?:[:.)\]_-]|$)`)
 	reFileChapter = regexp.MustCompile(`(?i)(?:chapter|episode|ch|ep|c)[\s._-]*([0-9]+(?:\.[0-9]+)?)`)
 	reFileNumber  = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`)
 )
@@ -221,10 +225,15 @@ var (
 func parseChapterFile(name string) (label string, num int) {
 	stem := strings.TrimSuffix(name, filepath.Ext(name))
 	raw := ""
-	if m := reFileChapter.FindStringSubmatch(stem); m != nil {
-		raw = m[1]
-	} else if nums := reFileNumber.FindAllString(stem, -1); len(nums) > 0 {
-		raw = nums[len(nums)-1] // last standalone number
+	switch {
+	case reFileLead.MatchString(stem):
+		raw = reFileLead.FindStringSubmatch(stem)[1] // "12: Title" -> 12
+	case reFileChapter.MatchString(stem):
+		raw = reFileChapter.FindStringSubmatch(stem)[1] // "Vol 2 Ch 7" -> 7
+	default:
+		if nums := reFileNumber.FindAllString(stem, -1); len(nums) > 0 {
+			raw = nums[len(nums)-1] // last standalone number
+		}
 	}
 	if raw == "" {
 		return strings.TrimSpace(stem), 0

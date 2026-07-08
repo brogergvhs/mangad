@@ -60,16 +60,8 @@
   {{template "matches" .Sources}}
 </div>
 
-<h2>Chapters ({{len .Chapters}})</h2>
-<table class="panel" style="padding:0">
-  {{range .Chapters}}
-  <tr>
-    <td class="nowrap"><strong>{{.Label}}</strong> <span class="small muted">{{.Title}}</span></td>
-    <td class="nowrap">{{if .Downloaded}}<span class="badge done">downloaded</span>{{else}}<span class="badge">missing</span>{{end}}</td>
-    <td class="small muted">{{chapterSource .URL}}</td>
-  </tr>
-  {{else}}<tr><td class="muted">No chapters yet. {{if linked $.Title.SourceURL}}Refresh to discover them.{{else}}Link a source to discover chapters.{{end}}</td></tr>{{end}}
-</table>
+<h2>Chapters ({{.ChaptersTable.Total}})</h2>
+{{template "table" .ChaptersTable}}
 {{end}}
 
 {{define "import"}}
