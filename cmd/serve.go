@@ -55,6 +55,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	defer closeDB()
 	svc.SetRuntimeConfig(runtimeConfig)
 
+	// Make built-in sources available immediately (registry sync stays manual).
+	if err := svc.SyncSources(ctx, ""); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: sync built-in sources: %v\n", err)
+	}
+
 	if err := seedServeSetting(cmd, svc, ctx, "refresh-every", service.SettingServeRefreshEvery, flagServeRefreshEvery); err != nil {
 		return err
 	}

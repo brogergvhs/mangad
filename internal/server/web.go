@@ -50,6 +50,7 @@ type activityView struct {
 	ChaptersTable tableData
 	Sources       matchView
 	SingleSources []sources.Source // single-manga sources selectable for linking
+	LinkSources   []sources.Source // searchable sources for specifying a page URL
 	Running       map[string]bool  // job type -> active (for button locking)
 	ActiveLabel   string
 	Failed        bool
@@ -58,6 +59,12 @@ type activityView struct {
 type sourceRowView struct {
 	Source sources.Source
 	Active bool
+}
+type sourceProbeView struct {
+	TitleID  int64
+	SourceID string
+	URL      string
+	Result   service.SourceTestResult
 }
 type matchView struct {
 	DomID     string
@@ -154,8 +161,9 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
 	mux.HandleFunc("POST /ui/library/{id}/link", u.linkSource)
-	mux.HandleFunc("POST /ui/library/{id}/link-url", u.linkURL)
 	mux.HandleFunc("POST /ui/library/{id}/link-source", u.linkSourceByID)
+	mux.HandleFunc("POST /ui/library/{id}/verify-source", u.srcVerifyURL)
+	mux.HandleFunc("POST /ui/library/{id}/link-source-url", u.linkSourceURL)
 	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
 	mux.HandleFunc("POST /ui/import", u.importDo)
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
@@ -308,6 +316,7 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
 	view.Sources = u.sourceView(r.Context(), title)
 	view.SingleSources = u.singleMangaSources(r.Context())
+	view.LinkSources = u.searchableSources(r.Context())
 	if title.CatalogMangaID != nil {
 		view.Manga, _ = u.svc.GetManga(r.Context(), *title.CatalogMangaID)
 	}
@@ -320,6 +329,18 @@ func (u *webUI) singleMangaSources(ctx context.Context) []sources.Source {
 	var out []sources.Source
 	for _, s := range all {
 		if s.SingleManga && s.Enabled {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// searchableSources returns enabled multi-manga sources, for specifying a page.
+func (u *webUI) searchableSources(ctx context.Context) []sources.Source {
+	all, _ := u.svc.ListSources(ctx)
+	var out []sources.Source
+	for _, s := range all {
+		if s.Enabled && !s.SingleManga {
 			out = append(out, s)
 		}
 	}
@@ -605,13 +626,29 @@ func (u *webUI) linkSource(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
 }
 
-func (u *webUI) linkURL(w http.ResponseWriter, r *http.Request) {
+func (u *webUI) srcVerifyURL(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	if _, err := u.svc.LinkTitleURL(r.Context(), id, r.FormValue("url")); err != nil {
+	sourceID := strings.TrimSpace(r.FormValue("source_id"))
+	rawURL := strings.TrimSpace(r.FormValue("url"))
+	res, err := u.svc.VerifySourceURL(r.Context(), sourceID, rawURL)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "sourceProbe", sourceProbeView{TitleID: id, SourceID: sourceID, URL: rawURL, Result: res})
+}
+
+func (u *webUI) linkSourceURL(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if _, err := u.svc.LinkTitleSourceURL(r.Context(), id, r.FormValue("source_id"), r.FormValue("url")); err != nil {
 		u.fail(w, err)
 		return
 	}

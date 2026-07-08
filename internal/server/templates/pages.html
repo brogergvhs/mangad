@@ -67,15 +67,38 @@
   </form>
   <div class="small muted" style="margin-top:4px">Single-manga sources carry their own fetch methods and image types.</div>
   {{end}}
-  <form class="row" hx-post="/ui/library/{{.Title.ID}}/link-url" hx-swap="none" style="margin-top:12px">
-    <input name="url" placeholder="https://site/manga/… (chapter-list page)" style="flex:1" required>
-    <button class="ghost">Link this URL</button>
-  </form>
-  <div class="small muted" style="margin-top:4px">Or paste the manga's chapter-list URL directly. The site must be registered as a source first.</div>
+  {{if .LinkSources}}
+  <div style="margin-top:14px">
+    <div class="small muted">Wrong match, or need a specific page? Pick the source and paste that manga's page URL — it's checked before linking.</div>
+    <form class="row" hx-post="/ui/library/{{.Title.ID}}/verify-source" hx-target="#verify-{{.Title.ID}}" hx-indicator="#verify-spin" style="margin-top:6px">
+      <select name="source_id">{{range .LinkSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+      <input name="url" placeholder="https://source/manga/…" style="flex:1" required>
+      <button class="ghost">Check</button>
+      <span id="verify-spin" class="spin htmx-indicator"></span>
+    </form>
+    <div id="verify-{{.Title.ID}}"></div>
+  </div>
+  {{end}}
 </div>
 
 <h2>Chapters ({{.ChaptersTable.Total}})</h2>
 {{template "table" .ChaptersTable}}
+{{end}}
+
+{{define "sourceProbe"}}
+<div class="panel" style="margin-top:10px">
+  {{if .Result.Error}}<div class="toast err">{{.Result.Error}}</div>{{end}}
+  {{if gt .Result.ChaptersFound 0}}
+  <div class="row spread">
+    <span>Found <strong>{{.Result.ChaptersFound}}</strong> chapters{{if .Result.SampleChapter}} · first: {{.Result.SampleChapter}}{{end}}</span>
+    <form hx-post="/ui/library/{{.TitleID}}/link-source-url" hx-swap="none">
+      <input type="hidden" name="source_id" value="{{.SourceID}}">
+      <input type="hidden" name="url" value="{{.URL}}">
+      <button>Link this page</button>
+    </form>
+  </div>
+  {{end}}
+</div>
 {{end}}
 
 {{define "import"}}
@@ -190,12 +213,12 @@
 <h1>Settings</h1>
 <form class="panel stack" hx-put="/ui/settings" hx-target="#settings-msg">
   {{range .Fields}}
-  <div class="setting">
-    <div class="row spread">
+  <div class="setting row spread">
+    <div>
       <label for="set-{{.Key}}">{{.Label}}</label>
-      <input id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}" style="width:320px">
+      {{if .Desc}}<div class="small muted">{{.Desc}}</div>{{end}}
     </div>
-    {{if .Desc}}<div class="small muted">{{.Desc}}</div>{{end}}
+    <input id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}" style="width:320px">
   </div>
   {{end}}
   <div class="row"><button>Save</button><span id="settings-msg"></span></div>

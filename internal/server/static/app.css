@@ -336,7 +336,9 @@ tr:last-child td {
 }
 
 /* settings fields */
-.setting { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.setting { padding: 12px 0; border-bottom: 1px solid var(--border); gap: 16px; }
 .setting:last-of-type { border-bottom: none; }
+.setting > div:first-child { min-width: 0; }
 .setting label { font-weight: 600; }
 .setting .muted { margin-top: 4px; max-width: 560px; }
+.setting input { flex: 0 0 auto; }

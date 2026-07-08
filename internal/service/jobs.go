@@ -455,18 +455,48 @@ func (s *JobService) VerifySource(ctx context.Context, cfg *config.Config, logSv
 	return s.src.VerifySource(ctx, cfg, logSvc, sourceID)
 }
 
-// LinkTitleURL links a title directly to a chapter-list URL, resolving which
-// registered source (built-in or custom) serves that site by domain.
-func (s *JobService) LinkTitleURL(ctx context.Context, titleID int64, rawURL string) (library.Title, error) {
+// VerifySourceURL probes a user-specified manga URL within a chosen source,
+// reporting how many chapters it finds so the user can confirm before linking.
+func (s *JobService) VerifySourceURL(ctx context.Context, sourceID, rawURL string) (SourceTestResult, error) {
+	src, err := s.sourceForURL(ctx, sourceID, rawURL)
+	if err != nil {
+		return SourceTestResult{}, err
+	}
+	cfg, logSvc, err := s.RuntimeConfig(ctx)
+	if err != nil {
+		return SourceTestResult{}, err
+	}
+	profile := src.Profile
+	profile.SampleMangaURL = strings.TrimSpace(rawURL)
+	useSolver := src.RequiresBrowserSolver || src.ChapterFetch == sources.FetchSolver
+	useBrowser := src.RequiresBrowserDownload || src.ImageFetch == sources.FetchBrowser
+	return s.src.TestProfile(ctx, cfg, logSvc, profile, useSolver, useBrowser), nil
+}
+
+// LinkTitleSourceURL links a title to a user-specified URL served by a chosen
+// source, so its scraper and fetch methods apply.
+func (s *JobService) LinkTitleSourceURL(ctx context.Context, titleID int64, sourceID, rawURL string) (library.Title, error) {
+	src, err := s.sourceForURL(ctx, sourceID, rawURL)
+	if err != nil {
+		return library.Title{}, err
+	}
+	return s.want.LinkTitleURL(ctx, titleID, strings.TrimSpace(rawURL), src.ID)
+}
+
+// sourceForURL validates that rawURL is a well-formed page on the chosen source.
+func (s *JobService) sourceForURL(ctx context.Context, sourceID, rawURL string) (sources.Source, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if u, err := url.ParseRequestURI(rawURL); err != nil || !strings.HasPrefix(u.Scheme, "http") {
-		return library.Title{}, fmt.Errorf("enter a full http(s) URL")
+		return sources.Source{}, fmt.Errorf("enter a full http(s) URL")
 	}
-	src, ok := ResolveSourceForURL(ctx, rawURL, s.dbPath, nil)
-	if !ok {
-		return library.Title{}, fmt.Errorf("no source is registered for that site — add it as a custom source first")
+	src, err := s.src.GetSource(ctx, sourceID)
+	if err != nil {
+		return sources.Source{}, err
 	}
-	return s.want.LinkTitleURL(ctx, titleID, rawURL, src.ID)
+	if _, ok := MatchSourceForURL([]sources.Source{src}, rawURL); !ok {
+		return sources.Source{}, fmt.Errorf("that URL is not on %s", src.Name)
+	}
+	return src, nil
 }
 
 // LinkTitleToSource links a title to a registered source by ID, using that
