@@ -1,0 +1,29 @@
+{{define "table"}}
+<div id="{{.ID}}" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:2s" hx-swap="outerHTML"{{end}}>
+  <table>
+    <tr>
+      {{if .HasDetails}}<th style="width:26px"></th>{{end}}
+      {{range .Columns}}
+        <th class="{{.Class}}">{{if .SortKey}}<a href="#" hx-get="{{$.SortURL .SortKey}}" hx-target="#{{$.ID}}" hx-swap="outerHTML">{{.Label}}{{$.SortMark .SortKey}}</a>{{else}}{{.Label}}{{end}}</th>
+      {{end}}
+    </tr>
+    {{range .Rows}}
+    <tr {{if .Detail}}class="row-toggle" data-target="det-{{$.ID}}-{{.ID}}"{{end}}>
+      {{if $.HasDetails}}<td>{{if .Detail}}<span class="caret">▸</span>{{end}}</td>{{end}}
+      {{range .Cells}}<td>{{.}}</td>{{end}}
+    </tr>
+    {{if .Detail}}<tr id="det-{{$.ID}}-{{.ID}}" class="detail-row" hidden><td colspan="{{$.ColSpan}}">{{.Detail}}</td></tr>{{end}}
+    {{else}}<tr><td colspan="{{.ColSpan}}" class="muted">{{.Empty}}</td></tr>{{end}}
+  </table>
+  {{if gt .TotalPages 1}}
+  <div class="row spread pager">
+    <span class="small muted">{{.RangeStart}}–{{.RangeEnd}} of {{.Total}}</span>
+    <div class="row">
+      <button class="ghost small" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#{{.ID}}" hx-swap="outerHTML">‹ Prev</button>
+      <span class="small muted">page {{.Page}} / {{.TotalPages}}</span>
+      <button class="ghost small" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#{{.ID}}" hx-swap="outerHTML">Next ›</button>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
