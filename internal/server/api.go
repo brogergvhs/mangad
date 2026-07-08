@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +25,7 @@ func New(
 	apiKey string,
 ) http.Handler {
 	mux := http.NewServeMux()
+	registerUI(mux, svc, runJobs)
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -364,8 +367,9 @@ func New(
 		}
 		writeJSON(w, status, map[string]any{"ok": ok, "error": errorString(err)})
 	})
-	handler := limitBody(mux)
+	handler := csrfGuard(limitBody(mux))
 	if key := strings.TrimSpace(apiKey); key != "" {
+		registerLogin(mux, key)
 		handler = requireAPIKey(handler, key)
 	}
 	return handler
@@ -381,17 +385,77 @@ func limitBody(next http.Handler) http.Handler {
 	})
 }
 
-func requireAPIKey(next http.Handler, key string) http.Handler {
+// csrfGuard rejects state-changing requests whose Origin (browsers always send
+// it on cross-origin writes) does not match the host. Requests without an
+// Origin (curl, machine API clients) are not a CSRF vector and pass through.
+func csrfGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("X-API-Key")
-		if token == "" {
-			token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		}
-		if subtle.ConstantTimeCompare([]byte(token), []byte(key)) != 1 {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if origin := r.Header.Get("Origin"); origin != "" {
+				if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+					writeError(w, http.StatusForbidden, "cross-origin request blocked")
+					return
+				}
+			}
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// requireAPIKey authenticates via header, bearer, or a login cookie so the
+// browser UI stays usable (headers can't ride top-level navigations). Static
+// assets and the login route bootstrap the page unauthenticated.
+func requireAPIKey(next http.Handler, key string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if authorized(r, key) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+	})
+}
+
+func authorized(r *http.Request, key string) bool {
+	token := r.Header.Get("X-API-Key")
+	if token == "" {
+		token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	}
+	if token == "" {
+		if c, err := r.Cookie("mangad_session"); err == nil {
+			token = c.Value
+		}
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(key)) == 1
+}
+
+const loginHTML = `<!doctype html><meta charset="utf-8"><title>Sign in · MangaD</title>
+<link rel="stylesheet" href="/static/app.css">
+<main><h1>MangaD</h1><form class="panel stack" method="post" action="/login">
+<input type="password" name="key" placeholder="API key" autofocus>
+<button>Sign in</button></form></main>`
+
+func registerLogin(mux *http.ServeMux, key string) {
+	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, loginHTML)
+	})
+	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
+		if subtle.ConstantTimeCompare([]byte(r.FormValue("key")), []byte(key)) != 1 {
+			http.Error(w, "invalid key", http.StatusUnauthorized)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "mangad_session", Value: key, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 }
 

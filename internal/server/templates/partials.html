@@ -1,0 +1,117 @@
+{{define "toast"}}<div class="toast {{if .OK}}ok{{else}}err{{end}}">{{.Msg}}</div>{{end}}
+
+{{define "searchResults"}}
+<div class="results">
+  {{range .}}
+  <div class="result panel">
+    <img class="cover" src="{{.CoverImage}}" alt="" loading="lazy">
+    <div class="meta">
+      <div class="row spread">
+        <strong>{{mangaTitle .}}</strong>
+        <span class="small muted nowrap">{{.Format}} · {{.Status}}{{if .Chapters}} · {{.Chapters}} ch{{end}}</span>
+      </div>
+      <div class="desc small">{{.Description}}</div>
+    </div>
+    <div>{{template "wantedButton" .}}</div>
+  </div>
+  {{else}}<p class="muted">No results.</p>{{end}}
+</div>
+{{end}}
+
+{{define "wantedButton"}}
+{{if .Wanted}}<span class="badge done">✓ Wanted</span>
+{{else}}<button hx-post="/ui/wanted/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add to Wanted</button>{{end}}
+{{end}}
+
+{{define "matches"}}
+{{if .Active}}
+<div id="matches-{{.CatalogID}}" class="row" hx-get="/ui/wanted/{{.CatalogID}}/matches" hx-trigger="load delay:1200ms" hx-swap="outerHTML">
+  <span class="spin"></span> <span class="muted small">Searching sources…</span>
+</div>
+{{else}}
+<div id="matches-{{.CatalogID}}">
+  {{if .Failed}}<p class="small" style="color:var(--bad)">Source search failed{{if .Error}}: {{.Error}}{{end}}</p>
+  {{else if .Matches}}
+  <table>
+    <tr><th>Source</th><th>Chapters</th><th>Confidence</th><th></th></tr>
+    {{range .Matches}}
+    <tr>
+      <td>{{.SourceID}}<div class="small muted">{{.SourceURL}}</div></td>
+      <td>{{.ChaptersFound}}</td>
+      <td>{{confidence .Confidence}}</td>
+      <td class="nowrap"><button hx-post="/ui/wanted/track" hx-vals='{"match_id":{{.ID}}}' hx-target="this" hx-swap="outerHTML">Track</button></td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}<p class="muted small">No matching sources found yet.</p>{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "libraryRows"}}
+{{range .}}
+<tr>
+  <td><a href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a><div class="small muted">{{.Title.SourceID}}</div></td>
+  <td style="min-width:140px">{{template "progressBar" .Title}}</td>
+  <td>{{template "monitorToggle" .Title}}</td>
+  {{template "titleActivity" .}}
+  <td class="nowrap">
+    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Refresh</button>
+    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Download</button>
+  </td>
+</tr>
+{{else}}<tr><td colspan="5" class="muted">No tracked titles. Add one from <a href="/search">Search</a>.</td></tr>{{end}}
+{{end}}
+
+{{define "progressBar"}}
+<div class="progressbar"><span style="width:{{pct .CompletedCount .DiscoveredCount}}%"></span></div>
+<div class="small muted">{{.CompletedCount}}/{{.DiscoveredCount}} · {{.MissingCount}} missing</div>
+{{end}}
+
+{{define "monitorToggle"}}
+<button class="ghost small" title="Toggle monitoring"
+  hx-post="/ui/library/{{.ID}}/monitored" hx-vals='{"on":{{not .Monitored}}}' hx-target="this" hx-swap="outerHTML">
+  {{if .Monitored}}★ Monitored{{else}}☆ Off{{end}}
+</button>
+{{end}}
+
+{{define "titleActivity"}}
+<td id="act-{{.Title.ID}}" {{if .Active}}hx-get="/ui/library/{{.Title.ID}}/activity" hx-trigger="load delay:1200ms" hx-swap="outerHTML"{{end}}>
+  {{if .Active}}<span class="spin"></span> <span class="small">{{.ActiveLabel}}…</span>
+  {{else if .Failed}}<span class="badge broken">failed</span>{{if .Error}}<div class="small muted">{{.Error}}</div>{{end}}
+  {{else}}<span class="small muted">idle</span>{{end}}
+</td>
+{{end}}
+
+{{define "sourcesTable"}}
+<table id="sources-table">
+  <tr><th>Source</th><th>Status</th><th>Chapters</th><th>Fetch</th><th></th></tr>
+  {{range .}}{{template "sourceRow" sourceRow .}}{{end}}
+</table>
+{{end}}
+
+{{define "sourceRow"}}
+<tr id="src-{{.Source.ID}}" {{if .Active}}hx-get="/ui/sources/{{.Source.ID}}/row" hx-trigger="load delay:1500ms" hx-swap="outerHTML"{{end}}>
+  <td>{{.Source.Name}}<div class="small muted">{{range .Source.Domains}}{{.}} {{end}}</div></td>
+  <td>{{if .Active}}<span class="spin"></span> <span class="small">verifying</span>{{else}}<span class="badge {{.Source.Status}}">{{orUnknown .Source.Status}}</span>{{if .Source.LastError}}<div class="small muted">{{.Source.LastError}}</div>{{end}}{{end}}</td>
+  <td>{{.Source.ChaptersFound}}<div class="small muted">{{.Source.SampleImagesFound}} imgs</div></td>
+  <td class="small">{{orDash .Source.ChapterFetch}} / {{orDash .Source.ImageFetch}}</td>
+  <td class="nowrap"><button class="ghost" hx-post="/ui/sources/{{.Source.ID}}/verify" hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML" {{if not .Source.Enabled}}disabled{{end}}>Verify</button></td>
+</tr>
+{{end}}
+
+{{define "jobsList"}}
+<div id="jobs" {{if .AnyActive}}hx-get="/ui/jobs" hx-trigger="load delay:1500ms" hx-swap="outerHTML"{{end}}>
+  <table>
+    <tr><th>Job</th><th>Status</th><th>Attempts</th><th>When</th></tr>
+    {{range .Jobs}}
+    <tr>
+      <td>{{jobLabel .Type}}</td>
+      <td><span class="badge {{.Status}}">{{.Status}}</span>{{if .LastError}}<div class="small muted">{{.LastError}}</div>{{end}}</td>
+      <td>{{.Attempts}}</td>
+      <td class="small muted">{{since .UpdatedAt}}</td>
+    </tr>
+    {{else}}<tr><td colspan="4" class="muted">No jobs yet.</td></tr>{{end}}
+  </table>
+</div>
+{{end}}

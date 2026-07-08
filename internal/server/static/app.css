@@ -1,0 +1,86 @@
+:root {
+  --bg: #14161b;
+  --panel: #1c1f27;
+  --panel-2: #232733;
+  --border: #2c313d;
+  --text: #e6e9ef;
+  --muted: #98a1b3;
+  --accent: #5b8cff;
+  --ok: #3fb97f;
+  --warn: #e0a340;
+  --bad: #e5604d;
+  --cf: #a06be0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  display: flex; align-items: center; gap: 20px;
+  padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+header .brand { font-weight: 700; font-size: 17px; color: var(--text); }
+header nav { display: flex; gap: 16px; }
+header nav a { color: var(--muted); padding: 4px 0; }
+header nav a.active, header nav a:hover { color: var(--text); text-decoration: none; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+h2 { font-size: 17px; margin: 24px 0 12px; }
+.muted { color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; align-items: center; gap: 12px; }
+.spread { justify-content: space-between; }
+.grid { display: grid; gap: 12px; }
+.stack > * + * { margin-top: 8px; }
+input, select, textarea, button {
+  font: inherit; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+button {
+  cursor: pointer; background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+}
+button.ghost { background: var(--panel-2); border-color: var(--border); color: var(--text); font-weight: 500; }
+button.danger { background: transparent; border-color: var(--bad); color: var(--bad); }
+button:hover { filter: brightness(1.08); }
+button:disabled { opacity: .5; cursor: default; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; }
+tr:last-child td { border-bottom: none; }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+}
+.badge.healthy { color: var(--ok); border-color: var(--ok); }
+.badge.degraded { color: var(--warn); border-color: var(--warn); }
+.badge.broken { color: var(--bad); border-color: var(--bad); }
+.badge.requires_cf { color: var(--cf); border-color: var(--cf); }
+.badge.running { color: var(--accent); border-color: var(--accent); }
+.badge.done { color: var(--ok); border-color: var(--ok); }
+.badge.failed, .badge.dead { color: var(--bad); border-color: var(--bad); }
+.badge.queued { color: var(--warn); border-color: var(--warn); }
+.progressbar { height: 8px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+.progressbar > span { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+.cover { width: 56px; height: 80px; object-fit: cover; border-radius: 6px; background: var(--panel-2); }
+.cover.lg { width: 120px; height: 170px; }
+.results { display: grid; gap: 12px; }
+.result { display: flex; gap: 14px; }
+.result .meta { flex: 1; min-width: 0; }
+.result .meta .desc { color: var(--muted); font-size: 13px; max-height: 60px; overflow: hidden; }
+.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.htmx-indicator { opacity: 0; transition: opacity .2s; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+.toast { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; }
+.toast.ok { background: rgba(63,185,127,.12); border: 1px solid var(--ok); }
+.toast.err { background: rgba(229,96,77,.12); border: 1px solid var(--bad); }
+.small { font-size: 13px; }
+.nowrap { white-space: nowrap; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; }

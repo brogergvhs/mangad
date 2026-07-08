@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · MangaD</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <header>
+    <span class="brand">MangaD</span>
+    <nav>
+      <a href="/" class="{{if eq .Nav "dashboard"}}active{{end}}">Dashboard</a>
+      <a href="/search" class="{{if eq .Nav "search"}}active{{end}}">Search</a>
+      <a href="/wanted" class="{{if eq .Nav "wanted"}}active{{end}}">Wanted</a>
+      <a href="/library" class="{{if eq .Nav "library"}}active{{end}}">Library</a>
+      <a href="/sources" class="{{if eq .Nav "sources"}}active{{end}}">Sources</a>
+      <a href="/settings" class="{{if eq .Nav "settings"}}active{{end}}">Settings</a>
+    </nav>
+  </header>
+  <main>{{.Content}}</main>
+</body>
+</html>

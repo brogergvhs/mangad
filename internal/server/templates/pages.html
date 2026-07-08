@@ -1,0 +1,94 @@
+{{define "dashboard"}}
+<h1>Dashboard</h1>
+<div class="grid" style="grid-template-columns:1fr 1fr 1fr">
+  <div class="panel"><div class="muted small">Tracked titles</div><div style="font-size:26px">{{len .Titles}}</div></div>
+  <div class="panel"><div class="muted small">Missing chapters</div><div style="font-size:26px">{{missingTotal .Titles}}</div></div>
+  <div class="panel"><div class="muted small">Sources healthy</div><div style="font-size:26px">{{healthyCount .Sources}}/{{len .Sources}}</div></div>
+</div>
+<h2>Jobs</h2>
+{{template "jobsList" .}}
+{{end}}
+
+{{define "search"}}
+<h1>Search manga</h1>
+<form class="panel row" hx-post="/ui/search" hx-target="#search-results" hx-indicator="#search-spin">
+  <input name="q" placeholder="Search AniList…" autofocus style="flex:1" required>
+  <button>Search</button>
+  <span id="search-spin" class="spin htmx-indicator"></span>
+</form>
+<div id="search-results"></div>
+{{end}}
+
+{{define "wanted"}}
+<h1>Wanted</h1>
+<p class="muted small">Find and track download sources for the manga you want.</p>
+{{range .}}
+<div class="panel result">
+  <img class="cover" src="{{.CoverImage}}" alt="" loading="lazy">
+  <div class="meta">
+    <div class="row spread">
+      <strong>{{mangaTitle .}}</strong>
+      <button class="ghost" hx-post="/ui/wanted/{{.ID}}/match" hx-target="#matches-{{.ID}}" hx-swap="outerHTML">Find sources</button>
+    </div>
+    <div class="small muted">{{.Format}} · {{.Status}}{{if .Chapters}} · {{.Chapters}} ch{{end}}</div>
+    <div id="matches-{{.ID}}" style="margin-top:10px" hx-get="/ui/wanted/{{.ID}}/matches" hx-trigger="load" hx-swap="outerHTML"></div>
+  </div>
+</div>
+{{else}}<p class="muted">Nothing wanted yet. Add titles from <a href="/search">Search</a>.</p>{{end}}
+{{end}}
+
+{{define "library"}}
+<h1>Library</h1>
+<table class="panel" style="padding:0">
+  <tr><th>Title</th><th>Progress</th><th>Monitor</th><th>Activity</th><th></th></tr>
+  {{template "libraryRows" .}}
+</table>
+{{end}}
+
+{{define "title"}}
+<div class="row spread">
+  <h1>{{.Title.DisplayTitle}}</h1>
+  <div class="nowrap">
+    {{template "monitorToggle" .Title}}
+    <button class="danger" hx-post="/ui/library/{{.Title.ID}}/remove" hx-confirm="Remove this title?">Remove</button>
+  </div>
+</div>
+<div class="panel">
+  <div class="row spread">
+    <div class="small muted">{{.Title.SourceID}} · <a href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a></div>
+    <div class="small muted">refresh every {{.Title.RefreshInterval}}</div>
+  </div>
+  <div style="margin:12px 0">{{template "progressBar" .Title}}</div>
+  <div class="row">
+    <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Refresh chapters</button>
+    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Download missing</button>
+    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML">Scan files</button>
+    <table style="margin:0"><tr>{{template "titleActivity" .}}</tr></table>
+  </div>
+</div>
+<h2>Missing chapters ({{len .Missing}})</h2>
+<div class="panel">
+  {{range .Missing}}<div class="row spread"><span>{{.Label}} · {{.Title}}</span><a class="small" href="{{.URL}}" target="_blank" rel="noreferrer noopener">↗</a></div>{{else}}<p class="muted">Nothing missing.</p>{{end}}
+</div>
+{{end}}
+
+{{define "sources"}}
+<div class="row spread">
+  <h1>Sources</h1>
+  <button class="ghost" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
+</div>
+{{template "sourcesTable" .}}
+{{end}}
+
+{{define "settings"}}
+<h1>Settings</h1>
+<form class="panel stack" hx-put="/ui/settings" hx-target="#settings-msg">
+  {{range .Keys}}
+  <label class="row spread">
+    <span class="small">{{.}}</span>
+    <input name="{{.}}" value="{{index $.Values .}}" style="width:320px">
+  </label>
+  {{end}}
+  <div class="row"><button>Save</button><span id="settings-msg"></span></div>
+</form>
+{{end}}
