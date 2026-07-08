@@ -49,9 +49,10 @@ type activityView struct {
 	Manga         catalog.Manga
 	ChaptersTable tableData
 	Sources       matchView
-	SingleSources []sources.Source // single-manga sources selectable for linking
-	LinkSources   []sources.Source // searchable sources for specifying a page URL
-	Running       map[string]bool  // job type -> active (for button locking)
+	LinkedSources []linkedSourceView // sources already linked to this title
+	SingleSources []sources.Source   // single-manga sources selectable for linking
+	LinkSources   []sources.Source   // searchable sources for specifying a page URL
+	Running       map[string]bool    // job type -> active (for button locking)
 	ActiveLabel   string
 	Failed        bool
 	Error         string
@@ -65,6 +66,12 @@ type sourceProbeView struct {
 	SourceID string
 	URL      string
 	Result   service.SourceTestResult
+}
+type linkedSourceView struct {
+	Name     string
+	SourceID string
+	URL      string
+	Active   bool // the source used for refresh/download
 }
 type matchView struct {
 	DomID     string
@@ -164,6 +171,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/link-source", u.linkSourceByID)
 	mux.HandleFunc("POST /ui/library/{id}/verify-source", u.srcVerifyURL)
 	mux.HandleFunc("POST /ui/library/{id}/link-source-url", u.linkSourceURL)
+	mux.HandleFunc("POST /ui/library/{id}/unlink-source", u.unlinkSource)
 	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
 	mux.HandleFunc("POST /ui/import", u.importDo)
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
@@ -314,9 +322,11 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	view := u.titleActivity(r.Context(), id)
 	view.Title = title
 	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
-	view.Sources = u.sourceView(r.Context(), title)
-	view.SingleSources = u.singleMangaSources(r.Context())
-	view.LinkSources = u.searchableSources(r.Context())
+	linked := u.linkedSourceIDs(r.Context(), id)
+	view.LinkedSources = u.linkedSourceViews(r.Context(), title)
+	view.Sources = u.sourceView(r.Context(), title, linked)
+	view.SingleSources = filterSources(u.singleMangaSources(r.Context()), linked)
+	view.LinkSources = filterSources(u.searchableSources(r.Context()), linked)
 	if title.CatalogMangaID != nil {
 		view.Manga, _ = u.svc.GetManga(r.Context(), *title.CatalogMangaID)
 	}
@@ -395,8 +405,9 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 	return t
 }
 
-// sourceView builds the linkable-source list for a title's detail page.
-func (u *webUI) sourceView(ctx context.Context, title library.Title) matchView {
+// sourceView builds the candidate-source list for a title, excluding sources
+// already linked.
+func (u *webUI) sourceView(ctx context.Context, title library.Title, linked map[string]bool) matchView {
 	if title.CatalogMangaID == nil {
 		return titleSourceView(title, false, false, "", nil)
 	}
@@ -406,7 +417,49 @@ func (u *webUI) sourceView(ctx context.Context, title library.Title) matchView {
 		return titleSourceView(title, true, false, "", nil)
 	}
 	matches, _ := u.svc.ListMatches(ctx, cid)
-	return titleSourceView(title, false, failed, msg, matches)
+	kept := matches[:0]
+	for _, m := range matches {
+		if !linked[m.SourceID] {
+			kept = append(kept, m)
+		}
+	}
+	return titleSourceView(title, false, failed, msg, kept)
+}
+
+// linkedSourceIDs is the set of source IDs already linked to a title.
+func (u *webUI) linkedSourceIDs(ctx context.Context, titleID int64) map[string]bool {
+	links, _ := u.svc.ListTitleSources(ctx, titleID)
+	m := make(map[string]bool, len(links))
+	for _, l := range links {
+		if l.SourceID != "" {
+			m[l.SourceID] = true
+		}
+	}
+	return m
+}
+
+// linkedSourceViews resolves each linked source's display name and active state.
+func (u *webUI) linkedSourceViews(ctx context.Context, title library.Title) []linkedSourceView {
+	links, _ := u.svc.ListTitleSources(ctx, title.ID)
+	out := make([]linkedSourceView, 0, len(links))
+	for _, l := range links {
+		name := l.SourceID
+		if src, err := u.svc.GetSource(ctx, l.SourceID); err == nil && src.Name != "" {
+			name = src.Name
+		}
+		out = append(out, linkedSourceView{Name: name, SourceID: l.SourceID, URL: l.URL, Active: l.URL == title.SourceURL})
+	}
+	return out
+}
+
+func filterSources(list []sources.Source, linked map[string]bool) []sources.Source {
+	out := make([]sources.Source, 0, len(list))
+	for _, s := range list {
+		if !linked[s.ID] {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func (u *webUI) sourcesPage(w http.ResponseWriter, r *http.Request) {
@@ -605,7 +658,20 @@ func (u *webUI) titleSources(w http.ResponseWriter, r *http.Request) {
 		u.frag(w, "matches", matchView{DomID: fmt.Sprintf("sources-%d", id), PollURL: fmt.Sprintf("/ui/library/%d/sources", id)})
 		return
 	}
-	u.frag(w, "matches", u.sourceView(r.Context(), title))
+	u.frag(w, "matches", u.sourceView(r.Context(), title, u.linkedSourceIDs(r.Context(), id)))
+}
+
+func (u *webUI) unlinkSource(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.UnlinkTitleSource(r.Context(), id, r.FormValue("url")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
 }
 
 func (u *webUI) linkSource(w http.ResponseWriter, r *http.Request) {

@@ -172,7 +172,67 @@ func (r *Repository) LinkSource(ctx context.Context, id int64, sourceURL, source
 	if rows == 0 {
 		return fmt.Errorf("title %d not found", id)
 	}
+	if _, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO title_sources (title_id, source_id, url) VALUES (?, ?, ?)`, id, sid, sourceURL); err != nil {
+		return fmt.Errorf("record linked source: %w", err)
+	}
 	return nil
+}
+
+// LinkedSource is one source linked to a title.
+type LinkedSource struct {
+	ID       int64
+	SourceID string
+	URL      string
+}
+
+// ListTitleSources returns every source linked to a title, oldest first.
+func (r *Repository) ListTitleSources(ctx context.Context, titleID int64) ([]LinkedSource, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, source_id, url FROM title_sources WHERE title_id = ? ORDER BY created_at, id`, titleID)
+	if err != nil {
+		return nil, fmt.Errorf("list title sources: %w", err)
+	}
+	defer rows.Close()
+	var out []LinkedSource
+	for rows.Next() {
+		var ls LinkedSource
+		if err := rows.Scan(&ls.ID, &ls.SourceID, &ls.URL); err != nil {
+			return nil, fmt.Errorf("scan title source: %w", err)
+		}
+		out = append(out, ls)
+	}
+	return out, rows.Err()
+}
+
+// UnlinkSource removes a linked source; if it was the active one, another
+// linked source is promoted, or the title reverts to having no source.
+func (r *Repository) UnlinkSource(ctx context.Context, titleID int64, url string) error {
+	url = strings.TrimSpace(url)
+	var primary string
+	if err := r.db.QueryRowContext(ctx, `SELECT source_url FROM titles WHERE id = ?`, titleID).Scan(&primary); err != nil {
+		return fmt.Errorf("load title %d: %w", titleID, err)
+	}
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM title_sources WHERE title_id = ? AND url = ?`, titleID, url); err != nil {
+		return fmt.Errorf("unlink source: %w", err)
+	}
+	if primary != url {
+		return nil // removed a non-active source; the active one is unchanged
+	}
+	var sid, next string
+	err := r.db.QueryRowContext(ctx, `SELECT source_id, url FROM title_sources WHERE title_id = ? ORDER BY created_at, id LIMIT 1`, titleID).Scan(&sid, &next)
+	switch {
+	case err == nil:
+		var idAny any
+		if strings.TrimSpace(sid) != "" {
+			idAny = sid
+		}
+		_, err = r.db.ExecContext(ctx, `UPDATE titles SET source_url = ?, source_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, next, idAny, titleID)
+		return err
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = r.db.ExecContext(ctx, `UPDATE titles SET source_url = ?, source_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, fmt.Sprintf("pending:t%d", titleID), titleID)
+		return err
+	default:
+		return err
+	}
 }
 
 // SetMonitored toggles monitoring for a title.

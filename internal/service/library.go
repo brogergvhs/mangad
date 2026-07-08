@@ -87,6 +87,16 @@ func (s *LibraryService) ListTitles(ctx context.Context) ([]library.Title, error
 	return s.repo.ListTitles(ctx)
 }
 
+// ListTitleSources returns all sources linked to a title.
+func (s *LibraryService) ListTitleSources(ctx context.Context, titleID int64) ([]library.LinkedSource, error) {
+	return s.repo.ListTitleSources(ctx, titleID)
+}
+
+// UnlinkSource removes a linked source from a title.
+func (s *LibraryService) UnlinkSource(ctx context.Context, titleID int64, url string) error {
+	return s.repo.UnlinkSource(ctx, titleID, url)
+}
+
 // ListChapters returns all discovered chapters for a title with download state.
 func (s *LibraryService) ListChapters(ctx context.Context, titleID int64) ([]library.ChapterStatus, error) {
 	return s.repo.ListChapters(ctx, titleID)

@@ -337,6 +337,16 @@ func (s *JobService) TitleChapters(ctx context.Context, id int64) ([]library.Cha
 	return s.lib.ListChapters(ctx, id)
 }
 
+// ListTitleSources returns all sources linked to a title.
+func (s *JobService) ListTitleSources(ctx context.Context, id int64) ([]library.LinkedSource, error) {
+	return s.lib.ListTitleSources(ctx, id)
+}
+
+// UnlinkTitleSource removes a linked source from a title.
+func (s *JobService) UnlinkTitleSource(ctx context.Context, id int64, url string) error {
+	return s.lib.UnlinkSource(ctx, id, url)
+}
+
 // AddCatalogTitle adds an AniList manga to the library as a source-less title.
 func (s *JobService) AddCatalogTitle(ctx context.Context, anilistID int) (library.Title, error) {
 	return s.want.AddCatalogTitle(ctx, anilistID)
