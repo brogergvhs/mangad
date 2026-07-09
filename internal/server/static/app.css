@@ -355,6 +355,24 @@ tr:last-child td {
 .source-fold > table {
   margin-top: 12px;
 }
+.library-controls {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+}
+.library-controls label:first-child {
+  grid-column: span 2;
+}
+.library-controls label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+}
+.library-controls input,
+.library-controls select {
+  width: 100%;
+}
 
 /* settings fields */
 .setting { padding: 12px 0; border-bottom: 1px solid var(--border); gap: 16px; }
@@ -394,6 +412,12 @@ tr:last-child td {
 @media (max-width: 760px) {
   .dashboard-stats {
     grid-template-columns: 1fr 1fr;
+  }
+  .library-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+  .library-controls label:first-child {
+    grid-column: 1 / -1;
   }
   .result {
     flex-direction: column;

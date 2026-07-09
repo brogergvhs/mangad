@@ -45,7 +45,52 @@
 
 {{define "library"}}
 <h1>Library</h1>
-{{template "table" .}}
+<form class="panel library-controls" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change, keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML">
+  <label class="small">Search
+    <input name="q" value="{{.Controls.Q}}" placeholder="Title, source, status…" hx-trigger="keyup changed delay:300ms">
+  </label>
+  <label class="small">Monitor
+    <select name="monitor">
+      <option value="all" {{if eq .Controls.Monitor "all"}}selected{{end}}>All</option>
+      <option value="on" {{if eq .Controls.Monitor "on"}}selected{{end}}>Monitored</option>
+      <option value="off" {{if eq .Controls.Monitor "off"}}selected{{end}}>Off</option>
+    </select>
+  </label>
+  <label class="small">Source
+    <select name="source">
+      <option value="all" {{if eq .Controls.Source "all"}}selected{{end}}>All</option>
+      <option value="linked" {{if eq .Controls.Source "linked"}}selected{{end}}>Linked</option>
+      <option value="unlinked" {{if eq .Controls.Source "unlinked"}}selected{{end}}>Unlinked</option>
+      <option value="imported" {{if eq .Controls.Source "imported"}}selected{{end}}>Imported</option>
+    </select>
+  </label>
+  <label class="small">Progress
+    <select name="progress">
+      <option value="all" {{if eq .Controls.Progress "all"}}selected{{end}}>All</option>
+      <option value="missing" {{if eq .Controls.Progress "missing"}}selected{{end}}>Missing</option>
+      <option value="complete" {{if eq .Controls.Progress "complete"}}selected{{end}}>Complete</option>
+      <option value="empty" {{if eq .Controls.Progress "empty"}}selected{{end}}>No chapters</option>
+    </select>
+  </label>
+  <label class="small">Sort
+    <select name="sort">
+      <option value="title" {{if eq .Controls.Sort "title"}}selected{{end}}>Title</option>
+      <option value="missing" {{if eq .Controls.Sort "missing"}}selected{{end}}>Missing chapters</option>
+      <option value="chapters" {{if eq .Controls.Sort "chapters"}}selected{{end}}>Total chapters</option>
+      <option value="size" {{if eq .Controls.Sort "size"}}selected{{end}}>Size</option>
+      <option value="updated" {{if eq .Controls.Sort "updated"}}selected{{end}}>Updated</option>
+      <option value="status" {{if eq .Controls.Sort "status"}}selected{{end}}>Release status</option>
+    </select>
+  </label>
+  <label class="small">Direction
+    <select name="dir">
+      <option value="asc" {{if eq .Controls.Dir "asc"}}selected{{end}}>Ascending</option>
+      <option value="desc" {{if eq .Controls.Dir "desc"}}selected{{end}}>Descending</option>
+    </select>
+  </label>
+  <button class="ghost small">Apply</button>
+</form>
+<div id="library-results">{{template "table" .Table}}</div>
 {{end}}
 
 {{define "title"}}

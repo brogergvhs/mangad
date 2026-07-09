@@ -48,6 +48,18 @@ type dashData struct {
 	TotalPages int64
 	TotalChaps int64
 }
+type libraryView struct {
+	Controls libraryControls
+	Table    tableData
+}
+type libraryControls struct {
+	Q        string
+	Monitor  string
+	Source   string
+	Progress string
+	Sort     string
+	Dir      string
+}
 type healthView struct {
 	Services []service.ServiceHealth
 	Interval string // HTMX poll interval, e.g. "60s"
@@ -252,7 +264,11 @@ const (
 )
 
 func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
-	u.page(w, r, "library", "Library", u.buildLibraryTable(r.Context(), r.URL.Query()))
+	values := r.URL.Query()
+	u.page(w, r, "library", "Library", libraryView{
+		Controls: libraryControlsFrom(values),
+		Table:    u.buildLibraryTable(r.Context(), values),
+	})
 }
 
 func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
@@ -261,19 +277,29 @@ func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableData {
 	page, key, dir := tableParams(values, libraryPerPage)
+	if key == "" {
+		key = "title"
+	}
 	titles, _ := u.svc.ListTitles(ctx)
+	allCount := len(titles)
+	titles = filterTitles(titles, libraryControlsFrom(values))
 	sortTitles(titles, key, dir)
 	pageTitles, total := paginate(titles, page, libraryPerPage)
 	js := u.jobs(ctx)
+	empty := "Nothing in your library yet — add manga from Search or Import a collection."
+	if allCount > 0 {
+		empty = "No manga match the current search or filters."
+	}
 
 	t := tableData{
 		ID: "library-table", BaseURL: "/ui/library/table",
 		Page: page, PerPage: libraryPerPage, Total: total, Sort: key, Dir: dir,
-		Empty: "Nothing in your library yet — add manga from Search or Import a collection.",
+		Params: libraryTableParams(values),
+		Empty:  empty,
 		Columns: []tableColumn{
 			{Label: ""},
-			{Label: "Title", SortKey: "title"},
-			{Label: "Chapters", SortKey: "missing"},
+			{Label: "Title"},
+			{Label: "Chapters"},
 			{Label: "Monitor"},
 			{Label: "Status"},
 		},
@@ -303,6 +329,93 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 		})
 	}
 	return t
+}
+
+func libraryControlsFrom(values url.Values) libraryControls {
+	c := libraryControls{
+		Q:        strings.TrimSpace(values.Get("q")),
+		Monitor:  values.Get("monitor"),
+		Source:   values.Get("source"),
+		Progress: values.Get("progress"),
+		Sort:     values.Get("sort"),
+		Dir:      values.Get("dir"),
+	}
+	if c.Monitor == "" {
+		c.Monitor = "all"
+	}
+	if c.Source == "" {
+		c.Source = "all"
+	}
+	if c.Progress == "" {
+		c.Progress = "all"
+	}
+	if c.Sort == "" {
+		c.Sort = "title"
+	}
+	if c.Dir != "desc" {
+		c.Dir = "asc"
+	}
+	return c
+}
+
+func libraryTableParams(values url.Values) url.Values {
+	out := url.Values{}
+	for _, key := range []string{"q", "monitor", "source", "progress", "sort", "dir"} {
+		if value := strings.TrimSpace(values.Get(key)); value != "" {
+			out.Set(key, value)
+		}
+	}
+	return out
+}
+
+func filterTitles(titles []library.Title, c libraryControls) []library.Title {
+	q := strings.ToLower(c.Q)
+	out := titles[:0]
+	for _, title := range titles {
+		if q != "" && !strings.Contains(strings.ToLower(title.DisplayTitle+" "+title.SourceID+" "+title.ReleaseStatus), q) {
+			continue
+		}
+		switch c.Monitor {
+		case "on":
+			if !title.Monitored {
+				continue
+			}
+		case "off":
+			if title.Monitored {
+				continue
+			}
+		}
+		switch c.Source {
+		case "linked":
+			if !strings.HasPrefix(title.SourceURL, "http") {
+				continue
+			}
+		case "unlinked":
+			if strings.HasPrefix(title.SourceURL, "http") {
+				continue
+			}
+		case "imported":
+			if !strings.HasPrefix(title.SourceURL, "local:") {
+				continue
+			}
+		}
+		switch c.Progress {
+		case "missing":
+			if title.MissingCount == 0 {
+				continue
+			}
+		case "complete":
+			if title.DiscoveredCount == 0 || title.MissingCount != 0 {
+				continue
+			}
+		case "empty":
+			if title.DiscoveredCount != 0 {
+				continue
+			}
+		}
+		out = append(out, title)
+	}
+	return out
 }
 
 func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {

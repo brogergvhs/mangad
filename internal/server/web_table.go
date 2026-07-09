@@ -30,6 +30,7 @@ type tableRow struct {
 type tableData struct {
 	ID      string // dom id
 	BaseURL string // hx-get base for pagination and sort
+	Params  url.Values
 	Columns []tableColumn
 	Rows    []tableRow
 	Page    int
@@ -109,6 +110,11 @@ func (t tableData) SortMark(key string) string {
 
 func (t tableData) url(page int, sort, dir string) template.URL {
 	q := url.Values{}
+	for key, values := range t.Params {
+		for _, value := range values {
+			q.Add(key, value)
+		}
+	}
 	q.Set("page", strconv.Itoa(page))
 	if sort != "" {
 		q.Set("sort", sort)
@@ -172,6 +178,14 @@ func sortTitles(ts []library.Title, key, dir string) {
 		}
 	case "missing":
 		less = func(a, b library.Title) bool { return a.MissingCount < b.MissingCount }
+	case "chapters":
+		less = func(a, b library.Title) bool { return a.DiscoveredCount < b.DiscoveredCount }
+	case "size":
+		less = func(a, b library.Title) bool { return a.SizeBytes < b.SizeBytes }
+	case "updated":
+		less = func(a, b library.Title) bool { return a.UpdatedAt.Before(b.UpdatedAt) }
+	case "status":
+		less = func(a, b library.Title) bool { return a.ReleaseStatus < b.ReleaseStatus }
 	default:
 		return
 	}
