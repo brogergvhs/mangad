@@ -146,7 +146,7 @@ func paginate[T any](items []T, page, perPage int) ([]T, int) {
 	total := len(items)
 	start := (page - 1) * perPage
 	if start >= total {
-		start = maxInt(0, ((total-1)/perPage)*perPage)
+		start = max(0, ((total-1)/perPage)*perPage)
 	}
 	if start < 0 {
 		start = 0
@@ -156,13 +156,6 @@ func paginate[T any](items []T, page, perPage int) ([]T, int) {
 		end = total
 	}
 	return items[start:end], total
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // text escapes a plain string for safe embedding in a table cell.

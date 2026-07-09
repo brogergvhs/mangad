@@ -40,11 +40,9 @@ type pageData struct {
 	Content    template.HTML
 }
 type dashData struct {
-	Titles    []library.Title
-	Sources   []sources.Source
-	Jobs      []jobs.Job
-	AnyActive bool
-	Health    healthView
+	Titles  []library.Title
+	Sources []sources.Source
+	Health  healthView
 }
 type healthView struct {
 	Services []service.ServiceHealth
@@ -224,8 +222,7 @@ func (u *webUI) fail(w http.ResponseWriter, err error) {
 func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
 	srcs, _ := u.svc.ListSources(r.Context())
-	js, _ := u.svc.List(r.Context())
-	u.page(w, r, "dashboard", "Dashboard", dashData{Titles: titles, Sources: srcs, Jobs: js, AnyActive: anyActive(js), Health: u.healthView(r.Context())})
+	u.page(w, r, "dashboard", "Dashboard", dashData{Titles: titles, Sources: srcs, Health: u.healthView(r.Context())})
 }
 
 func (u *webUI) health(w http.ResponseWriter, r *http.Request) {
@@ -916,7 +913,7 @@ func customProfileFromForm(r *http.Request) (sources.Profile, bool, bool, error)
 	if id == "" {
 		return sources.Profile{}, false, false, fmt.Errorf("a name is required")
 	}
-	name = firstNonEmpty(name, host)
+	name = orDefault(name, host)
 	var domains []string
 	if host != "" {
 		domains = []string{host}
@@ -938,13 +935,6 @@ func formChecked(r *http.Request, name string) bool {
 		return true
 	}
 	return false
-}
-
-func firstNonEmpty(a, b string) string {
-	if strings.TrimSpace(a) != "" {
-		return a
-	}
-	return b
 }
 
 var reNonSlug = regexp.MustCompile(`[^a-z0-9]+`)
@@ -1128,18 +1118,16 @@ func pathID(r *http.Request) (int64, error) {
 
 func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
-		"mangaTitle":    mangaTitle,
-		"jobLabel":      jobLabel,
-		"since":         since,
-		"confidence":    func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
-		"orUnknown":     func(s string) string { return orDefault(s, "unknown") },
-		"orDash":        func(s string) string { return orDefault(s, "—") },
-		"linked":        func(s string) bool { return strings.HasPrefix(s, "http") },
-		"imported":      func(s string) bool { return strings.HasPrefix(s, "local:") },
-		"chapterSource": chapterSource,
-		"pathEscape":    url.PathEscape,
-		"pct":           func(done, total int64) int64 { return percent(done, total) },
-		"sourceRow":     func(s sources.Source) sourceRowView { return sourceRowView{Source: s} },
+		"mangaTitle": mangaTitle,
+		"since":      since,
+		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
+		"orUnknown":  func(s string) string { return orDefault(s, "unknown") },
+		"orDash":     func(s string) string { return orDefault(s, "—") },
+		"linked":     func(s string) bool { return strings.HasPrefix(s, "http") },
+		"imported":   func(s string) bool { return strings.HasPrefix(s, "local:") },
+		"pathEscape": url.PathEscape,
+		"pct":        func(done, total int64) int64 { return percent(done, total) },
+		"sourceRow":  func(s sources.Source) sourceRowView { return sourceRowView{Source: s} },
 		"missingTotal": func(ts []library.Title) int64 {
 			var n int64
 			for _, t := range ts {

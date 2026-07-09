@@ -47,7 +47,7 @@ func (s *WantedService) ExploreDownloads(ctx context.Context, root string) ([]Im
 		if !e.IsDir() || strings.HasSuffix(e.Name(), "_tmp") || tracked[e.Name()] {
 			continue
 		}
-		if n := countCBZ(filepath.Join(root, e.Name())); n > 0 {
+		if n := len(cbzFiles(filepath.Join(root, e.Name()))); n > 0 {
 			out = append(out, ImportCandidate{Folder: e.Name(), ChapterFiles: n})
 		}
 	}
@@ -199,10 +199,6 @@ func trackedDir(t library.Title) string {
 
 func localURL(s string) string {
 	return "local:" + url.PathEscape(s)
-}
-
-func countCBZ(dir string) int {
-	return len(cbzFiles(dir))
 }
 
 func cbzFiles(dir string) []string {

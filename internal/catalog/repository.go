@@ -228,18 +228,17 @@ func scanManga(row interface{ Scan(...any) error }) (Manga, error) {
 		v := int(volumes.Int64)
 		m.Volumes = &v
 	}
-	for name, dst := range map[string]*[]string{"synonyms": &m.Synonyms, "genres": &m.Genres, "authors": &m.Authors} {
-		var raw string
-		switch name {
-		case "synonyms":
-			raw = synonymsJSON
-		case "genres":
-			raw = genresJSON
-		case "authors":
-			raw = authorsJSON
-		}
-		if err := json.Unmarshal([]byte(raw), dst); err != nil {
-			return Manga{}, fmt.Errorf("decode %s for manga %d: %w", name, m.ID, err)
+	for _, f := range []struct {
+		name string
+		raw  string
+		dst  *[]string
+	}{
+		{"synonyms", synonymsJSON, &m.Synonyms},
+		{"genres", genresJSON, &m.Genres},
+		{"authors", authorsJSON, &m.Authors},
+	} {
+		if err := json.Unmarshal([]byte(f.raw), f.dst); err != nil {
+			return Manga{}, fmt.Errorf("decode %s for manga %d: %w", f.name, m.ID, err)
 		}
 	}
 	m.Wanted = wanted != 0

@@ -41,7 +41,6 @@ func newSourceService(db *sql.DB) *sourceService {
 type SourceTestResult struct {
 	ChaptersFound   int      `json:"chapters_found"`
 	SampleChapter   string   `json:"sample_chapter,omitempty"`
-	SampleURL       string   `json:"sample_url,omitempty"`
 	Images          []string `json:"images,omitempty"`
 	ImageExtensions []string `json:"image_extensions,omitempty"`
 	ChapterFetch    string   `json:"chapter_fetch"`
@@ -78,7 +77,6 @@ func (s *sourceService) TestProfile(ctx context.Context, cfg *config.Config, log
 	if res.SampleChapter == "" {
 		res.SampleChapter = first.Title
 	}
-	res.SampleURL = first.URL
 	images, err := svc.FetchImages(ctx, first)
 	if err != nil {
 		res.Error = fmt.Sprintf("chapters read OK, but the first chapter failed: %v", err)
