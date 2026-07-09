@@ -5,11 +5,11 @@ domains:
 base_url: https://coffeemanga.net/
 sample_manga_url: https://coffeemanga.net/manga/im-being-raised-by-villains/
 search_url: https://coffeemanga.net/?s={query}&post_type=wp-manga&op=&author=&artist=&release=&adult=
-scraper: generic
+scraper: madara
 allowed_extensions:
   - jpg
 min_chapters: 150
 requires_browser_solver: false
 requires_browser_downloader: true
 enabled: true
-version: "2026-06-29"
+version: "2026-07-09"

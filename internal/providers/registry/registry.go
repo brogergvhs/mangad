@@ -9,6 +9,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/providers/comickz"
 	"github.com/brogergvhs/mangad/internal/providers/generic"
+	"github.com/brogergvhs/mangad/internal/providers/madara"
 	"github.com/brogergvhs/mangad/internal/ui"
 )
 
@@ -21,6 +22,9 @@ var constructors = map[string]Constructor{
 	},
 	"comickz": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
 		return comickz.NewScraper(client, log, allowExt, checkJS, browser)
+	},
+	"madara": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
+		return madara.NewScraper(client, log, allowExt, checkJS, browser)
 	},
 }
 

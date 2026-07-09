@@ -396,6 +396,12 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 	return out, nil
 }
 
+// ScanChapterLinks extracts chapter links from a parsed page, for scrapers
+// that fetch chapter-list HTML from source-specific endpoints.
+func ScanChapterLinks(doc *goquery.Document, pageURL string, log ui.Log) []providers.Chapter {
+	return scanChapterLinks(doc, pageURL, log)
+}
+
 func (s *Scraper) expandChapterListIfGapped(ctx context.Context, pageURL string, doc *goquery.Document, chapters []providers.Chapter) []providers.Chapter {
 	if !hasDefinitiveChapterGap(chapters) {
 		return chapters
