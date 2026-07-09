@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/catalog"
+	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/service"
@@ -43,6 +44,11 @@ type dashData struct {
 	Sources   []sources.Source
 	Jobs      []jobs.Job
 	AnyActive bool
+	Health    healthView
+}
+type healthView struct {
+	Services []service.ServiceHealth
+	Interval string // HTMX poll interval, e.g. "60s"
 }
 type activityView struct {
 	Title         library.Title
@@ -127,6 +133,8 @@ func settingMeta(key string) (label, desc string) {
 		return "Job time limit", "Maximum time a single background job may run before it is aborted (e.g. 10m)."
 	case service.SettingDownloadsMaxAttempts:
 		return "Download retry limit", "How many times a failed chapter download is retried before giving up."
+	case service.SettingServicesHealthInterval:
+		return "Service health check interval", "How often the dashboard re-checks that FlareSolverr and the browser downloader are reachable (e.g. 60s, 2m)."
 	}
 	return key, ""
 }
@@ -182,6 +190,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/sources/custom", u.srcAddCustom)
 	mux.HandleFunc("GET /ui/library/table", u.libraryTable)
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
+	mux.HandleFunc("GET /ui/health", u.health)
 	mux.HandleFunc("PUT /ui/settings", u.settingsSave)
 }
 
@@ -215,7 +224,18 @@ func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
 	srcs, _ := u.svc.ListSources(r.Context())
 	js, _ := u.svc.List(r.Context())
-	u.page(w, r, "dashboard", "Dashboard", dashData{Titles: titles, Sources: srcs, Jobs: js, AnyActive: anyActive(js)})
+	u.page(w, r, "dashboard", "Dashboard", dashData{Titles: titles, Sources: srcs, Jobs: js, AnyActive: anyActive(js), Health: u.healthView(r.Context())})
+}
+
+func (u *webUI) health(w http.ResponseWriter, r *http.Request) {
+	u.frag(w, "servicesHealth", u.healthView(r.Context()))
+}
+
+func (u *webUI) healthView(ctx context.Context) healthView {
+	return healthView{
+		Services: u.svc.ServicesHealth(ctx),
+		Interval: u.svc.Setting(ctx, service.SettingServicesHealthInterval, service.SettingDefault(service.SettingServicesHealthInterval)),
+	}
 }
 
 const (
@@ -895,6 +915,16 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, key := range service.SettingKeys() {
 		value := strings.TrimSpace(r.FormValue(key))
+		// Leaving a field at its default clears any override so env/config wins
+		// (avoids the pre-filled default clobbering e.g. a solver endpoint set
+		// via environment).
+		if value == "" || value == service.SettingDefault(key) {
+			if err := u.svc.ClearSetting(r.Context(), key); err != nil {
+				u.fail(w, err)
+				return
+			}
+			continue
+		}
 		if err := service.ValidateSetting(key, value); err != nil {
 			u.fail(w, err)
 			return
@@ -910,18 +940,36 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 // --- helpers ---
 
 func (u *webUI) settings(ctx context.Context) settingsView {
+	cfg, _, _ := u.svc.RuntimeConfig(ctx) // effective config (env + settings merged)
 	keys := service.SettingKeys()
 	fields := make([]settingField, 0, len(keys))
 	for _, key := range keys {
 		label, desc := settingMeta(key)
-		fields = append(fields, settingField{
-			Key:   key,
-			Label: label,
-			Desc:  desc,
-			Value: u.svc.Setting(ctx, key, service.SettingDefault(key)),
-		})
+		value := u.svc.Setting(ctx, key, service.SettingDefault(key))
+		if cfg != nil {
+			if eff, ok := effectiveSetting(cfg, key); ok {
+				value = eff // show what's actually in effect (e.g. env-set endpoint)
+			}
+		}
+		fields = append(fields, settingField{Key: key, Label: label, Desc: desc, Value: value})
 	}
 	return settingsView{Fields: fields}
+}
+
+// effectiveSetting returns the in-effect value for env-backed settings so the
+// form reflects reality rather than the hard-coded default.
+func effectiveSetting(cfg *config.Config, key string) (string, bool) {
+	switch key {
+	case service.SettingBrowserSolverEnabled:
+		return strconv.FormatBool(cfg.BrowserSolver.Enabled), true
+	case service.SettingBrowserSolverProvider:
+		return cfg.BrowserSolver.Provider, true
+	case service.SettingBrowserSolverEndpoint:
+		return cfg.BrowserSolver.Endpoint, true
+	case service.SettingBrowserSolverTimeoutSeconds:
+		return strconv.Itoa(cfg.BrowserSolver.TimeoutSeconds), true
+	}
+	return "", false
 }
 
 // jobState classifies a job status for the UI: active covers pending retries

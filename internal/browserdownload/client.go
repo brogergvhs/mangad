@@ -45,6 +45,23 @@ func New(endpoint string, timeout time.Duration, client *http.Client) *Client {
 	return &Client{endpoint: strings.TrimRight(endpoint, "/"), client: client}
 }
 
+// Health reports whether the browser worker is reachable.
+func (c *Client) Health(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"/health", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("call browser downloader: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusInternalServerError {
+		return fmt.Errorf("browser downloader status %s", resp.Status)
+	}
+	return nil
+}
+
 func (c *Client) DownloadCBZ(ctx context.Context, req Request, output string) (Result, error) {
 	body, err := json.Marshal(req)
 	if err != nil {

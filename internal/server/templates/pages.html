@@ -5,8 +5,30 @@
   <div class="panel"><div class="muted small">Missing chapters</div><div style="font-size:26px">{{missingTotal .Titles}}</div></div>
   <div class="panel"><div class="muted small">Sources healthy</div><div style="font-size:26px">{{healthyCount .Sources}}/{{len .Sources}}</div></div>
 </div>
+<h2>Services</h2>
+{{template "servicesHealth" .Health}}
 <h2>Jobs</h2>
 <div hx-get="/ui/jobs/table" hx-trigger="load"></div>
+{{end}}
+
+{{define "servicesHealth"}}
+<div id="services-health" class="panel" style="padding:0" hx-get="/ui/health" hx-trigger="every {{.Interval}}" hx-swap="outerHTML">
+  <table style="margin:0">
+    <tr><th>Service</th><th>Status</th><th>Endpoint</th></tr>
+    {{range .Services}}
+    <tr>
+      <td class="nowrap">{{.Name}}</td>
+      <td class="nowrap">
+        {{if not .Enabled}}<span class="badge">disabled</span>
+        {{else if .Healthy}}<span class="badge healthy">healthy</span>
+        {{else}}<span class="badge broken">unreachable</span>{{end}}
+        {{if .Error}}<div class="small muted" style="max-width:420px;word-break:break-all">{{.Error}}</div>{{end}}
+      </td>
+      <td class="small muted">{{orDash .Endpoint}}</td>
+    </tr>
+    {{else}}<tr><td colspan="3" class="muted">No services configured.</td></tr>{{end}}
+  </table>
+</div>
 {{end}}
 
 {{define "search"}}

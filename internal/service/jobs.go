@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/config"
@@ -63,6 +64,8 @@ const (
 	SettingJobsTimeout          = "jobs.timeout"
 	SettingDownloadsMaxAttempts = "downloads.max_attempts"
 
+	SettingServicesHealthInterval = "services.health_interval"
+
 	defaultJobTimeout = 10 * time.Minute
 )
 
@@ -91,6 +94,8 @@ func SettingDefault(key string) string {
 		return "3"
 	case SettingJobsTimeout:
 		return "10m"
+	case SettingServicesHealthInterval:
+		return "60s"
 	default:
 		return ""
 	}
@@ -111,6 +116,7 @@ func SettingKeys() []string {
 		SettingJobsMaxAttempts,
 		SettingJobsTimeout,
 		SettingDownloadsMaxAttempts,
+		SettingServicesHealthInterval,
 	}
 }
 
@@ -121,7 +127,7 @@ func ValidateSetting(key, value string) error {
 	}
 
 	switch key {
-	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery:
+	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery, SettingServicesHealthInterval:
 		return validateDurationSetting(key, value)
 	case SettingBrowserSolverEnabled:
 		if _, err := strconv.ParseBool(value); err != nil {
@@ -276,6 +282,14 @@ func (s *JobService) SetSetting(ctx context.Context, key, value string) error {
 	`, key, value)
 	if err != nil {
 		return fmt.Errorf("set setting %s: %w", key, err)
+	}
+	return nil
+}
+
+// ClearSetting removes a stored override so the config/env default applies.
+func (s *JobService) ClearSetting(ctx context.Context, key string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("clear setting %s: %w", key, err)
 	}
 	return nil
 }
@@ -520,6 +534,48 @@ func (s *JobService) LinkTitleToSource(ctx context.Context, titleID int64, sourc
 		return library.Title{}, fmt.Errorf("source %q has no manga URL to link", src.Name)
 	}
 	return s.want.LinkTitleURL(ctx, titleID, src.SampleMangaURL, src.ID)
+}
+
+// ServiceHealth is the reachability of one external helper service.
+type ServiceHealth struct {
+	Name     string `json:"name"`
+	Endpoint string `json:"endpoint"`
+	Enabled  bool   `json:"enabled"`
+	Healthy  bool   `json:"healthy"`
+	Error    string `json:"error,omitempty"`
+}
+
+// ServicesHealth checks the configured FlareSolverr solver and browser
+// downloader, reporting each one's reachability.
+func (s *JobService) ServicesHealth(ctx context.Context) []ServiceHealth {
+	cfg, _, err := s.RuntimeConfig(ctx)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
+	solver := ServiceHealth{Name: "FlareSolverr (page solver)", Endpoint: cfg.BrowserSolver.Endpoint, Enabled: cfg.BrowserSolver.Enabled}
+	if solver.Enabled {
+		client := browserfetch.NewFlareSolverr(cfg.BrowserSolver.Endpoint, time.Duration(cfg.BrowserSolver.TimeoutSeconds)*time.Second, nil)
+		if err := client.Health(ctx); err != nil {
+			solver.Error = err.Error()
+		} else {
+			solver.Healthy = true
+		}
+	}
+
+	browser := ServiceHealth{Name: "Browser downloader (Selenium)", Endpoint: cfg.BrowserDownload.Endpoint, Enabled: cfg.BrowserDownload.Enabled}
+	if browser.Enabled {
+		client := browserdownload.New(cfg.BrowserDownload.Endpoint, 8*time.Second, nil)
+		if err := client.Health(ctx); err != nil {
+			browser.Error = err.Error()
+		} else {
+			browser.Healthy = true
+		}
+	}
+
+	return []ServiceHealth{solver, browser}
 }
 
 // SetSourceMethods overrides a source's chapter/image fetch methods.
