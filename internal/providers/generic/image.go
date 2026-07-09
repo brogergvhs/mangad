@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"html"
 	"net/url"
 	"path"
 	"regexp"
@@ -362,6 +363,14 @@ func (c *imageCollector) ScanLooseURLs(body string) {
 		return
 	}
 
+	// Decode HTML entities and JSON escapes first so quotes terminate URL
+	// matches. Sites like AsuraScans embed their page list as entity-escaped
+	// JSON, where a raw scan runs past the closing &quot; and yields a
+	// malformed URL the CDN rejects (HTTP 400).
+	body = html.UnescapeString(body)
+	body = strings.ReplaceAll(body, `\"`, `"`)
+	body = strings.ReplaceAll(body, `\u0026`, "&")
+	body = strings.ReplaceAll(body, `\/`, "/")
 	for _, u := range reLooseURLs.FindAllString(body, -1) {
 		c.add(u, -1)
 	}

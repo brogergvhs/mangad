@@ -75,3 +75,28 @@ func TestImageCollectorAllowsMarkedExtensionlessPageImages(t *testing.T) {
 		t.Fatalf("Finalize() = %#v", got)
 	}
 }
+
+func TestScanLooseURLsTruncatesEntityEscapedJSON(t *testing.T) {
+	// AsuraScans embeds its page list as entity-escaped JSON; the raw scan of
+	// the final entry must stop at &quot; instead of consuming the JSON tail,
+	// so it dedups into the real page-1 URL.
+	body := `{&quot;pages&quot;:[&quot;https://gg.asuracomic.net/storage/media/112/001.webp?v=1770499638&quot;,` +
+		`&quot;https://gg.asuracomic.net/storage/media/112/002.webp?v=1770499638&quot;],&quot;width&quot;:[0,1200]}` +
+		` also a JS-string form: "https://gg.asuracomic.net/storage/media/112/003.webp?v=1\",\"width\":[0]"`
+	c := newImageCollector(buildExtRegex([]string{"webp"}), nil)
+	c.ScanLooseURLs(body)
+	got := c.Finalize()
+	want := map[string]bool{
+		"https://gg.asuracomic.net/storage/media/112/001.webp?v=1770499638": true,
+		"https://gg.asuracomic.net/storage/media/112/002.webp?v=1770499638": true,
+		"https://gg.asuracomic.net/storage/media/112/003.webp?v=1":          true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("images = %#v, want 3 clean URLs", got)
+	}
+	for _, u := range got {
+		if !want[u] {
+			t.Fatalf("unexpected/malformed URL survived: %q", u)
+		}
+	}
+}
