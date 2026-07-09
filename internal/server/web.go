@@ -175,6 +175,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
 	mux.HandleFunc("POST /ui/import", u.importDo)
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
+	mux.HandleFunc("POST /ui/sources/{id}/methods", u.srcMethods)
 	mux.HandleFunc("GET /ui/sources/{id}/row", u.srcRow)
 	mux.HandleFunc("POST /ui/sources/sync", u.srcSync)
 	mux.HandleFunc("POST /ui/sources/test", u.srcTest)
@@ -769,6 +770,20 @@ func (u *webUI) srcRow(w http.ResponseWriter, r *http.Request) {
 	}
 	active, _, _ := u.jobStateFor(r.Context(), jobs.TypeVerifySource, service.JobPayload{SourceID: id})
 	u.frag(w, "sourceRow", sourceRowView{Source: src, Active: active})
+}
+
+func (u *webUI) srcMethods(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := u.svc.SetSourceMethods(r.Context(), id, r.FormValue("chapter_fetch"), r.FormValue("image_fetch")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	src, err := u.svc.GetSource(r.Context(), id)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "sourceRow", sourceRowView{Source: src})
 }
 
 func (u *webUI) srcSync(w http.ResponseWriter, r *http.Request) {

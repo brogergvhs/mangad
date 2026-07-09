@@ -522,6 +522,11 @@ func (s *JobService) LinkTitleToSource(ctx context.Context, titleID int64, sourc
 	return s.want.LinkTitleURL(ctx, titleID, src.SampleMangaURL, src.ID)
 }
 
+// SetSourceMethods overrides a source's chapter/image fetch methods.
+func (s *JobService) SetSourceMethods(ctx context.Context, sourceID, chapterFetch, imageFetch string) error {
+	return s.src.SetFetchMethods(ctx, sourceID, chapterFetch, imageFetch)
+}
+
 // TestSource probes a candidate source profile with the chosen fetch methods.
 func (s *JobService) TestSource(ctx context.Context, profile sources.Profile, useSolver, useBrowser bool) (SourceTestResult, error) {
 	cfg, logSvc, err := s.RuntimeConfig(ctx)

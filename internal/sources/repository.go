@@ -149,6 +149,24 @@ func (r *Repository) Get(ctx context.Context, id string) (Source, error) {
 }
 
 // UpdateCheck stores the latest source verification result.
+// SetFetchMethods overrides the learned chapter/image fetch methods for a
+// source. Empty values mean "auto" (fall back to profile hints / re-learn).
+func (r *Repository) SetFetchMethods(ctx context.Context, id, chapterFetch, imageFetch string) error {
+	id = strings.ToLower(strings.TrimSpace(id))
+	result, err := r.db.ExecContext(ctx, `UPDATE sources SET chapter_fetch = ?, image_fetch = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, chapterFetch, imageFetch, id)
+	if err != nil {
+		return fmt.Errorf("set fetch methods for %s: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("source %q not found", id)
+	}
+	return nil
+}
+
 func (r *Repository) UpdateCheck(ctx context.Context, id, status, lastErr string, chapters, images int, extensions []string, chapterFetch, imageFetch string) error {
 	id = strings.ToLower(strings.TrimSpace(id))
 	encoded, err := encodeList(extensions)

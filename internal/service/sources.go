@@ -121,6 +121,24 @@ func (s *sourceService) ImportLocal(ctx context.Context, profile sources.Profile
 	return s.repo.Sync(ctx, []sources.Profile{profile}, sources.OriginLocal)
 }
 
+// SetFetchMethods overrides a source's chapter/image fetch methods. Empty means
+// "auto". chapter is http|solver; image is http|browser.
+func (s *sourceService) SetFetchMethods(ctx context.Context, id, chapterFetch, imageFetch string) error {
+	chapterFetch = strings.TrimSpace(chapterFetch)
+	imageFetch = strings.TrimSpace(imageFetch)
+	switch chapterFetch {
+	case "", sources.FetchHTTP, sources.FetchSolver:
+	default:
+		return fmt.Errorf("invalid chapter fetch method %q", chapterFetch)
+	}
+	switch imageFetch {
+	case "", sources.FetchHTTP, sources.FetchBrowser:
+	default:
+		return fmt.Errorf("invalid image fetch method %q", imageFetch)
+	}
+	return s.repo.SetFetchMethods(ctx, id, chapterFetch, imageFetch)
+}
+
 func (s *sourceService) RemoveLocal(ctx context.Context, id string) error {
 	return s.repo.RemoveLocal(ctx, strings.TrimSpace(id))
 }
@@ -162,8 +180,11 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 	// cookies). Escalating on image failure means the learned solver method
 	// carries through to real downloads.
 	attempts := []bool{false}
-	if cfg.BrowserSolver.Enabled {
+	if cfg.BrowserSolver.Enabled || src.ChapterFetch == sources.FetchSolver || src.RequiresBrowserSolver {
 		attempts = append(attempts, true)
+	}
+	if src.ChapterFetch == sources.FetchSolver {
+		attempts = []bool{true} // source is pinned to the solver; don't waste an http probe
 	}
 	var lastErr error
 	for _, useSolver := range attempts {

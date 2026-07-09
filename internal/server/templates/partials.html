@@ -70,7 +70,7 @@
 
 {{define "sourcesTable"}}
 <table id="sources-table">
-  <tr><th>Source</th><th>Status</th><th>Chapters</th><th>Fetch</th><th></th></tr>
+  <tr><th>Source</th><th>Status</th><th>Chapters</th><th>Fetch (pages / images)</th><th></th></tr>
   {{range .}}{{template "sourceRow" sourceRow .}}{{end}}
 </table>
 {{end}}
@@ -80,7 +80,21 @@
   <td>{{.Source.Name}}<div class="small muted">{{range .Source.Domains}}{{.}} {{end}}</div></td>
   <td>{{if .Active}}<span class="spin"></span> <span class="small">verifying</span>{{else}}<span class="badge {{.Source.Status}}">{{orUnknown .Source.Status}}</span>{{if .Source.LastError}}<div class="small muted">{{.Source.LastError}}</div>{{end}}{{end}}</td>
   <td>{{.Source.ChaptersFound}}<div class="small muted">{{.Source.SampleImagesFound}} imgs</div></td>
-  <td class="small">{{orDash .Source.ChapterFetch}} / {{orDash .Source.ImageFetch}}</td>
+  <td class="small">
+    <form class="row" style="gap:4px" hx-post="/ui/sources/{{.Source.ID}}/methods" hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML" title="Pages / images fetch method">
+      <select name="chapter_fetch" style="padding:2px 6px">
+        <option value="" {{if eq .Source.ChapterFetch ""}}selected{{end}}>auto</option>
+        <option value="http" {{if eq .Source.ChapterFetch "http"}}selected{{end}}>http</option>
+        <option value="solver" {{if eq .Source.ChapterFetch "solver"}}selected{{end}}>solver</option>
+      </select>
+      <select name="image_fetch" style="padding:2px 6px">
+        <option value="" {{if eq .Source.ImageFetch ""}}selected{{end}}>auto</option>
+        <option value="http" {{if eq .Source.ImageFetch "http"}}selected{{end}}>http</option>
+        <option value="browser" {{if eq .Source.ImageFetch "browser"}}selected{{end}}>browser</option>
+      </select>
+      <button class="ghost small" title="Save fetch methods">✓</button>
+    </form>
+  </td>
   <td class="nowrap"><button class="ghost" hx-post="/ui/sources/{{.Source.ID}}/verify" hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML" {{if not .Source.Enabled}}disabled{{end}}>Verify</button></td>
 </tr>
 {{end}}
