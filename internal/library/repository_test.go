@@ -213,3 +213,80 @@ func TestRepositoryDownloadAttemptCap(t *testing.T) {
 		t.Fatalf("attempts after completion = %d, want 0", attempts)
 	}
 }
+
+func TestUnlinkSourcePrunesUndownloadedChapters(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewRepository(db)
+	title, err := repo.AddTitle(ctx, AddTitleParams{
+		SourceURL: "pending:1", DisplayTitle: "Demo", Monitored: true, RefreshInterval: "12h",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO sources (id, name) VALUES ('a','A'), ('b','B')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.LinkSource(ctx, title.ID, "https://a.test/manga/demo", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.LinkSource(ctx, title.ID, "https://b.test/manga/demo", "b"); err != nil {
+		t.Fatal(err)
+	}
+	// Chapters carrying source A urls: one downloaded, one missing. Plus a
+	// local imported chapter that must never be pruned.
+	if _, err := repo.UpsertChapters(ctx, title.ID, []chapters.Chapter{
+		{Chapter: providers.Chapter{URL: "https://www.a.test/manga/demo/ch-1", Label: "1", NumMain: 1}},
+		{Chapter: providers.Chapter{URL: "https://a.test/manga/demo/ch-2", Label: "2", NumMain: 2}},
+		{Chapter: providers.Chapter{URL: "local:demo/ch-3.cbz", Label: "3", NumMain: 3}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ch1, err := repo.GetChapterByLabel(ctx, title.ID, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkDownloadCompleted(ctx, ch1.ID, "/tmp/ch-1.cbz", 10); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unlink source A (the active one is B; A's undownloaded chapters go).
+	if err := repo.UnlinkSource(ctx, title.ID, "https://a.test/manga/demo"); err != nil {
+		t.Fatal(err)
+	}
+
+	left, err := repo.ListChapters(ctx, title.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]bool{}
+	for _, c := range left {
+		labels[c.Label] = true
+	}
+	if !labels["1"] {
+		t.Fatal("downloaded chapter 1 was pruned")
+	}
+	if labels["2"] {
+		t.Fatal("undownloaded chapter 2 from unlinked source was kept")
+	}
+	if !labels["3"] {
+		t.Fatal("local imported chapter 3 was pruned")
+	}
+	links, err := repo.ListTitleSources(ctx, title.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].SourceID != "b" {
+		t.Fatalf("links = %#v", links)
+	}
+}

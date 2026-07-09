@@ -214,6 +214,9 @@ func (r *Repository) UnlinkSource(ctx context.Context, titleID int64, url string
 	if _, err := r.db.ExecContext(ctx, `DELETE FROM title_sources WHERE title_id = ? AND url = ?`, titleID, url); err != nil {
 		return fmt.Errorf("unlink source: %w", err)
 	}
+	if err := r.pruneSourceChapters(ctx, titleID, url); err != nil {
+		return err
+	}
 	if primary != url {
 		return nil // removed a non-active source; the active one is unchanged
 	}
@@ -233,6 +236,65 @@ func (r *Repository) UnlinkSource(ctx context.Context, titleID int64, url string
 	default:
 		return err
 	}
+}
+
+// pruneSourceChapters removes a title's chapters discovered from the given
+// source URL (matched by host) that have no completed download; downloaded
+// chapters always stay.
+func (r *Repository) pruneSourceChapters(ctx context.Context, titleID int64, unlinkedURL string) error {
+	host := chapterHost(unlinkedURL)
+	if host == "" {
+		return nil
+	}
+	// Another linked source on the same host still owns these chapters.
+	links, err := r.ListTitleSources(ctx, titleID)
+	if err != nil {
+		return err
+	}
+	for _, l := range links {
+		if chapterHost(l.URL) == host {
+			return nil
+		}
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.id, c.url FROM chapters c
+		LEFT JOIN downloads d ON d.chapter_id = c.id AND d.status = 'completed'
+		WHERE c.title_id = ? AND d.id IS NULL
+	`, titleID)
+	if err != nil {
+		return fmt.Errorf("list undownloaded chapters: %w", err)
+	}
+	defer rows.Close()
+	var ids []any
+	for rows.Next() {
+		var id int64
+		var chapterURL string
+		if err := rows.Scan(&id, &chapterURL); err != nil {
+			return fmt.Errorf("scan chapter: %w", err)
+		}
+		if chapterHost(chapterURL) == host {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query := `DELETE FROM chapters WHERE id IN (?` + strings.Repeat(",?", len(ids)-1) + `)`
+	if _, err := r.db.ExecContext(ctx, query, ids...); err != nil {
+		return fmt.Errorf("prune %d chapters: %w", len(ids), err)
+	}
+	return nil
+}
+
+func chapterHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(strings.ToLower(u.Host), "www.")
 }
 
 // SetMonitored toggles monitoring for a title.
