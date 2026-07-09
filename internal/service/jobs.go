@@ -207,6 +207,10 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 		_ = db.Close()
 		return nil, nil, err
 	}
+	if _, err := svc.lib.ScanDownloads(ctx, 0); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
 	if _, err := svc.jobs.ReconcileRunning(ctx); err != nil {
 		_ = db.Close()
 		return nil, nil, err

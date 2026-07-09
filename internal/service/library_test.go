@@ -1,6 +1,7 @@
 package service
 
 import (
+	"archive/zip"
 	"context"
 	"os"
 	"path/filepath"
@@ -225,4 +226,95 @@ func TestScanDownloadsMarksMissingFilesFailed(t *testing.T) {
 	if len(missing) != 1 || missing[0].Label != "1" {
 		t.Fatalf("ListMissingChapters() = %+v, want chapter 1 missing", missing)
 	}
+}
+
+func TestOpenLibraryBackfillsDownloadStats(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "mangad.db")
+	db, err := database.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	repo := library.NewRepository(db)
+	title, err := repo.AddTitle(ctx, library.AddTitleParams{
+		SourceURL:    "https://example.test/manga",
+		DisplayTitle: "Example",
+		Monitored:    true,
+	})
+	if err != nil {
+		t.Fatalf("AddTitle() error = %v", err)
+	}
+	if _, err := repo.UpsertChapters(ctx, title.ID, []chapters.Chapter{
+		{Chapter: providers.Chapter{URL: "https://example.test/ch-1", Title: "Chapter 1", Label: "1", NumMain: 1}},
+	}); err != nil {
+		t.Fatalf("UpsertChapters() error = %v", err)
+	}
+	chapter, err := repo.GetChapterByLabel(ctx, title.ID, "1")
+	if err != nil {
+		t.Fatalf("GetChapterByLabel() error = %v", err)
+	}
+	cbz := filepath.Join(dir, "chapter.cbz")
+	size := writeTestCBZ(t, cbz)
+	if err := repo.MarkDownloadCompleted(ctx, chapter.ID, cbz, 0, 0); err != nil {
+		t.Fatalf("MarkDownloadCompleted() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	svc, closeDB, err := OpenLibrary(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("OpenLibrary() error = %v", err)
+	}
+	defer closeDB()
+	gotTitle, err := svc.GetTitle(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("GetTitle() error = %v", err)
+	}
+	if gotTitle.SizeBytes != size || gotTitle.Pages != 2 {
+		t.Fatalf("stats = %d bytes/%d pages, want %d/2", gotTitle.SizeBytes, gotTitle.Pages, size)
+	}
+	chs, err := svc.ListChapters(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ListChapters() error = %v", err)
+	}
+	if len(chs) != 1 || chs[0].Bytes != size || chs[0].Pages != 2 {
+		t.Fatalf("chapter stats = %+v, want %d bytes/2 pages", chs, size)
+	}
+}
+
+func writeTestCBZ(t *testing.T, path string) int64 {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	zw := zip.NewWriter(f)
+	for _, name := range []string{"001.jpg", "002.png"} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip Create() error = %v", err)
+		}
+		if _, err := w.Write([]byte("image")); err != nil {
+			t.Fatalf("zip Write() error = %v", err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip Close() error = %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("file Close() error = %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	return info.Size()
 }

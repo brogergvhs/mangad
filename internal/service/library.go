@@ -55,6 +55,10 @@ func OpenLibrary(ctx context.Context, dbPath string) (*LibraryService, func(), e
 		_ = db.Close()
 		return nil, nil, err
 	}
+	if _, err := svc.ScanDownloads(ctx, 0); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
 	return svc, func() { _ = db.Close() }, nil
 }
 
