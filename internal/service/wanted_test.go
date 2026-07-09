@@ -76,11 +76,11 @@ func TestSearchStructuredLinksUsesSlugResults(t *testing.T) {
 }
 
 func TestSearchStructuredLinksUsesPublicURLResults(t *testing.T) {
-	urls := searchStructuredLinks(`{"items":[{"title":"Academy's Genius Swordmaster","public_url":"/comics/academys-genius-swordmaster-fc4c7eba"}]}`, sources.Source{Profile: sources.Profile{
+	urls := searchStructuredLinks(`{"items":[{"title":"Academy's Genius Swordmaster","public_url":"/comics/academys-genius-swordmaster"}]}`, sources.Source{Profile: sources.Profile{
 		BaseURL:        "https://asurascans.com/",
-		SampleMangaURL: "https://asurascans.com/comics/academys-genius-swordmaster-fc4c7eba",
+		SampleMangaURL: "https://asurascans.com/comics/academys-genius-swordmaster",
 	}}, catalog.Manga{TitleEnglish: "Academy's Genius Swordmaster"})
-	if len(urls) != 1 || urls[0] != "https://asurascans.com/comics/academys-genius-swordmaster-fc4c7eba" {
+	if len(urls) != 1 || urls[0] != "https://asurascans.com/comics/academys-genius-swordmaster" {
 		t.Fatalf("urls = %#v", urls)
 	}
 }
