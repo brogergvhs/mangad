@@ -2,13 +2,12 @@
 
 {{define "cellTitle"}}
 <a href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a>
-<div class="small muted">{{if linked .Title.SourceURL}}{{.Title.SourceID}}{{else if imported .Title.SourceURL}}imported{{else}}no source{{end}}</div>
+<div class="small muted">{{if .Title.ReleaseStatus}}{{releaseStatus .Title.ReleaseStatus}}{{else}}unknown status{{end}} · {{humanBytes .Title.SizeBytes}}</div>
 {{end}}
 
 {{define "cellActivity"}}
 {{if .Running}}<span class="spin"></span> <span class="small">{{.ActiveLabel}}…</span>
-{{else if .Failed}}<span class="badge broken">failed</span>
-{{else}}<span class="small muted">idle</span>{{end}}
+{{else if .Failed}}<span class="badge broken">failed</span>{{end}}
 {{end}}
 
 {{define "mangaDetail"}}

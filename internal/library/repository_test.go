@@ -69,7 +69,7 @@ func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	if err := repo.MarkDownloadStarted(ctx, chapterID); err != nil {
 		t.Fatalf("MarkDownloadStarted() error = %v", err)
 	}
-	if err := repo.MarkDownloadCompleted(ctx, chapterID, "chapter-1.cbz", 123); err != nil {
+	if err := repo.MarkDownloadCompleted(ctx, chapterID, "chapter-1.cbz", 123, 20); err != nil {
 		t.Fatalf("MarkDownloadCompleted() error = %v", err)
 	}
 	completed, err := repo.ListCompletedDownloads(ctx, title.ID)
@@ -202,7 +202,7 @@ func TestRepositoryDownloadAttemptCap(t *testing.T) {
 	}
 
 	// A completed download resets the attempt counter.
-	if err := repo.MarkDownloadCompleted(ctx, chapterID, "out.cbz", 1); err != nil {
+	if err := repo.MarkDownloadCompleted(ctx, chapterID, "out.cbz", 1, 1); err != nil {
 		t.Fatalf("MarkDownloadCompleted() error = %v", err)
 	}
 	var attempts int
@@ -256,7 +256,7 @@ func TestUnlinkSourcePrunesUndownloadedChapters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.MarkDownloadCompleted(ctx, ch1.ID, "/tmp/ch-1.cbz", 10); err != nil {
+	if err := repo.MarkDownloadCompleted(ctx, ch1.ID, "/tmp/ch-1.cbz", 10, 5); err != nil {
 		t.Fatal(err)
 	}
 

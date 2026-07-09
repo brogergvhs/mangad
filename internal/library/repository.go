@@ -441,6 +441,8 @@ type ChapterStatus struct {
 	Attempts   int
 	Error      string
 	OutputFile string
+	Bytes      int64
+	Pages      int
 }
 
 // ListChapters returns all discovered chapters for a title with download state.
@@ -449,7 +451,7 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 		SELECT c.id, c.title_id, c.label, c.title, c.url, c.number_main, c.suffix_type, c.suffix_num,
 			c.discovered_at, c.updated_at,
 			COALESCE(d.status, ''), COALESCE(d.attempts, 0), COALESCE(d.error, ''),
-			COALESCE(d.output_file, '')
+			COALESCE(d.output_file, ''), COALESCE(d.bytes, 0), COALESCE(d.pages, 0)
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
 		WHERE c.title_id = ?
@@ -466,7 +468,7 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 		var discoveredAt, updatedAt, status string
 		if err := rows.Scan(&cs.ID, &cs.TitleID, &cs.Label, &cs.Title, &cs.URL, &cs.NumberMain,
 			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt,
-			&status, &cs.Attempts, &cs.Error, &cs.OutputFile); err != nil {
+			&status, &cs.Attempts, &cs.Error, &cs.OutputFile, &cs.Bytes, &cs.Pages); err != nil {
 			return nil, fmt.Errorf("scan chapter: %w", err)
 		}
 		cs.Downloaded = status == "completed"
@@ -531,12 +533,12 @@ func (r *Repository) GetChapterByLabel(ctx context.Context, titleID int64, label
 
 // MarkDownloadStarted records that a chapter download started.
 func (r *Repository) MarkDownloadStarted(ctx context.Context, chapterID int64) error {
-	return r.markDownload(ctx, chapterID, "started", "", 0, "")
+	return r.markDownload(ctx, chapterID, "started", "", 0, 0, "")
 }
 
 // MarkDownloadCompleted records that a chapter download completed.
-func (r *Repository) MarkDownloadCompleted(ctx context.Context, chapterID int64, outputFile string, bytes int64) error {
-	return r.markDownload(ctx, chapterID, "completed", outputFile, bytes, "")
+func (r *Repository) MarkDownloadCompleted(ctx context.Context, chapterID int64, outputFile string, bytes int64, pages int) error {
+	return r.markDownload(ctx, chapterID, "completed", outputFile, bytes, pages, "")
 }
 
 // MarkDownloadFailed records that a chapter download failed.
@@ -545,7 +547,7 @@ func (r *Repository) MarkDownloadFailed(ctx context.Context, chapterID int64, ca
 	if cause != nil {
 		msg = cause.Error()
 	}
-	return r.markDownload(ctx, chapterID, "failed", "", 0, msg)
+	return r.markDownload(ctx, chapterID, "failed", "", 0, 0, msg)
 }
 
 // ReconcileStartedDownloads marks interrupted downloads as failed.
@@ -605,23 +607,25 @@ func (r *Repository) ListCompletedDownloads(ctx context.Context, titleID int64) 
 	return out, nil
 }
 
-func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, outputFile string, bytes int64, msg string) error {
+func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, outputFile string, bytes int64, pages int, msg string) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO downloads (
 			chapter_id,
 			status,
 			output_file,
 			bytes,
+			pages,
 			attempts,
 			error,
 			started_at,
 			completed_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, CASE WHEN ? = 'failed' THEN 1 ELSE 0 END, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP END, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, CASE WHEN ? = 'failed' THEN 1 ELSE 0 END, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP END, CURRENT_TIMESTAMP)
 		ON CONFLICT(chapter_id) DO UPDATE SET
 			status = excluded.status,
 			output_file = excluded.output_file,
 			bytes = excluded.bytes,
+			pages = excluded.pages,
 			attempts = CASE excluded.status
 				WHEN 'failed' THEN downloads.attempts + 1
 				WHEN 'completed' THEN 0
@@ -631,7 +635,7 @@ func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, 
 			started_at = CASE WHEN excluded.status = 'started' THEN CURRENT_TIMESTAMP ELSE downloads.started_at END,
 			completed_at = CASE WHEN excluded.status = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
 			updated_at = CURRENT_TIMESTAMP
-	`, chapterID, status, outputFile, bytes, status, msg, status)
+	`, chapterID, status, outputFile, bytes, pages, status, msg, status)
 	if err != nil {
 		return fmt.Errorf("mark download %s for chapter %d: %w", status, chapterID, err)
 	}
@@ -700,9 +704,12 @@ func titleSelectQuery() string {
 			COUNT(DISTINCT c.id) AS discovered_count,
 			COUNT(DISTINCT CASE WHEN d.status = 'completed' THEN d.id END) AS completed_count,
 			COUNT(DISTINCT CASE WHEN d.id IS NULL OR d.status != 'completed' THEN c.id END) AS missing_count,
+			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.bytes END), 0) AS size_bytes,
+			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.pages END), 0) AS pages,
 			t.created_at,
 			t.updated_at,
-			COALESCE(m.cover_image, '')
+			COALESCE(m.cover_image, ''),
+			COALESCE(m.status, '')
 		FROM titles t
 		LEFT JOIN chapters c ON c.title_id = t.id
 		LEFT JOIN downloads d ON d.chapter_id = c.id
@@ -731,9 +738,12 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&title.DiscoveredCount,
 		&title.CompletedCount,
 		&title.MissingCount,
+		&title.SizeBytes,
+		&title.Pages,
 		&createdAt,
 		&updatedAt,
 		&title.CoverImage,
+		&title.ReleaseStatus,
 	); err != nil {
 		return Title{}, err
 	}

@@ -194,7 +194,7 @@ func TestScanDownloadsMarksMissingFilesFailed(t *testing.T) {
 	if err := os.WriteFile(out, []byte("cbz"), 0644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if err := repo.MarkDownloadCompleted(ctx, chapter.ID, out, 3); err != nil {
+	if err := repo.MarkDownloadCompleted(ctx, chapter.ID, out, 3, 2); err != nil {
 		t.Fatalf("MarkDownloadCompleted() error = %v", err)
 	}
 

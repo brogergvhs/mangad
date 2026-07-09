@@ -1,6 +1,7 @@
 package service
 
 import (
+	"archive/zip"
 	"context"
 	"fmt"
 	"net/url"
@@ -130,7 +131,7 @@ func (s *WantedService) ImportFolder(ctx context.Context, root, folder string, a
 		if info, err := os.Stat(path); err == nil {
 			size = info.Size()
 		}
-		if err := s.library.MarkDownloadCompleted(ctx, ch.ID, path, size); err != nil {
+		if err := s.library.MarkDownloadCompleted(ctx, ch.ID, path, size, cbzPageCount(path)); err != nil {
 			return library.Title{}, err
 		}
 	}
@@ -199,6 +200,23 @@ func trackedDir(t library.Title) string {
 
 func localURL(s string) string {
 	return "local:" + url.PathEscape(s)
+}
+
+// cbzPageCount counts image entries in a CBZ archive.
+func cbzPageCount(path string) int {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return 0
+	}
+	defer zr.Close()
+	n := 0
+	for _, f := range zr.File {
+		switch strings.ToLower(filepath.Ext(f.Name)) {
+		case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif":
+			n++
+		}
+	}
+	return n
 }
 
 func cbzFiles(dir string) []string {

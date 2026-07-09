@@ -21,6 +21,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/service"
 	"github.com/brogergvhs/mangad/internal/sources"
+	"github.com/brogergvhs/mangad/internal/util"
 )
 
 //go:embed templates/*.html
@@ -40,9 +41,12 @@ type pageData struct {
 	Content    template.HTML
 }
 type dashData struct {
-	Titles  []library.Title
-	Sources []sources.Source
-	Health  healthView
+	Titles     []library.Title
+	Sources    []sources.Source
+	Health     healthView
+	TotalBytes int64
+	TotalPages int64
+	TotalChaps int64
 }
 type healthView struct {
 	Services []service.ServiceHealth
@@ -222,7 +226,13 @@ func (u *webUI) fail(w http.ResponseWriter, err error) {
 func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
 	srcs, _ := u.svc.ListSources(r.Context())
-	u.page(w, r, "dashboard", "Dashboard", dashData{Titles: titles, Sources: srcs, Health: u.healthView(r.Context())})
+	data := dashData{Titles: titles, Sources: srcs, Health: u.healthView(r.Context())}
+	for _, t := range titles {
+		data.TotalBytes += t.SizeBytes
+		data.TotalPages += t.Pages
+		data.TotalChaps += t.DiscoveredCount
+	}
+	u.page(w, r, "dashboard", "Dashboard", data)
 }
 
 func (u *webUI) health(w http.ResponseWriter, r *http.Request) {
@@ -408,15 +418,26 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 		Columns: []tableColumn{
 			{Label: "Chapter", SortKey: "number"},
 			{Label: "Status", SortKey: "status"},
+			{Label: "Pages"},
+			{Label: "Size"},
 			{Label: "Source"},
 		},
 	}
 	for _, c := range rows {
+		pages, size := "—", "—"
+		if c.Downloaded {
+			pages, size = strconv.Itoa(c.Pages), util.Human(c.Bytes)
+			if c.Pages == 0 {
+				pages = "—"
+			}
+		}
 		t.Rows = append(t.Rows, tableRow{
 			ID: strconv.FormatInt(c.ID, 10),
 			Cells: []template.HTML{
 				u.renderToHTML("chapterName", c),
 				u.renderToHTML("chapterStatus", c),
+				text(pages),
+				text(size),
 				text(chapterSource(c.URL)),
 			},
 		})
@@ -1136,8 +1157,12 @@ func (u *webUI) funcs() template.FuncMap {
 		"linked":     func(s string) bool { return strings.HasPrefix(s, "http") },
 		"imported":   func(s string) bool { return strings.HasPrefix(s, "local:") },
 		"pathEscape": url.PathEscape,
-		"pct":        func(done, total int64) int64 { return percent(done, total) },
-		"sourceRow":  func(s sources.Source) sourceRowView { return sourceRowView{Source: s} },
+		"humanBytes": util.Human,
+		"releaseStatus": func(s string) string {
+			return strings.ToLower(strings.ReplaceAll(s, "_", " "))
+		},
+		"pct":       func(done, total int64) int64 { return percent(done, total) },
+		"sourceRow": func(s sources.Source) sourceRowView { return sourceRowView{Source: s} },
 		"missingTotal": func(ts []library.Title) int64 {
 			var n int64
 			for _, t := range ts {

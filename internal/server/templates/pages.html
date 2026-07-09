@@ -1,8 +1,10 @@
 {{define "dashboard"}}
 <h1>Dashboard</h1>
-<div class="grid" style="grid-template-columns:1fr 1fr 1fr">
+<div class="grid dashboard-stats">
   <div class="panel"><div class="muted small">Tracked titles</div><div style="font-size:26px">{{len .Titles}}</div></div>
+  <div class="panel"><div class="muted small">Total chapters</div><div style="font-size:26px">{{.TotalChaps}}</div></div>
   <div class="panel"><div class="muted small">Missing chapters</div><div style="font-size:26px">{{missingTotal .Titles}}</div></div>
+  <div class="panel"><div class="muted small">Library size</div><div style="font-size:26px">{{humanBytes .TotalBytes}}</div><div class="small muted">{{.TotalPages}} pages</div></div>
   <div class="panel"><div class="muted small">Sources healthy</div><div style="font-size:26px">{{healthyCount .Sources}}/{{len .Sources}}</div></div>
 </div>
 <h2>Services</h2>
@@ -64,21 +66,24 @@
       <div class="small muted">refresh every {{.Title.RefreshInterval}}</div>
     </div>
     <div style="margin:12px 0">{{template "progressBar" .Title}}</div>
-    <div class="row">
-      {{if linked .Title.SourceURL}}
-      <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>
-      {{if gt .Title.MissingCount 0}}<button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download {{.Title.MissingCount}} missing</button>{{end}}
-      {{end}}
-      <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
-      <table style="margin:0"><tr>{{template "titleActivity" .}}</tr></table>
-    </div>
     {{template "mangaDetail" .Manga}}
   </div>
 </div>
 
+<div class="panel stack">
+  <div class="row title-actions">
+    {{if linked .Title.SourceURL}}
+    <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>
+    {{if gt .Title.MissingCount 0}}<button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download {{.Title.MissingCount}} missing</button>{{end}}
+    {{end}}
+    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
+  </div>
+  {{template "titleActivity" .}}
+</div>
+
 {{if .LinkedSources}}
-<div class="panel">
-  <h2 style="margin:0 0 8px">Linked sources</h2>
+<details class="panel source-fold">
+  <summary>Linked sources <span class="small muted">({{len .LinkedSources}})</span></summary>
   <table style="margin:0">
     <tr><th>Source</th><th>Page</th><th></th></tr>
     {{range .LinkedSources}}
@@ -92,11 +97,12 @@
     </tr>
     {{end}}
   </table>
-</div>
+</details>
 {{end}}
 
-<div class="panel">
-  <div class="row spread"><h2 style="margin:0">Sources</h2>
+<details class="panel source-fold">
+  <summary>Sources</summary>
+  <div class="row spread" style="margin-top:12px"><h2 style="margin:0">Matches</h2>
     <button class="ghost small" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Find sources</button></div>
   {{template "matches" .Sources}}
   {{if .SingleSources}}
@@ -120,7 +126,7 @@
     <div id="verify-{{.Title.ID}}"></div>
   </div>
   {{end}}
-</div>
+</details>
 
 <h2>Chapters ({{.ChaptersTable.Total}})</h2>
 {{template "table" .ChaptersTable}}

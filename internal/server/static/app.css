@@ -96,6 +96,9 @@ h2 {
   display: grid;
   gap: 12px;
 }
+.dashboard-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
 .stack > * + * {
   margin-top: 8px;
 }
@@ -334,6 +337,24 @@ tr:last-child td {
 .pager {
   margin-top: 12px;
 }
+.title-actions {
+  flex-wrap: wrap;
+}
+.title-actions > button {
+  flex: 1;
+  min-width: 180px;
+}
+.activity-row:empty {
+  display: none;
+}
+.source-fold > summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style-position: inside;
+}
+.source-fold > table {
+  margin-top: 12px;
+}
 
 /* settings fields */
 .setting { padding: 12px 0; border-bottom: 1px solid var(--border); gap: 16px; }
@@ -369,3 +390,12 @@ tr:last-child td {
 .modal label { display: block; }
 .modal label input, .modal label select { width: 100%; margin-top: 4px; }
 .modal label input[type="checkbox"] { width: auto; margin-right: 6px; }
+
+@media (max-width: 760px) {
+  .dashboard-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .result {
+    flex-direction: column;
+  }
+}

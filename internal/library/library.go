@@ -22,6 +22,9 @@ type Title struct {
 	DiscoveredCount int64
 	MissingCount    int64
 	CompletedCount  int64
+	SizeBytes       int64
+	Pages           int64
+	ReleaseStatus   string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

@@ -209,7 +209,11 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (Scan
 	var result ScanResult
 	for _, download := range downloads {
 		result.Checked++
-		if _, err := os.Stat(download.OutputFile); err == nil {
+		info, err := os.Stat(download.OutputFile)
+		if err == nil {
+			if err := s.repo.MarkDownloadCompleted(ctx, download.ChapterID, download.OutputFile, info.Size(), cbzPageCount(download.OutputFile)); err != nil {
+				return result, err
+			}
 			continue
 		} else if !os.IsNotExist(err) {
 			return result, fmt.Errorf("check %s: %w", download.OutputFile, err)
@@ -338,7 +342,7 @@ func (s *LibraryService) downloadChapter(
 		}
 		return ChapterDownloadResult{}, err
 	}
-	if err := s.repo.MarkDownloadCompleted(markCtx, chapter.ID, result.OutputFile, result.Bytes); err != nil {
+	if err := s.repo.MarkDownloadCompleted(markCtx, chapter.ID, result.OutputFile, result.Bytes, result.Images); err != nil {
 		return ChapterDownloadResult{}, err
 	}
 
