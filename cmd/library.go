@@ -266,7 +266,7 @@ func runLibraryDownload(_ *cobra.Command, args []string) error {
 			return nil
 		}
 
-		results, err := lib.DownloadMissing(ctx, cfg, logSvc, id)
+		results, err := lib.DownloadMissing(ctx, cfg, logSvc, id, nil)
 		return printDownloads(results, err)
 	})
 }

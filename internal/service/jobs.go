@@ -808,8 +808,15 @@ func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc ui.L
 			return summary, err
 		}
 
-		jobCtx, cancel := context.WithTimeout(ctx, s.jobTimeout)
-		err = s.run(jobCtx, cfg, logSvc, job)
+		// Inactivity timeout, not wall clock: a job reporting progress (e.g.
+		// image downloads) runs as long as it needs; only stalled jobs abort.
+		jobCtx, guard, cancel := stallContext(ctx, s.jobTimeout)
+		err = s.run(jobCtx, cfg, logSvc, job, guard)
+		if err != nil {
+			if cause := context.Cause(jobCtx); cause != nil && !errors.Is(cause, context.Canceled) {
+				err = fmt.Errorf("%v: %w", cause, err)
+			}
+		}
 		cancel()
 		if err != nil {
 			summary.Failed++
@@ -825,7 +832,7 @@ func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc ui.L
 	}
 }
 
-func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log, job jobs.Job) error {
+func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log, job jobs.Job, progress ProgressManager) error {
 	var payload JobPayload
 	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
 		return fmt.Errorf("decode job payload: %w", err)
@@ -855,7 +862,7 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 					return err
 				}
 			}
-			if _, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID); err != nil {
+			if _, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID, progress); err != nil {
 				return err
 			}
 			return nil

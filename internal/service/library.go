@@ -238,6 +238,7 @@ func (s *LibraryService) DownloadMissing(
 	cfg *config.Config,
 	logSvc ui.Log,
 	titleID int64,
+	progress ProgressManager,
 ) ([]ChapterDownloadResult, error) {
 	title, missing, err := s.MissingChapters(ctx, titleID)
 	if err != nil {
@@ -248,10 +249,14 @@ func (s *LibraryService) DownloadMissing(
 	if err != nil {
 		return nil, err
 	}
-	downloadSvc, err := s.downloadServiceForTitle(ctx, cfg, logSvc, nil, title)
+	downloadSvc, err := s.downloadServiceForTitle(ctx, cfg, logSvc, progress, title)
 	if err != nil {
 		return nil, err
 	}
+	// A run of consecutive failures means the source is broken, not that the
+	// job is progressing; stop instead of hammering every remaining chapter.
+	const maxConsecutiveFailures = 10
+	consecutive := 0
 	results := make([]ChapterDownloadResult, 0, len(missing))
 	var errs []error
 	for _, chapter := range missing {
@@ -261,8 +266,13 @@ func (s *LibraryService) DownloadMissing(
 			if ctx.Err() != nil {
 				break
 			}
+			if consecutive++; consecutive >= maxConsecutiveFailures {
+				errs = append(errs, fmt.Errorf("stopping after %d consecutive chapter failures", consecutive))
+				break
+			}
 			continue
 		}
+		consecutive = 0
 		results = append(results, result)
 	}
 
@@ -286,7 +296,7 @@ func (s *LibraryService) DownloadMonitoredMissing(
 		if !title.Monitored {
 			continue
 		}
-		titleResults, err := s.DownloadMissing(ctx, cfg, logSvc, title.ID)
+		titleResults, err := s.DownloadMissing(ctx, cfg, logSvc, title.ID, nil)
 		results = append(results, titleResults...)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("download missing for %s: %w", title.DisplayTitle, err))
