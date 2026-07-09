@@ -55,11 +55,14 @@ const (
 	SettingServeDownloadEvery = "serve.download_every"
 	SettingServeRunEvery      = "serve.run_every"
 
-	SettingBrowserSolverEnabled        = "browser_solver.enabled"
-	SettingBrowserSolverProvider       = "browser_solver.provider"
-	SettingBrowserSolverEndpoint       = "browser_solver.endpoint"
-	SettingBrowserSolverTimeoutSeconds = "browser_solver.timeout_seconds"
-	SettingSourceRegistryURL           = "sources.registry_url"
+	SettingBrowserSolverEnabled            = "browser_solver.enabled"
+	SettingBrowserSolverProvider           = "browser_solver.provider"
+	SettingBrowserSolverEndpoint           = "browser_solver.endpoint"
+	SettingBrowserSolverTimeoutSeconds     = "browser_solver.timeout_seconds"
+	SettingBrowserDownloaderEnabled        = "browser_downloader.enabled"
+	SettingBrowserDownloaderEndpoint       = "browser_downloader.endpoint"
+	SettingBrowserDownloaderTimeoutSeconds = "browser_downloader.timeout_seconds"
+	SettingSourceRegistryURL               = "sources.registry_url"
 
 	SettingJobsMaxAttempts      = "jobs.max_attempts"
 	SettingJobsTimeout          = "jobs.timeout"
@@ -89,6 +92,12 @@ func SettingDefault(key string) string {
 		return browserfetch.DefaultFlareSolverrEndpoint
 	case SettingBrowserSolverTimeoutSeconds:
 		return "60"
+	case SettingBrowserDownloaderEnabled:
+		return "false"
+	case SettingBrowserDownloaderEndpoint:
+		return browserdownload.DefaultEndpoint
+	case SettingBrowserDownloaderTimeoutSeconds:
+		return "180"
 	case SettingSourceRegistryURL:
 		return ""
 	case SettingJobsMaxAttempts, SettingDownloadsMaxAttempts:
@@ -113,6 +122,9 @@ func SettingKeys() []string {
 		SettingBrowserSolverProvider,
 		SettingBrowserSolverEndpoint,
 		SettingBrowserSolverTimeoutSeconds,
+		SettingBrowserDownloaderEnabled,
+		SettingBrowserDownloaderEndpoint,
+		SettingBrowserDownloaderTimeoutSeconds,
 		SettingSourceRegistryURL,
 		SettingJobsMaxAttempts,
 		SettingJobsTimeout,
@@ -130,7 +142,7 @@ func ValidateSetting(key, value string) error {
 	switch key {
 	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery, SettingServicesHealthInterval:
 		return validateDurationSetting(key, value)
-	case SettingBrowserSolverEnabled:
+	case SettingBrowserSolverEnabled, SettingBrowserDownloaderEnabled:
 		if _, err := strconv.ParseBool(value); err != nil {
 			return fmt.Errorf("invalid bool for %s", key)
 		}
@@ -138,12 +150,12 @@ func ValidateSetting(key, value string) error {
 		if value != browserfetch.ProviderFlareSolverr {
 			return fmt.Errorf("unsupported provider %q", value)
 		}
-	case SettingBrowserSolverEndpoint:
+	case SettingBrowserSolverEndpoint, SettingBrowserDownloaderEndpoint:
 		u, err := url.ParseRequestURI(value)
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("invalid endpoint for %s", key)
 		}
-	case SettingBrowserSolverTimeoutSeconds:
+	case SettingBrowserSolverTimeoutSeconds, SettingBrowserDownloaderTimeoutSeconds:
 		seconds, err := strconv.Atoi(value)
 		if err != nil || seconds <= 0 {
 			return fmt.Errorf("invalid timeout seconds for %s", key)
@@ -316,6 +328,19 @@ func (s *JobService) ApplySettings(ctx context.Context, cfg *config.Config) {
 	if value := s.Setting(ctx, SettingBrowserSolverTimeoutSeconds, ""); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil {
 			cfg.BrowserSolver.TimeoutSeconds = seconds
+		}
+	}
+	if value := s.Setting(ctx, SettingBrowserDownloaderEnabled, ""); value != "" {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.BrowserDownload.Enabled = enabled
+		}
+	}
+	if value := s.Setting(ctx, SettingBrowserDownloaderEndpoint, ""); value != "" {
+		cfg.BrowserDownload.Endpoint = value
+	}
+	if value := s.Setting(ctx, SettingBrowserDownloaderTimeoutSeconds, ""); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil {
+			cfg.BrowserDownload.TimeoutSeconds = seconds
 		}
 	}
 }

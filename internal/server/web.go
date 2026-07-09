@@ -139,6 +139,12 @@ func settingMeta(key string) (label, desc string) {
 		return "Solver address", "The URL where your solver (e.g. FlareSolverr) is reachable."
 	case service.SettingBrowserSolverTimeoutSeconds:
 		return "Solver timeout (seconds)", "How long to wait for the solver to load a page before giving up."
+	case service.SettingBrowserDownloaderEnabled:
+		return "Use browser image downloader", "Enable the Selenium browser worker fallback for sources whose images only load in a browser (true or false)."
+	case service.SettingBrowserDownloaderEndpoint:
+		return "Browser downloader address", "The URL where the browser downloader worker is reachable."
+	case service.SettingBrowserDownloaderTimeoutSeconds:
+		return "Browser downloader timeout (seconds)", "How long to wait for browser-captured chapter downloads before giving up."
 	case service.SettingSourceRegistryURL:
 		return "Extra source list URL", "Optional URL to load additional scraper definitions from. Leave blank to use built-in sources."
 	case service.SettingJobsMaxAttempts:
@@ -1156,6 +1162,12 @@ func effectiveSetting(cfg *config.Config, key string) (string, bool) {
 		return cfg.BrowserSolver.Endpoint, true
 	case service.SettingBrowserSolverTimeoutSeconds:
 		return strconv.Itoa(cfg.BrowserSolver.TimeoutSeconds), true
+	case service.SettingBrowserDownloaderEnabled:
+		return strconv.FormatBool(cfg.BrowserDownload.Enabled), true
+	case service.SettingBrowserDownloaderEndpoint:
+		return cfg.BrowserDownload.Endpoint, true
+	case service.SettingBrowserDownloaderTimeoutSeconds:
+		return strconv.Itoa(cfg.BrowserDownload.TimeoutSeconds), true
 	}
 	return "", false
 }

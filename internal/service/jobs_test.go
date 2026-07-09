@@ -9,6 +9,7 @@ import (
 	"time"
 
 	chaptersPkg "github.com/brogergvhs/mangad/internal/chapters"
+	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/providers"
@@ -49,6 +50,33 @@ func TestApplyLimitsFromSettings(t *testing.T) {
 	}
 	if svc.jobTimeout != 2*time.Minute {
 		t.Errorf("jobTimeout = %s, want 2m", svc.jobTimeout)
+	}
+}
+
+func TestApplyBrowserDownloaderSettings(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+
+	for key, value := range map[string]string{
+		SettingBrowserDownloaderEnabled:        "true",
+		SettingBrowserDownloaderEndpoint:       "http://browser-worker:8192",
+		SettingBrowserDownloaderTimeoutSeconds: "90",
+	} {
+		if err := svc.SetSetting(ctx, key, value); err != nil {
+			t.Fatalf("SetSetting(%s) error = %v", key, err)
+		}
+	}
+
+	var cfg config.Config
+	svc.ApplySettings(ctx, &cfg)
+	if !cfg.BrowserDownload.Enabled || cfg.BrowserDownload.Endpoint != "http://browser-worker:8192" || cfg.BrowserDownload.TimeoutSeconds != 90 {
+		t.Fatalf("browser downloader config = %#v", cfg.BrowserDownload)
 	}
 }
 

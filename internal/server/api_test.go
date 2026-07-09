@@ -26,6 +26,9 @@ func TestAPISettings(t *testing.T) {
 	if got[service.SettingBrowserSolverEnabled] != "false" || got[service.SettingBrowserSolverEndpoint] == "" {
 		t.Fatalf("solver settings = %#v", got)
 	}
+	if got[service.SettingBrowserDownloaderEnabled] != "false" || got[service.SettingBrowserDownloaderEndpoint] == "" {
+		t.Fatalf("browser downloader settings = %#v", got)
+	}
 
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingServeDownloadEvery: "15m"}, http.StatusOK, &got)
 	if got[service.SettingServeDownloadEvery] != "15m" {
@@ -34,6 +37,7 @@ func TestAPISettings(t *testing.T) {
 
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingServeRunEvery: "0s"}, http.StatusBadRequest, nil)
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingBrowserSolverTimeoutSeconds: "0"}, http.StatusBadRequest, nil)
+	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingBrowserDownloaderTimeoutSeconds: "0"}, http.StatusBadRequest, nil)
 }
 
 func TestAPIJobs(t *testing.T) {
