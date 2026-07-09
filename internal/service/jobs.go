@@ -368,7 +368,14 @@ func (s *JobService) UnlinkTitleSource(ctx context.Context, id int64, url string
 
 // AddCatalogTitle adds an AniList manga to the library as a source-less title.
 func (s *JobService) AddCatalogTitle(ctx context.Context, anilistID int) (library.Title, error) {
-	return s.want.AddCatalogTitle(ctx, anilistID)
+	title, err := s.want.AddCatalogTitle(ctx, anilistID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.enqueueSourceSearchForTitle(ctx, title); err != nil {
+		return title, err
+	}
+	return title, nil
 }
 
 // TitlesByProvider maps a catalog provider's manga IDs to tracked title IDs.
@@ -421,12 +428,26 @@ func (s *JobService) ImportFolder(ctx context.Context, folder string, anilistID 
 	if err != nil {
 		return library.Title{}, err
 	}
-	return s.want.ImportFolder(ctx, cfg.DownloadDir, folder, anilistID)
+	title, err := s.want.ImportFolder(ctx, cfg.DownloadDir, folder, anilistID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.enqueueSourceSearchForTitle(ctx, title); err != nil {
+		return title, err
+	}
+	return title, nil
 }
 
 // LinkTitleSource links a tracked title to a matched source.
 func (s *JobService) LinkTitleSource(ctx context.Context, titleID, matchID int64) (library.Title, error) {
-	return s.want.LinkTitleSource(ctx, titleID, matchID)
+	title, err := s.want.LinkTitleSource(ctx, titleID, matchID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.enqueueRefreshForTitle(ctx, title); err != nil {
+		return title, err
+	}
+	return title, nil
 }
 
 // MatchSources finds source matches for one canonical title.
@@ -445,7 +466,14 @@ func (s *JobService) ListMatches(ctx context.Context, catalogID int64) ([]catalo
 
 // TrackMatch adds a selected match to the tracked library.
 func (s *JobService) TrackMatch(ctx context.Context, matchID int64, output string, monitored bool, refreshInterval string) (library.Title, error) {
-	return s.want.TrackMatch(ctx, matchID, output, monitored, refreshInterval)
+	title, err := s.want.TrackMatch(ctx, matchID, output, monitored, refreshInterval)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.enqueueRefreshForTitle(ctx, title); err != nil {
+		return title, err
+	}
+	return title, nil
 }
 
 // SyncSources stores bundled profiles and, when set, a remote registry.
@@ -471,7 +499,10 @@ func (s *JobService) GetSource(ctx context.Context, id string) (sources.Source, 
 
 // ImportLocalSource stores a local DB-backed source profile.
 func (s *JobService) ImportLocalSource(ctx context.Context, profile sources.Profile) error {
-	return s.src.ImportLocal(ctx, profile)
+	if err := s.src.ImportLocal(ctx, profile); err != nil {
+		return err
+	}
+	return s.enqueueRefreshForSource(ctx, profile.ID)
 }
 
 // RemoveLocalSource removes a local DB-backed source profile.
@@ -514,7 +545,14 @@ func (s *JobService) LinkTitleSourceURL(ctx context.Context, titleID int64, sour
 	if err != nil {
 		return library.Title{}, err
 	}
-	return s.want.LinkTitleURL(ctx, titleID, strings.TrimSpace(rawURL), src.ID)
+	title, err := s.want.LinkTitleURL(ctx, titleID, strings.TrimSpace(rawURL), src.ID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.enqueueRefreshForTitle(ctx, title); err != nil {
+		return title, err
+	}
+	return title, nil
 }
 
 // sourceForURL validates that rawURL is a well-formed page on the chosen source.
@@ -543,7 +581,14 @@ func (s *JobService) LinkTitleToSource(ctx context.Context, titleID int64, sourc
 	if _, err := url.ParseRequestURI(src.SampleMangaURL); err != nil {
 		return library.Title{}, fmt.Errorf("source %q has no manga URL to link", src.Name)
 	}
-	return s.want.LinkTitleURL(ctx, titleID, src.SampleMangaURL, src.ID)
+	title, err := s.want.LinkTitleURL(ctx, titleID, src.SampleMangaURL, src.ID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.enqueueRefreshForTitle(ctx, title); err != nil {
+		return title, err
+	}
+	return title, nil
 }
 
 // ServiceHealth is the reachability of one external helper service.
@@ -590,7 +635,49 @@ func (s *JobService) ServicesHealth(ctx context.Context) []ServiceHealth {
 
 // SetSourceMethods overrides a source's chapter/image fetch methods.
 func (s *JobService) SetSourceMethods(ctx context.Context, sourceID, chapterFetch, imageFetch string) error {
-	return s.src.SetFetchMethods(ctx, sourceID, chapterFetch, imageFetch)
+	if err := s.src.SetFetchMethods(ctx, sourceID, chapterFetch, imageFetch); err != nil {
+		return err
+	}
+	return s.enqueueRefreshForSource(ctx, sourceID)
+}
+
+func (s *JobService) enqueueSourceSearchForTitle(ctx context.Context, title library.Title) error {
+	if title.CatalogMangaID == nil {
+		return nil
+	}
+	if _, err := s.EnqueueCatalog(ctx, jobs.TypeMatchSources, *title.CatalogMangaID, time.Now()); err != nil {
+		return fmt.Errorf("queue source search: %w", err)
+	}
+	return nil
+}
+
+func (s *JobService) enqueueRefreshForTitle(ctx context.Context, title library.Title) error {
+	if !strings.HasPrefix(strings.TrimSpace(title.SourceURL), "http") {
+		return nil
+	}
+	if _, err := s.Enqueue(ctx, jobs.TypeRefreshTitle, title.ID, time.Now()); err != nil {
+		return fmt.Errorf("queue chapter refresh: %w", err)
+	}
+	return nil
+}
+
+func (s *JobService) enqueueRefreshForSource(ctx context.Context, sourceID string) error {
+	sourceID = strings.TrimSpace(sourceID)
+	if sourceID == "" {
+		return nil
+	}
+	titles, err := s.lib.ListTitles(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, title := range titles {
+		if title.SourceID != sourceID {
+			continue
+		}
+		errs = append(errs, s.enqueueRefreshForTitle(ctx, title))
+	}
+	return errors.Join(errs...)
 }
 
 // TestSource probes a candidate source profile with the chosen fetch methods.

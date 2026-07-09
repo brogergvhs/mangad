@@ -547,6 +547,7 @@ func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	u.frag(w, "addedButton", title)
 }
 
@@ -671,6 +672,7 @@ func (u *webUI) importDo(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", title.ID))
 }
 
@@ -739,6 +741,7 @@ func (u *webUI) linkSource(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
 }
 
@@ -768,6 +771,7 @@ func (u *webUI) linkSourceURL(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
 }
 
@@ -786,6 +790,7 @@ func (u *webUI) linkSourceByID(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
 }
 
@@ -856,6 +861,7 @@ func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	w.Header().Set("HX-Refresh", "true")
 }
 
@@ -915,6 +921,7 @@ func (u *webUI) srcAddCustom(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	w.Header().Set("HX-Refresh", "true")
 }
 
