@@ -677,6 +677,12 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return err
 	case jobs.TypeDownloadMissing:
 		if payload.TitleID > 0 {
+			// A targeted request is an explicit retry: chapters that gave up
+			// after MaxDownloadAttempts get a fresh attempt budget. The
+			// scheduled monitored sweep keeps the cap.
+			if err := s.lib.ResetFailedDownloads(ctx, payload.TitleID); err != nil {
+				return err
+			}
 			_, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID)
 			return err
 		}

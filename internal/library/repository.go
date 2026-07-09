@@ -387,6 +387,20 @@ func (r *Repository) UpsertChapters(
 	return count, nil
 }
 
+// ResetFailedDownloads gives a title's failed downloads a fresh attempt
+// budget, so an explicit re-download retries chapters that hit the cap.
+func (r *Repository) ResetFailedDownloads(ctx context.Context, titleID int64) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE downloads SET attempts = 0, updated_at = CURRENT_TIMESTAMP
+		WHERE status = 'failed'
+			AND chapter_id IN (SELECT id FROM chapters WHERE title_id = ?)
+	`, titleID)
+	if err != nil {
+		return fmt.Errorf("reset failed downloads for title %d: %w", titleID, err)
+	}
+	return nil
+}
+
 // ListMissingChapters returns discovered chapters without a completed
 // download, skipping chapters that already failed MaxDownloadAttempts times.
 func (r *Repository) ListMissingChapters(ctx context.Context, titleID int64) ([]Chapter, error) {
@@ -423,6 +437,9 @@ func (r *Repository) ListMissingChapters(ctx context.Context, titleID int64) ([]
 type ChapterStatus struct {
 	Chapter
 	Downloaded bool
+	Failed     bool // failed and reached the attempt cap
+	Attempts   int
+	Error      string
 	OutputFile string
 }
 
@@ -431,7 +448,7 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT c.id, c.title_id, c.label, c.title, c.url, c.number_main, c.suffix_type, c.suffix_num,
 			c.discovered_at, c.updated_at,
-			CASE WHEN d.status = 'completed' THEN 1 ELSE 0 END,
+			COALESCE(d.status, ''), COALESCE(d.attempts, 0), COALESCE(d.error, ''),
 			COALESCE(d.output_file, '')
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
@@ -446,13 +463,14 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 	var out []ChapterStatus
 	for rows.Next() {
 		var cs ChapterStatus
-		var discoveredAt, updatedAt string
-		var downloaded int
+		var discoveredAt, updatedAt, status string
 		if err := rows.Scan(&cs.ID, &cs.TitleID, &cs.Label, &cs.Title, &cs.URL, &cs.NumberMain,
-			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt, &downloaded, &cs.OutputFile); err != nil {
+			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt,
+			&status, &cs.Attempts, &cs.Error, &cs.OutputFile); err != nil {
 			return nil, fmt.Errorf("scan chapter: %w", err)
 		}
-		cs.Downloaded = downloaded != 0
+		cs.Downloaded = status == "completed"
+		cs.Failed = status == "failed" && cs.Attempts >= r.MaxDownloadAttempts
 		cs.DiscoveredAt, _ = database.ParseTime(discoveredAt)
 		cs.UpdatedAt, _ = database.ParseTime(updatedAt)
 		out = append(out, cs)

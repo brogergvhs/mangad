@@ -87,6 +87,11 @@ func (s *LibraryService) ListTitles(ctx context.Context) ([]library.Title, error
 	return s.repo.ListTitles(ctx)
 }
 
+// ResetFailedDownloads clears the attempt cap on a title's failed downloads.
+func (s *LibraryService) ResetFailedDownloads(ctx context.Context, titleID int64) error {
+	return s.repo.ResetFailedDownloads(ctx, titleID)
+}
+
 // ListTitleSources returns all sources linked to a title.
 func (s *LibraryService) ListTitleSources(ctx context.Context, titleID int64) ([]library.LinkedSource, error) {
 	return s.repo.ListTitleSources(ctx, titleID)
@@ -318,14 +323,17 @@ func (s *LibraryService) downloadChapter(
 		return ChapterDownloadResult{}, err
 	}
 
+	// Outcomes must be persisted even when ctx expired mid-download, or the
+	// row strands as 'started' and startup reconciliation burns an attempt.
+	markCtx := context.WithoutCancel(ctx)
 	result, err := downloadSvc.DownloadChapter(ctx, serviceChapter(chapter))
 	if err != nil {
-		if markErr := s.repo.MarkDownloadFailed(ctx, chapter.ID, err); markErr != nil {
+		if markErr := s.repo.MarkDownloadFailed(markCtx, chapter.ID, err); markErr != nil {
 			return ChapterDownloadResult{}, fmt.Errorf("%w; mark download failed: %v", err, markErr)
 		}
 		return ChapterDownloadResult{}, err
 	}
-	if err := s.repo.MarkDownloadCompleted(ctx, chapter.ID, result.OutputFile, result.Bytes); err != nil {
+	if err := s.repo.MarkDownloadCompleted(markCtx, chapter.ID, result.OutputFile, result.Bytes); err != nil {
 		return ChapterDownloadResult{}, err
 	}
 

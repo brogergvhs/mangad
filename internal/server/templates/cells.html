@@ -28,7 +28,11 @@
 
 {{define "chapterName"}}<strong>{{.Label}}</strong> <span class="small muted">{{.Title}}</span>{{end}}
 
-{{define "chapterStatus"}}{{if .Downloaded}}<span class="badge done">downloaded</span>{{else}}<span class="badge">missing</span>{{end}}{{end}}
+{{define "chapterStatus"}}
+{{- if .Downloaded}}<span class="badge done">downloaded</span>
+{{- else if .Failed}}<span class="badge broken" title="{{.Error}}">failed ({{.Attempts}} attempts)</span>
+{{- else}}<span class="badge">missing</span>{{end -}}
+{{end}}
 
 {{define "jobStatusBadge"}}<span class="badge {{.Status}}">{{.Status}}</span>{{end}}
 
