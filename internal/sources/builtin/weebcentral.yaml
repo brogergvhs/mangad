@@ -2,7 +2,8 @@ id: weebcentral
 name: WeebCentral
 base_url: https://weebcentral.com
 sample_manga_url: https://weebcentral.com/series/01J76XYDMTRNJZJH9G1ADMPJQC/The-Great-Mage-Returns-After-4000-Years
-search_url: https://weebcentral.com/search?text={query}&sort=Best+Match&order=Descending&official=Any&anime=Any&adult=Any&display_mode=Full+Display
+# /search is an htmx shell; /search/data returns the actual result list.
+search_url: https://weebcentral.com/search/data?text={query}&sort=Best+Match&order=Descending&official=Any&anime=Any&adult=Any&display_mode=Full+Display
 scraper: generic
 allowed_extensions:
   - png

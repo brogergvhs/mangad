@@ -44,16 +44,31 @@ type Profile struct {
 	Version                 string   `json:"version" yaml:"version"`
 }
 
+// VerifyStep is one stage of the verification pipeline with its outcome.
+type VerifyStep struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // ok | failed | skipped
+	Detail string `json:"detail,omitempty"`
+	Log    string `json:"log,omitempty"`
+}
+
+const (
+	StepOK      = "ok"
+	StepFailed  = "failed"
+	StepSkipped = "skipped"
+)
+
 // Source is a persisted profile plus its latest verification result.
 type Source struct {
 	Profile
-	Origin            string   `json:"origin"`
-	Status            string   `json:"status"`
-	LastCheckedAt     string   `json:"last_checked_at,omitempty"`
-	LastError         string   `json:"last_error,omitempty"`
-	ChaptersFound     int      `json:"chapters_found"`
-	SampleImagesFound int      `json:"sample_images_found"`
-	ImageExtensions   []string `json:"image_extensions"`
+	Origin            string       `json:"origin"`
+	Status            string       `json:"status"`
+	LastCheckedAt     string       `json:"last_checked_at,omitempty"`
+	LastError         string       `json:"last_error,omitempty"`
+	ChaptersFound     int          `json:"chapters_found"`
+	SampleImagesFound int          `json:"sample_images_found"`
+	ImageExtensions   []string     `json:"image_extensions"`
+	VerifySteps       []VerifyStep `json:"verify_steps,omitempty"`
 	// ChapterFetch/ImageFetch are the methods learned from the last
 	// successful scrape; empty means not yet known.
 	ChapterFetch string `json:"chapter_fetch,omitempty"`

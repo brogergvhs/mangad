@@ -183,7 +183,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/import/{folder}/search", u.importSearch)
 	mux.HandleFunc("POST /ui/import", u.importDo)
 	mux.HandleFunc("POST /ui/sources/{id}/verify", u.srcVerify)
-	mux.HandleFunc("POST /ui/sources/{id}/methods", u.srcMethods)
+	mux.HandleFunc("GET /ui/sources/{id}/edit", u.srcEdit)
+	mux.HandleFunc("POST /ui/sources/{id}/edit", u.srcEditSave)
 	mux.HandleFunc("GET /ui/sources/{id}/row", u.srcRow)
 	mux.HandleFunc("POST /ui/sources/sync", u.srcSync)
 	mux.HandleFunc("POST /ui/sources/test", u.srcTest)
@@ -792,18 +793,52 @@ func (u *webUI) srcRow(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "sourceRow", sourceRowView{Source: src, Active: active})
 }
 
-func (u *webUI) srcMethods(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := u.svc.SetSourceMethods(r.Context(), id, r.FormValue("chapter_fetch"), r.FormValue("image_fetch")); err != nil {
+func (u *webUI) srcEdit(w http.ResponseWriter, r *http.Request) {
+	src, err := u.svc.GetSource(r.Context(), r.PathValue("id"))
+	if err != nil {
 		u.fail(w, err)
 		return
 	}
+	u.frag(w, "sourceEdit", src)
+}
+
+func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	src, err := u.svc.GetSource(r.Context(), id)
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "sourceRow", sourceRowView{Source: src})
+	_ = r.ParseForm()
+	p := src.Profile
+	p.Name = strings.TrimSpace(r.FormValue("name"))
+	p.BaseURL = strings.TrimSpace(r.FormValue("base_url"))
+	p.SampleMangaURL = strings.TrimSpace(r.FormValue("manga_url"))
+	p.SearchURL = strings.TrimSpace(r.FormValue("search_url"))
+	p.Domains = splitList(r.FormValue("domains"))
+	p.AllowedExtensions = splitList(r.FormValue("extensions"))
+	p.SingleManga = formChecked(r, "single_manga")
+	p.Enabled = formChecked(r, "enabled")
+	// Saving stores a local override; built-in sync no longer clobbers it.
+	if err := u.svc.ImportLocalSource(r.Context(), p); err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.SetSourceMethods(r.Context(), id, r.FormValue("chapter_fetch"), r.FormValue("image_fetch")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Refresh", "true")
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, v := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func (u *webUI) srcSync(w http.ResponseWriter, r *http.Request) {

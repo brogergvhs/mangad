@@ -70,32 +70,84 @@
 
 {{define "sourcesTable"}}
 <table id="sources-table">
-  <tr><th>Source</th><th>Status</th><th>Chapters</th><th>Fetch (pages / images)</th><th></th></tr>
+  <thead><tr><th style="width:26px"></th><th>Source</th><th>Status</th><th>Chapters</th><th>Fetch</th><th></th></tr></thead>
   {{range .}}{{template "sourceRow" sourceRow .}}{{end}}
 </table>
 {{end}}
 
 {{define "sourceRow"}}
-<tr id="src-{{.Source.ID}}" {{if .Active}}hx-get="/ui/sources/{{.Source.ID}}/row" hx-trigger="load delay:1500ms" hx-swap="outerHTML"{{end}}>
+<tbody id="src-{{.Source.ID}}" {{if .Active}}hx-get="/ui/sources/{{.Source.ID}}/row" hx-trigger="load delay:1500ms" hx-swap="outerHTML"{{end}}>
+<tr class="row-toggle" data-target="det-src-{{.Source.ID}}">
+  <td><span class="caret">▸</span></td>
   <td>{{.Source.Name}}<div class="small muted">{{range .Source.Domains}}{{.}} {{end}}</div></td>
-  <td>{{if .Active}}<span class="spin"></span> <span class="small">verifying</span>{{else}}<span class="badge {{.Source.Status}}">{{orUnknown .Source.Status}}</span>{{if .Source.LastError}}<div class="small muted">{{.Source.LastError}}</div>{{end}}{{end}}</td>
+  <td>{{if .Active}}<span class="spin"></span> <span class="small">verifying</span>{{else}}<span class="badge {{.Source.Status}}">{{orUnknown .Source.Status}}</span>{{end}}</td>
   <td>{{.Source.ChaptersFound}}<div class="small muted">{{.Source.SampleImagesFound}} imgs</div></td>
-  <td class="small">
-    <form class="row" style="gap:4px" hx-post="/ui/sources/{{.Source.ID}}/methods" hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML" title="Pages / images fetch method">
-      <select name="chapter_fetch" style="padding:2px 6px">
-        <option value="" {{if eq .Source.ChapterFetch ""}}selected{{end}}>auto</option>
-        <option value="http" {{if eq .Source.ChapterFetch "http"}}selected{{end}}>http</option>
-        <option value="solver" {{if eq .Source.ChapterFetch "solver"}}selected{{end}}>solver</option>
-      </select>
-      <select name="image_fetch" style="padding:2px 6px">
-        <option value="" {{if eq .Source.ImageFetch ""}}selected{{end}}>auto</option>
-        <option value="http" {{if eq .Source.ImageFetch "http"}}selected{{end}}>http</option>
-        <option value="browser" {{if eq .Source.ImageFetch "browser"}}selected{{end}}>browser</option>
-      </select>
-      <button class="ghost small" title="Save fetch methods">✓</button>
-    </form>
+  <td class="small">{{orDash .Source.ChapterFetch}} / {{orDash .Source.ImageFetch}}</td>
+  <td class="nowrap">
+    <button class="ghost" hx-get="/ui/sources/{{.Source.ID}}/edit" hx-target="body" hx-swap="beforeend">Edit</button>
+    <button class="ghost" hx-post="/ui/sources/{{.Source.ID}}/verify" hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML" {{if not .Source.Enabled}}disabled{{end}}>Verify</button>
   </td>
-  <td class="nowrap"><button class="ghost" hx-post="/ui/sources/{{.Source.ID}}/verify" hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML" {{if not .Source.Enabled}}disabled{{end}}>Verify</button></td>
 </tr>
+<tr id="det-src-{{.Source.ID}}" class="detail-row" hidden>
+  <td colspan="6">{{template "sourceSteps" .Source}}</td>
+</tr>
+</tbody>
 {{end}}
 
+{{define "sourceSteps"}}
+{{if .VerifySteps}}
+<div class="steps">
+  {{range .VerifySteps}}
+  <div class="step {{.Status}}">
+    <div class="dot">{{if eq .Status "ok"}}✓{{else if eq .Status "failed"}}✕{{else}}○{{end}}</div>
+    <div class="small" style="margin-top:4px">{{.Name}}</div>
+    {{if .Detail}}<div class="small muted" style="max-width:220px;word-break:break-all">{{.Detail}}</div>{{end}}
+  </div>
+  {{end}}
+</div>
+{{range .VerifySteps}}{{if .Log}}
+<div class="steplog"><span class="badge broken">{{.Name}}</span><pre>{{.Log}}</pre></div>
+{{end}}{{end}}
+{{else if .LastError}}<div class="steplog"><pre>{{.LastError}}</pre></div>
+{{else}}<p class="muted small" style="margin:8px 0">Not verified yet — run Verify to see the pipeline.</p>{{end}}
+{{if .LastCheckedAt}}<div class="small muted" style="margin-top:6px">Last checked: {{.LastCheckedAt}}</div>{{end}}
+{{end}}
+
+
+{{define "sourceEdit"}}
+<div class="modal-overlay" id="source-edit-modal">
+  <div class="modal panel">
+    <div class="row spread"><h2 style="margin:0">Edit {{.Name}}</h2>
+      <button type="button" class="ghost small" onclick="document.getElementById('source-edit-modal').remove()">✕</button></div>
+    {{if ne .Origin "local"}}<p class="small muted">Editing a built-in source saves it as a local override; remove the override to revert.</p>{{end}}
+    <form class="stack" hx-post="/ui/sources/{{.ID}}/edit" hx-swap="none">
+      <label class="small">Name<input name="name" value="{{.Name}}"></label>
+      <label class="small">Site base URL<input name="base_url" value="{{.BaseURL}}" required></label>
+      <label class="small">Sample manga URL<input name="manga_url" value="{{.SampleMangaURL}}" required></label>
+      <label class="small">Search URL ({query} placeholder)<input name="search_url" value="{{.SearchURL}}"></label>
+      <label class="small">Domains (comma-separated)<input name="domains" value="{{range $i, $d := .Domains}}{{if $i}}, {{end}}{{$d}}{{end}}"></label>
+      <label class="small">Image types (comma-separated)<input name="extensions" value="{{range $i, $e := .AllowedExtensions}}{{if $i}}, {{end}}{{$e}}{{end}}"></label>
+      <div class="row">
+        <label class="small" style="flex:1">Pages fetch
+          <select name="chapter_fetch">
+            <option value="" {{if eq .ChapterFetch ""}}selected{{end}}>auto</option>
+            <option value="http" {{if eq .ChapterFetch "http"}}selected{{end}}>http</option>
+            <option value="solver" {{if eq .ChapterFetch "solver"}}selected{{end}}>solver (FlareSolverr)</option>
+          </select></label>
+        <label class="small" style="flex:1">Images fetch
+          <select name="image_fetch">
+            <option value="" {{if eq .ImageFetch ""}}selected{{end}}>auto</option>
+            <option value="http" {{if eq .ImageFetch "http"}}selected{{end}}>http</option>
+            <option value="browser" {{if eq .ImageFetch "browser"}}selected{{end}}>browser (Selenium)</option>
+          </select></label>
+      </div>
+      <label class="small"><input type="checkbox" name="single_manga" {{if .SingleManga}}checked{{end}}> Single manga source (no search)</label>
+      <label class="small"><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}> Enabled</label>
+      <div class="row">
+        <button>Save</button>
+        <button type="button" class="ghost" onclick="document.getElementById('source-edit-modal').remove()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}

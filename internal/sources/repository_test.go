@@ -28,7 +28,11 @@ func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
 	if err := repo.Sync(ctx, []Profile{profile}, OriginLocal); err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
-	if err := repo.UpdateCheck(ctx, "example", StatusHealthy, "", 12, 4, []string{"webp"}, FetchHTTP, FetchBrowser); err != nil {
+	if err := repo.UpdateCheck(ctx, "example", CheckResult{
+		Status: StatusHealthy, ChaptersFound: 12, ImagesFound: 4,
+		ImageExtensions: []string{"webp"}, ChapterFetch: FetchHTTP, ImageFetch: FetchBrowser,
+		Steps: []VerifyStep{{Name: "chapters", Status: StepOK, Detail: "12 chapters"}},
+	}); err != nil {
 		t.Fatalf("UpdateCheck() error = %v", err)
 	}
 
@@ -47,6 +51,9 @@ func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
 	}
 	if len(got.ImageExtensions) != 1 || got.ImageExtensions[0] != "webp" {
 		t.Fatalf("image extensions = %#v", got.ImageExtensions)
+	}
+	if len(got.VerifySteps) != 1 || got.VerifySteps[0].Status != StepOK {
+		t.Fatalf("verify steps = %#v", got.VerifySteps)
 	}
 	if !got.RequiresBrowserDownload {
 		t.Fatalf("RequiresBrowserDownload = false")

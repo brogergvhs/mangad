@@ -4,9 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
+	"net/url"
 	"path"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
+	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/sources"
 	"github.com/brogergvhs/mangad/internal/ui"
@@ -18,14 +22,15 @@ type sourceService struct {
 
 // SourceVerifyResult is the latest verification sample for a source.
 type SourceVerifyResult struct {
-	SourceID        string   `json:"source_id"`
-	Status          string   `json:"status"`
-	ChaptersFound   int      `json:"chapters_found"`
-	ImagesFound     int      `json:"images_found"`
-	ImageExtensions []string `json:"image_extensions"`
-	ChapterFetch    string   `json:"chapter_fetch,omitempty"`
-	ImageFetch      string   `json:"image_fetch,omitempty"`
-	Error           string   `json:"error,omitempty"`
+	SourceID        string               `json:"source_id"`
+	Status          string               `json:"status"`
+	ChaptersFound   int                  `json:"chapters_found"`
+	ImagesFound     int                  `json:"images_found"`
+	ImageExtensions []string             `json:"image_extensions"`
+	Steps           []sources.VerifyStep `json:"steps,omitempty"`
+	ChapterFetch    string               `json:"chapter_fetch,omitempty"`
+	ImageFetch      string               `json:"image_fetch,omitempty"`
+	Error           string               `json:"error,omitempty"`
 }
 
 func newSourceService(db *sql.DB) *sourceService {
@@ -161,7 +166,12 @@ func (s *sourceService) VerifySource(ctx context.Context, cfg *config.Config, lo
 	if checkErr != nil {
 		result.Error = checkErr.Error()
 	}
-	if err := s.repo.UpdateCheck(ctx, src.ID, result.Status, result.Error, result.ChaptersFound, result.ImagesFound, result.ImageExtensions, result.ChapterFetch, result.ImageFetch); err != nil {
+	if err := s.repo.UpdateCheck(ctx, src.ID, sources.CheckResult{
+		Status: result.Status, LastError: result.Error,
+		ChaptersFound: result.ChaptersFound, ImagesFound: result.ImagesFound,
+		ImageExtensions: result.ImageExtensions, Steps: result.Steps,
+		ChapterFetch: result.ChapterFetch, ImageFetch: result.ImageFetch,
+	}); err != nil {
 		return result, err
 	}
 	if checkErr != nil {
@@ -170,15 +180,17 @@ func (s *sourceService) VerifySource(ctx context.Context, cfg *config.Config, lo
 	return result, nil
 }
 
+// verify runs the verification pipeline: search the site, pick a random result
+// manga, fetch its chapter list, then fetch and download images of a random
+// chapter. Each stage is recorded as a step; fetch stages escalate
+// http -> solver so the learned method carries through to real downloads.
 func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc ui.Log, src sources.Source, result *SourceVerifyResult) error {
 	if !src.Enabled {
 		return fmt.Errorf("source %s is disabled", src.ID)
 	}
 
-	// Try plain HTTP first; escalate to the solver when the HTML can't be read
-	// OR when a sample image won't download (e.g. a CDN that needs warmed
-	// cookies). Escalating on image failure means the learned solver method
-	// carries through to real downloads.
+	searchStep, pickStep, mangaURL := s.verifySearch(ctx, cfg, logSvc, src)
+
 	attempts := []bool{false}
 	if cfg.BrowserSolver.Enabled || src.ChapterFetch == sources.FetchSolver || src.RequiresBrowserSolver {
 		attempts = append(attempts, true)
@@ -186,67 +198,150 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 	if src.ChapterFetch == sources.FetchSolver {
 		attempts = []bool{true} // source is pinned to the solver; don't waste an http probe
 	}
+	var chapStep, imgStep sources.VerifyStep
 	var lastErr error
 	for _, useSolver := range attempts {
-		if err := s.verifyOnce(ctx, cfg, logSvc, src, useSolver, result); err != nil {
-			lastErr = err
-			result.Status = fetchFailureStatus(err)
-			continue
+		chapStep, imgStep, lastErr = s.verifyFetch(ctx, cfg, logSvc, src, mangaURL, useSolver, result)
+		if lastErr == nil {
+			break
 		}
+	}
+	result.Steps = []sources.VerifyStep{searchStep, pickStep, chapStep, imgStep}
+	if lastErr != nil {
+		result.Status = fetchFailureStatus(lastErr)
+		return lastErr
+	}
+	if searchStep.Status == sources.StepFailed {
+		// Downloads work but the site can't be searched for new matches.
+		result.Status = sources.StatusDegraded
 		return nil
 	}
-	return lastErr
+	result.Status = sources.StatusHealthy
+	return nil
 }
 
-// verifyOnce fetches the chapter list, extracts a sample chapter's images, and
-// downloads one image to prove the whole pipeline works with the given method.
-func (s *sourceService) verifyOnce(ctx context.Context, cfg *config.Config, logSvc ui.Log, src sources.Source, useSolver bool, result *SourceVerifyResult) error {
+// verifySearch checks the source's search page and picks a random result to
+// verify against; sources without search fall back to the sample manga.
+func (s *sourceService) verifySearch(ctx context.Context, cfg *config.Config, logSvc ui.Log, src sources.Source) (search, pick sources.VerifyStep, mangaURL string) {
+	search = sources.VerifyStep{Name: "search", Status: sources.StepSkipped}
+	pick = sources.VerifyStep{Name: "pick manga", Status: sources.StepSkipped, Detail: "using sample manga"}
+	mangaURL = src.SampleMangaURL
+	if src.SingleManga || strings.TrimSpace(src.SearchURL) == "" {
+		search.Detail = "source has no search"
+		return search, pick, mangaURL
+	}
+
+	query := sampleTitleQuery(src)
+	searchURL := strings.ReplaceAll(src.SearchURL, "{query}", url.QueryEscape(query))
+	search.Detail = fmt.Sprintf("%q", query)
+	body, finalURL, err := fetchSearchPage(ctx, *cfg, searchURL)
+	if err != nil {
+		search.Status = sources.StepFailed
+		search.Log = fmt.Sprintf("GET %s: %v", searchURL, err)
+		pick.Detail = "falling back to sample manga"
+		return search, pick, mangaURL
+	}
+	// Reuse the matcher's result parsing with a synthetic manga titled after
+	// the sample slug, so at least the sample manga should be found.
+	fake := catalog.Manga{TitleRomaji: query}
+	var links []string
+	if doc, err := goquery.NewDocumentFromReader(strings.NewReader(body)); err == nil {
+		links = searchLinks(doc, src, fake)
+	}
+	links = uniqueStrings(append(links, searchStructuredLinks(body, src, fake)...))
+	if len(links) == 0 && finalURL != searchURL && looksLikeMangaResult(src, fake, finalURL, "") {
+		// A single-result search redirected straight to the manga page.
+		links = []string{finalURL}
+	}
+	if len(links) == 0 {
+		search.Status = sources.StepFailed
+		search.Log = fmt.Sprintf("GET %s returned %d bytes but no usable manga results for %q", searchURL, len(body), query)
+		pick.Detail = "falling back to sample manga"
+		return search, pick, mangaURL
+	}
+	search.Status = sources.StepOK
+	search.Detail = fmt.Sprintf("%d results for %q", len(links), query)
+	mangaURL = links[rand.Intn(len(links))]
+	pick.Status = sources.StepOK
+	pick.Detail = mangaURL
+	return search, pick, mangaURL
+}
+
+// verifyFetch fetches the chapter list and downloads one image of a random
+// chapter with the given method, recording both stages as steps.
+func (s *sourceService) verifyFetch(ctx context.Context, cfg *config.Config, logSvc ui.Log, src sources.Source, mangaURL string, useSolver bool, result *SourceVerifyResult) (chap, img sources.VerifyStep, err error) {
+	chap = sources.VerifyStep{Name: "chapters", Status: sources.StepFailed}
+	img = sources.VerifyStep{Name: "images", Status: sources.StepSkipped}
 	probe := probeConfig(*cfg, src, useSolver, false)
 	svc, err := NewSourceDownloadService(&probe, logSvc, nil, src.Scraper)
 	if err != nil {
-		return err
+		chap.Log = err.Error()
+		return chap, img, err
 	}
 	method := sources.FetchHTTP
 	if useSolver {
 		method = sources.FetchSolver
 	}
 
-	list, err := svc.FetchChapters(ctx, src.SampleMangaURL)
+	list, err := svc.FetchChapters(ctx, mangaURL)
+	if err == nil && len(list) == 0 {
+		err = fmt.Errorf("no chapters found at %s", mangaURL)
+	}
 	if err != nil {
-		return err
+		chap.Log = err.Error()
+		return chap, img, err
 	}
-	if len(list) == 0 {
-		return fmt.Errorf("no chapters found")
-	}
+	chap.Status = sources.StepOK
+	chap.Detail = fmt.Sprintf("%d chapters", len(list))
 	result.ChapterFetch = method
 	result.ChaptersFound = len(list)
-	if len(list) < src.MinChapters {
-		result.Status = sources.StatusDegraded
-		return fmt.Errorf("found %d chapters, expected at least %d", len(list), src.MinChapters)
-	}
 
-	images, err := svc.FetchImages(ctx, list[0])
+	ch := list[rand.Intn(len(list))]
+	img.Status = sources.StepFailed
+	images, err := svc.FetchImages(ctx, ch)
 	if err != nil {
-		return err
+		img.Log = err.Error()
+		return chap, img, err
 	}
 	result.ImagesFound = len(images)
 	result.ImageExtensions = imageExtensions(images)
 	if len(images) == 0 {
 		if cfg.BrowserDownload.Enabled {
+			img.Status = sources.StepOK
+			img.Detail = fmt.Sprintf("chapter %s: browser capture", ch.Label)
 			result.ImageFetch = sources.FetchBrowser
-			result.Status = sources.StatusHealthy
-			return nil
+			return chap, img, nil
 		}
-		return fmt.Errorf("no images found in sample chapter")
+		err = fmt.Errorf("no images found in chapter %s", ch.Label)
+		img.Log = err.Error()
+		return chap, img, err
 	}
 	// Actually download a sample image so CDN 403s surface here, not at download.
-	if err := svc.VerifyImage(ctx, images[0], list[0].URL); err != nil {
+	if err := svc.VerifyImage(ctx, images[rand.Intn(len(images))], ch.URL); err != nil {
 		result.ImageFetch = ""
-		return fmt.Errorf("sample image download failed: %w", err)
+		img.Log = err.Error()
+		return chap, img, fmt.Errorf("sample image download failed: %w", err)
 	}
+	img.Status = sources.StepOK
+	img.Detail = fmt.Sprintf("%d images in chapter %s", len(images), ch.Label)
 	result.ImageFetch = sources.FetchHTTP
-	result.Status = sources.StatusHealthy
-	return nil
+	return chap, img, nil
+}
+
+// sampleTitleQuery derives a search query from the sample manga URL's slug.
+func sampleTitleQuery(src sources.Source) string {
+	u, err := url.Parse(src.SampleMangaURL)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	slug := parts[len(parts)-1]
+	slug, _, _ = strings.Cut(slug, ".") // "title.26697" -> "title"
+	words := strings.FieldsFunc(slug, func(r rune) bool { return r == '-' || r == '_' })
+	return strings.ToLower(strings.Join(words, " "))
 }
 
 // fetchFailureStatus maps a fetch error to a health status: a Cloudflare wall

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS sources (
 	chapters_found INTEGER NOT NULL DEFAULT 0,
 	sample_images_found INTEGER NOT NULL DEFAULT 0,
 	image_extensions_json TEXT NOT NULL DEFAULT '[]',
+	verify_steps_json TEXT NOT NULL DEFAULT '[]',
 	chapter_fetch TEXT NOT NULL DEFAULT '',
 	image_fetch TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -201,6 +202,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}
 	if err = ensureColumn(ctx, tx, "sources", "single_manga", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return fmt.Errorf("migrate sources.single_manga: %w", err)
+	}
+	if err = ensureColumn(ctx, tx, "sources", "verify_steps_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return fmt.Errorf("migrate sources.verify_steps_json: %w", err)
 	}
 	for _, col := range []string{"chapter_fetch", "image_fetch"} {
 		if err = ensureColumn(ctx, tx, "sources", col, "TEXT NOT NULL DEFAULT ''"); err != nil {

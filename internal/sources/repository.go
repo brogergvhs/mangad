@@ -167,11 +167,27 @@ func (r *Repository) SetFetchMethods(ctx context.Context, id, chapterFetch, imag
 	return nil
 }
 
-func (r *Repository) UpdateCheck(ctx context.Context, id, status, lastErr string, chapters, images int, extensions []string, chapterFetch, imageFetch string) error {
+// CheckResult is the outcome of one verification run to persist.
+type CheckResult struct {
+	Status          string
+	LastError       string
+	ChaptersFound   int
+	ImagesFound     int
+	ImageExtensions []string
+	Steps           []VerifyStep
+	ChapterFetch    string
+	ImageFetch      string
+}
+
+func (r *Repository) UpdateCheck(ctx context.Context, id string, res CheckResult) error {
 	id = strings.ToLower(strings.TrimSpace(id))
-	encoded, err := encodeList(extensions)
+	encoded, err := encodeList(res.ImageExtensions)
 	if err != nil {
 		return fmt.Errorf("encode image extensions: %w", err)
+	}
+	steps, err := json.Marshal(res.Steps)
+	if err != nil {
+		return fmt.Errorf("encode verify steps: %w", err)
 	}
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE sources SET
@@ -181,11 +197,13 @@ func (r *Repository) UpdateCheck(ctx context.Context, id, status, lastErr string
 			chapters_found = ?,
 			sample_images_found = ?,
 			image_extensions_json = ?,
+			verify_steps_json = ?,
 			chapter_fetch = CASE WHEN ? = '' THEN chapter_fetch ELSE ? END,
 			image_fetch = CASE WHEN ? = '' THEN image_fetch ELSE ? END,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, status, lastErr, chapters, images, encoded, chapterFetch, chapterFetch, imageFetch, imageFetch, id)
+	`, res.Status, res.LastError, res.ChaptersFound, res.ImagesFound, encoded, string(steps),
+		res.ChapterFetch, res.ChapterFetch, res.ImageFetch, res.ImageFetch, id)
 	if err != nil {
 		return fmt.Errorf("update source check %s: %w", id, err)
 	}
@@ -223,6 +241,7 @@ func sourceSelect() string {
 			chapters_found,
 			sample_images_found,
 			image_extensions_json,
+			verify_steps_json,
 			chapter_fetch,
 			image_fetch
 		FROM sources`
@@ -232,7 +251,7 @@ func scanSource(scanner interface {
 	Scan(dest ...any) error
 }) (Source, error) {
 	var src Source
-	var domainsJSON, extensionsJSON, imageExtensionsJSON string
+	var domainsJSON, extensionsJSON, imageExtensionsJSON, stepsJSON string
 	var requiresBrowserSolver, requiresBrowserDownloader, singleManga, enabled int
 	err := scanner.Scan(
 		&src.ID,
@@ -256,6 +275,7 @@ func scanSource(scanner interface {
 		&src.ChaptersFound,
 		&src.SampleImagesFound,
 		&imageExtensionsJSON,
+		&stepsJSON,
 		&src.ChapterFetch,
 		&src.ImageFetch,
 	)
@@ -270,6 +290,11 @@ func scanSource(scanner interface {
 	}
 	if src.ImageExtensions, err = decodeList(imageExtensionsJSON); err != nil {
 		return Source{}, fmt.Errorf("decode source image extensions: %w", err)
+	}
+	if stepsJSON != "" && stepsJSON != "[]" {
+		if err := json.Unmarshal([]byte(stepsJSON), &src.VerifySteps); err != nil {
+			return Source{}, fmt.Errorf("decode verify steps: %w", err)
+		}
 	}
 	src.RequiresBrowserSolver = requiresBrowserSolver != 0
 	src.RequiresBrowserDownload = requiresBrowserDownloader != 0

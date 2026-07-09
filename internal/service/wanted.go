@@ -359,7 +359,7 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 		if logSvc != nil {
 			logSvc.Debugf("Source search %s query %q: %s\n", src.ID, title, searchURL)
 		}
-		body, err := fetchSearchPage(ctx, cfg, searchURL)
+		body, finalURL, err := fetchSearchPage(ctx, cfg, searchURL)
 		if err != nil {
 			if logSvc != nil {
 				logSvc.Debugf("Source search failed for %s: %v\n", searchURL, err)
@@ -375,6 +375,10 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 			continue
 		}
 		found := append(searchLinks(doc, src, manga), searchStructuredLinks(body, src, manga)...)
+		if len(found) == 0 && finalURL != searchURL && looksLikeMangaResult(src, manga, finalURL, "") {
+			// A single-result search redirected straight to the manga page.
+			found = []string{finalURL}
+		}
 		if logSvc != nil {
 			logSvc.Debugf("Source search %s returned %d candidates from %d bytes.\n", src.ID, len(uniqueStrings(found)), len(body))
 		}
@@ -391,8 +395,9 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 
 // fetchSearchPage fetches a source search page over plain HTTP only; a
 // solver-only source falls through to slug probing rather than paying the
-// slow browser path for search.
-func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (string, error) {
+// slow browser path for search. finalURL reports where redirects landed —
+// some sites send a single-result search straight to the manga page.
+func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (body, finalURL string, err error) {
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
 		Timeout:    30 * time.Second,
 		UserAgent:  util.PickUserAgent(cfg.UserAgent),
@@ -402,22 +407,26 @@ func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (str
 		RateLimit:  hostRateLimit(&cfg),
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
+	finalURL = target
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+		return "", finalURL, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(resp.Body)
-	return string(data), err
+	return string(data), finalURL, err
 }
 
 func searchLinks(doc *goquery.Document, src sources.Source, manga catalog.Manga) []string {
