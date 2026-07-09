@@ -496,13 +496,23 @@ func (u *webUI) settingsPage(w http.ResponseWriter, r *http.Request) {
 
 // --- search & add ---
 
+type searchResultView struct {
+	catalog.Manga
+	TitleID int64 // set when the manga is already in the library
+}
+
 func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 	items, err := u.svc.SearchAniList(r.Context(), r.FormValue("q"), 10)
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "searchResults", items)
+	inLibrary, _ := u.svc.TitlesByProvider(r.Context(), catalog.AniListProvider)
+	views := make([]searchResultView, len(items))
+	for i, m := range items {
+		views[i] = searchResultView{Manga: m, TitleID: inLibrary[m.ProviderID]}
+	}
+	u.frag(w, "searchResults", views)
 }
 
 func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {

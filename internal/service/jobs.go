@@ -366,6 +366,11 @@ func (s *JobService) AddCatalogTitle(ctx context.Context, anilistID int) (librar
 	return s.want.AddCatalogTitle(ctx, anilistID)
 }
 
+// TitlesByProvider maps a catalog provider's manga IDs to tracked title IDs.
+func (s *JobService) TitlesByProvider(ctx context.Context, provider string) (map[string]int64, error) {
+	return s.lib.TitlesByProvider(ctx, provider)
+}
+
 // GetManga returns stored catalog metadata for a manga.
 func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {
 	return s.want.GetManga(ctx, catalogID)

@@ -92,6 +92,11 @@ func (s *LibraryService) ResetFailedDownloads(ctx context.Context, titleID int64
 	return s.repo.ResetFailedDownloads(ctx, titleID)
 }
 
+// TitlesByProvider maps a catalog provider's manga IDs to tracked title IDs.
+func (s *LibraryService) TitlesByProvider(ctx context.Context, provider string) (map[string]int64, error) {
+	return s.repo.TitlesByProvider(ctx, provider)
+}
+
 // ListTitleSources returns all sources linked to a title.
 func (s *LibraryService) ListTitleSources(ctx context.Context, titleID int64) ([]library.LinkedSource, error) {
 	return s.repo.ListTitleSources(ctx, titleID)

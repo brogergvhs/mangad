@@ -7,12 +7,15 @@
     <img class="cover" src="{{.CoverImage}}" alt="" loading="lazy">
     <div class="meta">
       <div class="row spread">
-        <strong>{{mangaTitle .}}</strong>
+        <strong>{{mangaTitle .Manga}}</strong>
         <span class="small muted nowrap">{{.Format}} · {{.Status}}{{if .Chapters}} · {{.Chapters}} ch{{end}}</span>
       </div>
       <div class="desc small">{{.Description}}</div>
     </div>
-    <div><button hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add to Library</button></div>
+    <div>
+      {{if .TitleID}}<a class="badge done" href="/library/{{.TitleID}}">✓ In library →</a>
+      {{else}}<button hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add to Library</button>{{end}}
+    </div>
   </div>
   {{else}}<p class="muted">No results.</p>{{end}}
 </div>

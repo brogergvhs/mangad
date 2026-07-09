@@ -478,6 +478,30 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 	return out, rows.Err()
 }
 
+// TitlesByProvider maps a catalog provider's manga IDs to tracked title IDs,
+// for marking search results that are already in the library.
+func (r *Repository) TitlesByProvider(ctx context.Context, provider string) (map[string]int64, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT m.provider_id, t.id FROM titles t
+		JOIN catalog_manga m ON m.id = t.catalog_manga_id
+		WHERE m.provider = ?
+	`, provider)
+	if err != nil {
+		return nil, fmt.Errorf("list titles by provider: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var providerID string
+		var titleID int64
+		if err := rows.Scan(&providerID, &titleID); err != nil {
+			return nil, fmt.Errorf("scan provider title: %w", err)
+		}
+		out[providerID] = titleID
+	}
+	return out, rows.Err()
+}
+
 // FindByCatalog returns the tracked title for a catalog manga, if any.
 func (r *Repository) FindByCatalog(ctx context.Context, catalogID int64) (Title, bool, error) {
 	row := r.db.QueryRowContext(ctx, titleSelectQuery()+` WHERE t.catalog_manga_id = ? GROUP BY t.id LIMIT 1`, catalogID)
