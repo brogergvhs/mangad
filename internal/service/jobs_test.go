@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/brogergvhs/mangad/internal/jobs"
 )
 
 func TestApplyLimitsFromSettings(t *testing.T) {
@@ -41,5 +43,28 @@ func TestApplyLimitsFromSettings(t *testing.T) {
 	}
 	if svc.jobTimeout != 2*time.Minute {
 		t.Errorf("jobTimeout = %s, want 2m", svc.jobTimeout)
+	}
+}
+
+func TestEnqueueTitleJobReusesActiveGlobalJob(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+
+	global, err := svc.Enqueue(ctx, jobs.TypeDownloadMissing, 0, time.Now())
+	if err != nil {
+		t.Fatalf("Enqueue(global) error = %v", err)
+	}
+	targeted, err := svc.Enqueue(ctx, jobs.TypeDownloadMissing, 123, time.Now())
+	if err != nil {
+		t.Fatalf("Enqueue(targeted) error = %v", err)
+	}
+	if targeted.ID != global.ID {
+		t.Fatalf("targeted job ID = %d, want global ID %d", targeted.ID, global.ID)
 	}
 }

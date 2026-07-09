@@ -621,6 +621,11 @@ func (s *JobService) enqueue(ctx context.Context, typ string, payload JobPayload
 	if err := validateJob(typ, payload); err != nil {
 		return jobs.Job{}, err
 	}
+	if job, ok, err := s.coveringJob(ctx, typ, payload); err != nil {
+		return jobs.Job{}, err
+	} else if ok {
+		return job, nil
+	}
 
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -628,6 +633,29 @@ func (s *JobService) enqueue(ctx context.Context, typ string, payload JobPayload
 	}
 
 	return s.jobs.Enqueue(ctx, typ, string(data), runAfter)
+}
+
+func (s *JobService) coveringJob(ctx context.Context, typ string, payload JobPayload) (jobs.Job, bool, error) {
+	if payload.TitleID <= 0 || !titleScopedJob(typ) {
+		return jobs.Job{}, false, nil
+	}
+	all, err := s.jobs.List(ctx)
+	if err != nil {
+		return jobs.Job{}, false, err
+	}
+	for _, job := range all {
+		if job.Type != typ {
+			continue
+		}
+		if !activeJobStatus(job.Status) {
+			continue
+		}
+		var p JobPayload
+		if json.Unmarshal([]byte(job.Payload), &p) == nil && p.TitleID == 0 {
+			return job, true, nil
+		}
+	}
+	return jobs.Job{}, false, nil
 }
 
 // List returns recent jobs.
@@ -728,4 +756,22 @@ func validateJob(typ string, payload JobPayload) error {
 	}
 
 	return nil
+}
+
+func titleScopedJob(typ string) bool {
+	switch typ {
+	case jobs.TypeRefreshTitle, jobs.TypeScanDownloads, jobs.TypeDownloadMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+func activeJobStatus(status string) bool {
+	switch status {
+	case "queued", "running", "failed":
+		return true
+	default:
+		return false
+	}
 }

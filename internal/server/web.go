@@ -279,7 +279,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 		},
 	}
 	for _, tl := range pageTitles {
-		running, label, failed, msg := titleActivityFrom(js, tl.ID)
+		running, label, failed, msg := titleActivityFrom(js, tl)
 		if len(running) > 0 {
 			t.Poll = true
 		}
@@ -1055,15 +1055,23 @@ func jobState(status string) (active, failed bool) {
 // titleActivity reports which of a title's job types are running (for button
 // locking), a verb for the spinner, and the most recent terminal failure.
 func (u *webUI) titleActivity(ctx context.Context, id int64) activityView {
-	running, label, failed, msg := titleActivityFrom(u.jobs(ctx), id)
-	return activityView{Running: running, ActiveLabel: label, Failed: failed, Error: msg}
+	title, err := u.svc.GetTitle(ctx, id)
+	if err != nil {
+		title = library.Title{ID: id, Monitored: true}
+	}
+	running, label, failed, msg := titleActivityFrom(u.jobs(ctx), title)
+	return activityView{Title: title, Running: running, ActiveLabel: label, Failed: failed, Error: msg}
 }
 
-func titleActivityFrom(js []jobs.Job, id int64) (running map[string]bool, label string, failed bool, msg string) {
+func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]bool, label string, failed bool, msg string) {
 	running = map[string]bool{}
 	for _, j := range js { // List is newest-first
 		var p service.JobPayload
-		if json.Unmarshal([]byte(j.Payload), &p) != nil || p.TitleID != id {
+		if json.Unmarshal([]byte(j.Payload), &p) != nil {
+			continue
+		}
+		global := p.TitleID == 0 && globalJobApplies(j.Type, title)
+		if p.TitleID != title.ID && !global {
 			continue
 		}
 		verb := titleVerb(j.Type)
@@ -1085,6 +1093,17 @@ func titleActivityFrom(js []jobs.Job, id int64) (running map[string]bool, label 
 		failed = false // something is running; don't also show the last failure
 	}
 	return running, label, failed, msg
+}
+
+func globalJobApplies(typ string, title library.Title) bool {
+	switch typ {
+	case jobs.TypeRefreshTitle, jobs.TypeDownloadMissing:
+		return title.Monitored
+	case jobs.TypeScanDownloads:
+		return true
+	default:
+		return false
+	}
 }
 
 func titleVerb(typ string) string {
