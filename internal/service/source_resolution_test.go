@@ -94,8 +94,13 @@ func TestConfigForSourceLearnedFetchMethods(t *testing.T) {
 		wantDownload bool
 	}{
 		{
-			name:       "learned http disables solver despite hint",
+			name:       "learned http keeps a hard solver requirement",
 			src:        sources.Source{Profile: sources.Profile{RequiresBrowserSolver: true}, ChapterFetch: sources.FetchHTTP},
+			wantSolver: true,
+		},
+		{
+			name:       "learned http disables solver without a requirement",
+			src:        sources.Source{ChapterFetch: sources.FetchHTTP},
 			wantSolver: false,
 		},
 		{

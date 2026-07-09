@@ -22,12 +22,13 @@ func ConfigForSource(cfg config.Config, src sources.Source, opts SourceConfigOpt
 	if len(src.AllowedExtensions) > 0 && !opts.PreserveAllowedExtensions {
 		cfg.AllowExt = src.AllowedExtensions
 	}
-	// A learned method wins; until one exists, fall back to the profile hint.
+	// A learned method wins over the runtime default; a hard profile
+	// requirement is always honored, even over a learned "http".
 	switch src.ChapterFetch {
 	case sources.FetchSolver:
 		cfg.BrowserSolver.Enabled = true
 	case sources.FetchHTTP:
-		cfg.BrowserSolver.Enabled = false
+		cfg.BrowserSolver.Enabled = src.RequiresBrowserSolver
 	default:
 		cfg.BrowserSolver.Enabled = cfg.BrowserSolver.Enabled || src.RequiresBrowserSolver
 	}
@@ -35,7 +36,7 @@ func ConfigForSource(cfg config.Config, src sources.Source, opts SourceConfigOpt
 	case sources.FetchBrowser:
 		cfg.BrowserDownload.Enabled = true
 	case sources.FetchHTTP:
-		cfg.BrowserDownload.Enabled = false
+		cfg.BrowserDownload.Enabled = src.RequiresBrowserDownload
 	default:
 		cfg.BrowserDownload.Enabled = cfg.BrowserDownload.Enabled || src.RequiresBrowserDownload
 	}

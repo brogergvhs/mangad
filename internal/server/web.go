@@ -866,12 +866,24 @@ func (u *webUI) srcTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *webUI) srcAddCustom(w http.ResponseWriter, r *http.Request) {
-	profile, _, _, err := customProfileFromForm(r)
+	profile, solver, browser, err := customProfileFromForm(r)
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
 	if err := u.svc.ImportLocalSource(r.Context(), profile); err != nil {
+		u.fail(w, err)
+		return
+	}
+	// Pin the fetch methods the user chose so verify/downloads honor them.
+	chapterFetch, imageFetch := "", ""
+	if solver {
+		chapterFetch = sources.FetchSolver
+	}
+	if browser {
+		imageFetch = sources.FetchBrowser
+	}
+	if err := u.svc.SetSourceMethods(r.Context(), profile.ID, chapterFetch, imageFetch); err != nil {
 		u.fail(w, err)
 		return
 	}

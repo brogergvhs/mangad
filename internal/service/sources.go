@@ -87,11 +87,14 @@ func (s *sourceService) TestProfile(ctx context.Context, cfg *config.Config, log
 	res.Images = images
 	res.ImageExtensions = imageExtensions(images)
 	switch {
+	case useBrowser:
+		// The user chose browser capture; that's what the source will use.
+		res.ImageFetch = sources.FetchBrowser
+		if len(images) == 0 {
+			res.Error = "no image URLs in the chapter HTML — images will be captured by the browser downloader"
+		}
 	case len(images) > 0:
 		res.ImageFetch = sources.FetchHTTP
-	case useBrowser:
-		res.ImageFetch = sources.FetchBrowser
-		res.Error = "no image URLs in the chapter HTML — images will be captured by the browser downloader"
 	default:
 		res.Error = "no image URLs in the chapter HTML — enable browser image download to fetch them"
 	}
@@ -297,6 +300,17 @@ func (s *sourceService) verifyFetch(ctx context.Context, cfg *config.Config, log
 	result.ChaptersFound = len(list)
 
 	ch := list[rand.Intn(len(list))]
+	if src.ImageFetch == sources.FetchBrowser || src.RequiresBrowserDownload {
+		// Images are pinned to browser capture; the http probe doesn't apply
+		// and must not relearn "http" over the user's choice.
+		images, _ := svc.FetchImages(ctx, ch)
+		result.ImagesFound = len(images)
+		result.ImageExtensions = imageExtensions(images)
+		result.ImageFetch = sources.FetchBrowser
+		img.Status = sources.StepOK
+		img.Detail = fmt.Sprintf("chapter %s: browser capture", ch.Label)
+		return chap, img, nil
+	}
 	img.Status = sources.StepFailed
 	images, err := svc.FetchImages(ctx, ch)
 	if err != nil {
