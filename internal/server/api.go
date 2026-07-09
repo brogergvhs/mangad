@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/jobs"
+	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/service"
 	"github.com/brogergvhs/mangad/internal/sources"
 )
@@ -155,11 +156,13 @@ func New(
 			writeError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
-		monitored := true
-		if req.Monitored != nil {
-			monitored = *req.Monitored
+		var title library.Title
+		var err error
+		if req.Monitored == nil {
+			title, err = svc.TrackMatchDefault(r.Context(), req.MatchID, req.Output, req.RefreshInterval)
+		} else {
+			title, err = svc.TrackMatch(r.Context(), req.MatchID, req.Output, *req.Monitored, req.RefreshInterval)
 		}
-		title, err := svc.TrackMatch(r.Context(), req.MatchID, req.Output, monitored, req.RefreshInterval)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

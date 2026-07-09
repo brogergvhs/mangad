@@ -84,7 +84,7 @@ func (s *WantedService) ImportFolder(ctx context.Context, root, folder string, a
 		SourceURL:       localURL(folder),
 		DisplayTitle:    displayMangaTitle(manga),
 		OutputPath:      folder,
-		Monitored:       true,
+		Monitored:       defaultMonitored(manga),
 		RefreshInterval: "24h",
 	})
 	if err != nil {
@@ -158,9 +158,18 @@ func (s *WantedService) AddCatalogTitle(ctx context.Context, anilistID int) (lib
 		CatalogMangaID:  &manga.ID,
 		SourceURL:       fmt.Sprintf("pending:%d", manga.ID),
 		DisplayTitle:    displayMangaTitle(manga),
-		Monitored:       true,
+		Monitored:       defaultMonitored(manga),
 		RefreshInterval: "24h",
 	})
+}
+
+func defaultMonitored(manga catalog.Manga) bool {
+	switch strings.ToLower(strings.TrimSpace(manga.Status)) {
+	case "finished", "completed", "complete":
+		return false
+	default:
+		return true
+	}
 }
 
 // GetManga returns stored catalog metadata.

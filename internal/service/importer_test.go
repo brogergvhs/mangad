@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/brogergvhs/mangad/internal/catalog"
+)
 
 func TestParseChapterFile(t *testing.T) {
 	cases := []struct {
@@ -35,6 +39,25 @@ func TestParseChapterFile(t *testing.T) {
 		label, num := parseChapterFile(tc.name)
 		if label != tc.wantLabel || num != tc.wantNum {
 			t.Errorf("parseChapterFile(%q) = %q/%d, want %q/%d", tc.name, label, num, tc.wantLabel, tc.wantNum)
+		}
+	}
+}
+
+func TestDefaultMonitored(t *testing.T) {
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		{"FINISHED", false},
+		{"completed", false},
+		{"Complete", false},
+		{"RELEASING", true},
+		{"", true},
+	}
+	for _, tc := range cases {
+		got := defaultMonitored(catalog.Manga{Status: tc.status})
+		if got != tc.want {
+			t.Errorf("defaultMonitored(%q) = %v, want %v", tc.status, got, tc.want)
 		}
 	}
 }

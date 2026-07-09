@@ -476,6 +476,19 @@ func (s *JobService) TrackMatch(ctx context.Context, matchID int64, output strin
 	return title, nil
 }
 
+// TrackMatchDefault adds a selected match using catalog status for monitoring.
+func (s *JobService) TrackMatchDefault(ctx context.Context, matchID int64, output string, refreshInterval string) (library.Title, error) {
+	match, err := s.want.catalog.GetMatch(ctx, matchID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	manga, err := s.want.catalog.GetManga(ctx, match.CatalogMangaID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	return s.TrackMatch(ctx, matchID, output, defaultMonitored(manga), refreshInterval)
+}
+
 // SyncSources stores bundled profiles and, when set, a remote registry.
 func (s *JobService) SyncSources(ctx context.Context, registryURL string) error {
 	if err := s.src.SyncBuiltIn(ctx); err != nil {
