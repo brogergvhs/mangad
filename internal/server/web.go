@@ -1190,8 +1190,7 @@ func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]b
 		if json.Unmarshal([]byte(j.Payload), &p) != nil {
 			continue
 		}
-		global := p.TitleID == 0 && globalJobApplies(j.Type, title)
-		if p.TitleID != title.ID && !global {
+		if p.TitleID != title.ID {
 			continue
 		}
 		verb := titleVerb(j.Type)
@@ -1213,17 +1212,6 @@ func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]b
 		failed = false // something is running; don't also show the last failure
 	}
 	return running, label, failed, msg
-}
-
-func globalJobApplies(typ string, title library.Title) bool {
-	switch typ {
-	case jobs.TypeRefreshTitle, jobs.TypeDownloadMissing:
-		return title.Monitored
-	case jobs.TypeScanDownloads:
-		return true
-	default:
-		return false
-	}
 }
 
 func titleVerb(typ string) string {

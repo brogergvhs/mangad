@@ -37,9 +37,10 @@ type JobService struct {
 
 // JobPayload is the common payload for background jobs.
 type JobPayload struct {
-	TitleID   int64  `json:"title_id,omitempty"`
-	SourceID  string `json:"source_id,omitempty"`
-	CatalogID int64  `json:"catalog_id,omitempty"`
+	TitleID     int64  `json:"title_id,omitempty"`
+	SourceID    string `json:"source_id,omitempty"`
+	CatalogID   int64  `json:"catalog_id,omitempty"`
+	ResetFailed bool   `json:"reset_failed,omitempty"`
 }
 
 // RunSummary describes one queue drain.
@@ -704,7 +705,11 @@ func (s *JobService) TestSource(ctx context.Context, profile sources.Profile, us
 
 // Enqueue creates a job.
 func (s *JobService) Enqueue(ctx context.Context, typ string, titleID int64, runAfter time.Time) (jobs.Job, error) {
-	return s.enqueue(ctx, typ, JobPayload{TitleID: titleID}, runAfter)
+	payload := JobPayload{TitleID: titleID}
+	if typ == jobs.TypeDownloadMissing && titleID > 0 {
+		payload.ResetFailed = true
+	}
+	return s.enqueue(ctx, typ, payload, runAfter)
 }
 
 // EnqueueSource creates a source-scoped job.
@@ -750,8 +755,11 @@ func (s *JobService) coveringJob(ctx context.Context, typ string, payload JobPay
 		if !activeJobStatus(job.Status) {
 			continue
 		}
-		var p JobPayload
-		if json.Unmarshal([]byte(job.Payload), &p) == nil && p.TitleID == 0 {
+		var existing JobPayload
+		if json.Unmarshal([]byte(job.Payload), &existing) != nil {
+			continue
+		}
+		if existing.TitleID == 0 || existing.TitleID == payload.TitleID {
 			return job, true, nil
 		}
 	}
@@ -808,24 +816,26 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 			_, err = s.lib.RefreshTitle(ctx, cfg, logSvc, title)
 			return err
 		}
-		_, err := s.lib.RefreshMonitored(ctx, cfg, logSvc)
-		return err
+		return s.expandTitleJob(ctx, jobs.TypeRefreshTitle)
 	case jobs.TypeScanDownloads:
-		_, err := s.lib.ScanDownloads(ctx, payload.TitleID)
-		return err
-	case jobs.TypeDownloadMissing:
 		if payload.TitleID > 0 {
-			// A targeted request is an explicit retry: chapters that gave up
-			// after MaxDownloadAttempts get a fresh attempt budget. The
-			// scheduled monitored sweep keeps the cap.
-			if err := s.lib.ResetFailedDownloads(ctx, payload.TitleID); err != nil {
-				return err
-			}
-			_, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID)
+			_, err := s.lib.ScanDownloads(ctx, payload.TitleID)
 			return err
 		}
-		_, err := s.lib.DownloadMonitoredMissing(ctx, cfg, logSvc)
-		return err
+		return s.expandTitleJob(ctx, jobs.TypeScanDownloads)
+	case jobs.TypeDownloadMissing:
+		if payload.TitleID > 0 {
+			if payload.ResetFailed {
+				if err := s.lib.ResetFailedDownloads(ctx, payload.TitleID); err != nil {
+					return err
+				}
+			}
+			if _, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID); err != nil {
+				return err
+			}
+			return nil
+		}
+		return s.expandTitleJob(ctx, jobs.TypeDownloadMissing)
 	case jobs.TypeVerifySource:
 		_, err := s.VerifySource(ctx, cfg, logSvc, payload.SourceID)
 		return err
@@ -834,6 +844,35 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return err
 	default:
 		return fmt.Errorf("unknown job type %q", job.Type)
+	}
+}
+
+func (s *JobService) expandTitleJob(ctx context.Context, typ string) error {
+	titles, err := s.lib.ListTitles(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, title := range titles {
+		if !globalTitleJobApplies(typ, title) {
+			continue
+		}
+		_, err := s.enqueue(ctx, typ, JobPayload{TitleID: title.ID}, time.Now())
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+func globalTitleJobApplies(typ string, title library.Title) bool {
+	switch typ {
+	case jobs.TypeRefreshTitle:
+		return title.Monitored
+	case jobs.TypeDownloadMissing:
+		return title.Monitored && title.MissingCount > 0
+	case jobs.TypeScanDownloads:
+		return title.CompletedCount > 0
+	default:
+		return false
 	}
 }
 
