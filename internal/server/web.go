@@ -40,6 +40,11 @@ type pageData struct {
 	Title, Nav string
 	Content    template.HTML
 }
+type readerView struct {
+	Title    library.Title
+	Manifest readerManifestResponse
+	Empty    string
+}
 type dashData struct {
 	Titles     []library.Title
 	Sources    []sources.Source
@@ -183,6 +188,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) { u.page(w, r, "search", "Search", nil) })
 	mux.HandleFunc("GET /library", u.libraryPage)
 	mux.HandleFunc("GET /library/{id}", u.titlePage)
+	mux.HandleFunc("GET /reader/{id}", u.readerPage)
 	mux.HandleFunc("GET /import", u.importPage)
 	mux.HandleFunc("GET /sources", u.sourcesPage)
 	mux.HandleFunc("GET /settings", u.settingsPage)
@@ -229,6 +235,12 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 		return
 	}
 	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), Content: template.HTML(buf.String())}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (u *webUI) readerLayout(w http.ResponseWriter, title string, data readerView) {
+	if err := u.tmpl.ExecuteTemplate(w, "reader_layout.html", pageData{Title: title, Content: u.renderToHTML("reader", data)}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -288,6 +300,24 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "table", u.buildLibraryTable(r.Context(), r.URL.Query()))
+}
+
+func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	progress, err := u.svc.ReaderProgress(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	data := readerView{Title: progress.Title, Manifest: readerManifest(progress)}
+	if len(data.Manifest.Chapters) == 0 {
+		data.Empty = "No downloaded chapters are available to read yet."
+	}
+	u.readerLayout(w, progress.DisplayTitle, data)
 }
 
 func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableData {

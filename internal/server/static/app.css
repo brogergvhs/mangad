@@ -105,7 +105,8 @@ h2 {
 input,
 select,
 textarea,
-button {
+button,
+.button {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
@@ -118,26 +119,33 @@ select:focus {
   outline: none;
   border-color: var(--accent);
 }
-button {
+button,
+.button {
   cursor: pointer;
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
 }
-button.ghost {
+button.ghost,
+.button.ghost {
   background: var(--panel-2);
   border-color: var(--border);
   color: var(--text);
   font-weight: 500;
 }
-button.danger {
+button.danger,
+.button.danger {
   background: transparent;
   border-color: var(--bad);
   color: var(--bad);
 }
-button:hover {
+button:hover,
+.button:hover {
   filter: brightness(1.08);
+  text-decoration: none;
 }
 button:disabled {
   opacity: 0.5;
@@ -344,6 +352,11 @@ tr:last-child td {
   flex: 1;
   min-width: 180px;
 }
+.title-actions > .button {
+  flex: 1;
+  min-width: 180px;
+  text-align: center;
+}
 .activity-row:empty {
   display: none;
 }
@@ -429,3 +442,83 @@ tr:last-child td {
 .toast-area:empty { display: none; }
 
 .badge.cancelled { color: var(--muted); border-color: var(--muted); }
+
+/* reader */
+.reader-body {
+  background: #090a0d;
+}
+.reader-body .reader-shell {
+  min-height: 100vh;
+}
+.reader-controls {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(9, 10, 13, 0.92);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+.reader-title {
+  min-width: 0;
+  display: grid;
+  line-height: 1.25;
+}
+.reader-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 56px;
+}
+.reader-page {
+  display: block;
+  width: 100%;
+  max-width: 980px;
+  height: auto;
+  background: #11131a;
+}
+.reader-page.is-read {
+  outline: 1px solid rgba(63, 185, 127, 0.25);
+  outline-offset: -1px;
+}
+.reader-separator {
+  width: min(980px, 100%);
+  margin: 18px 0;
+  padding: 8px 14px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.reader-empty {
+  max-width: 520px;
+  margin: 18vh auto 0;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 1024px) {
+  .reader-body .reader-controls {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s;
+  }
+  .reader-body.controls-on .reader-controls {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .reader-strip {
+    padding-top: 0;
+  }
+  .reader-page,
+  .reader-separator {
+    max-width: 100%;
+  }
+}

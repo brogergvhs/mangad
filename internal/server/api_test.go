@@ -132,8 +132,15 @@ func TestAPIReaderProgress(t *testing.T) {
 		t.Fatalf("manifest = %+v, want one chapter with 3 page URLs", manifest)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/pages/2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/reader/"+strconv.FormatInt(title.ID, 10), nil)
 	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-reader`) || !strings.Contains(rec.Body.String(), manifest.Chapters[0].Pages[1].URL) {
+		t.Fatalf("reader page status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/pages/2", nil)
+	rec = httptest.NewRecorder()
 	api.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("page status = %d, want 200; body=%s", rec.Code, rec.Body.String())

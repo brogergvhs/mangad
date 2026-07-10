@@ -1,0 +1,37 @@
+{{define "reader"}}
+<div class="reader-shell"
+  data-reader
+  data-resume-chapter="{{.Manifest.ResumeChapterID}}"
+  data-resume-page="{{.Manifest.ResumePage}}">
+  <div class="reader-controls">
+    <a class="button ghost" href="/library/{{.Title.ID}}">Back</a>
+    <div class="reader-title">
+      <strong>{{.Title.DisplayTitle}}</strong>
+      {{if .Manifest.ResumeChapterID}}<span class="muted small">Continue from page {{.Manifest.ResumePage}}</span>{{end}}
+    </div>
+  </div>
+  {{if .Empty}}
+  <div class="reader-empty">{{.Empty}}</div>
+  {{else}}
+  <div class="reader-strip">
+    {{range .Manifest.Chapters}}
+    {{$chapter := .}}
+    <div class="reader-separator">Chapter {{.Label}}</div>
+    {{range .Pages}}
+    <img
+      id="chapter-{{$chapter.ID}}-page-{{.Page}}"
+      class="reader-page {{if .Read}}is-read{{end}}"
+      src="{{.URL}}"
+      alt="Chapter {{$chapter.Label}} page {{.Page}}"
+      loading="lazy"
+      decoding="async"
+      data-chapter="{{$chapter.ID}}"
+      data-page="{{.Page}}"
+      data-total="{{$chapter.PageCount}}"
+      data-read="{{if .Read}}true{{end}}">
+    {{end}}
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
