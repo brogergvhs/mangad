@@ -230,53 +230,62 @@
 {{define "sources"}}
 <div class="row spread">
   <h1>Sources</h1>
-  <button class="ghost" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
+  <div class="row">
+    <button class="ghost" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
+    <button type="button" onclick="document.getElementById('source-add-modal').style.display='flex'">+ Add Source</button>
+  </div>
 </div>
 {{template "sourcesTable" .}}
 
-<h2>Add a custom source</h2>
-<form class="panel stack" id="custom-source">
-  <div class="setting">
-    <div class="row spread"><label>Name</label><input name="name" placeholder="Manga Name" style="width:340px"></div>
+<div class="modal-overlay" id="source-add-modal" style="display:none">
+  <div class="modal panel">
+    <div class="row spread"><h2>Add a custom source</h2>
+      <button type="button" class="ghost small" onclick="document.getElementById('source-add-modal').style.display='none'">✕</button></div>
+    <form class="stack" id="custom-source">
+      <div class="setting">
+        <div class="row spread"><label>Name</label><input name="name" placeholder="Manga Name" style="width:340px"></div>
+      </div>
+      <div class="setting">
+        <div class="row spread"><label>Site base URL</label><input name="base_url" placeholder="https://manga.url.here/" style="width:340px"></div>
+        <div class="small muted">The site's home URL — used to match this source to chapter links.</div>
+      </div>
+      <div class="setting">
+        <div class="row spread"><label>Manga page URL</label><input name="manga_url" placeholder="https://manga.url.here/manga/xyz/" style="width:340px"></div>
+        <div class="small muted">A specific manga's page to scrape chapters from (also used for the test run).</div>
+      </div>
+      <div class="setting">
+        <label>Image types to download</label>
+        <div class="chip-list" style="margin-top:6px">
+          <label class="small"><input type="checkbox" name="ext" value="jpg" checked> jpg</label>
+          <label class="small"><input type="checkbox" name="ext" value="jpeg" checked> jpeg</label>
+          <label class="small"><input type="checkbox" name="ext" value="png" checked> png</label>
+          <label class="small"><input type="checkbox" name="ext" value="webp" checked> webp</label>
+          <label class="small"><input type="checkbox" name="ext" value="gif"> gif</label>
+          <label class="small"><input type="checkbox" name="ext" value="avif"> avif</label>
+        </div>
+      </div>
+      <div class="setting">
+        <label class="small"><input type="checkbox" name="solver"> Load pages with FlareSolverr</label>
+        <div class="small muted">Use the browser solver for the chapter list and chapter pages — needed for Cloudflare-protected sites.</div>
+      </div>
+      <div class="setting">
+        <label class="small"><input type="checkbox" name="browser"> Download images with a browser</label>
+        <div class="small muted">Capture images via the browser downloader when they aren't present in the page HTML.</div>
+      </div>
+      <div class="setting">
+        <label class="small"><input type="checkbox" name="single_manga"> Single manga source</label>
+        <div class="small muted">This site hosts only the one manga above (no search). It can then be picked directly on a library title.</div>
+      </div>
+      <div class="row">
+        <button type="button" class="ghost" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run</button>
+        <button type="button" hx-post="/ui/sources/custom">Save source</button>
+        <button type="button" class="ghost" onclick="document.getElementById('source-add-modal').style.display='none'">Cancel</button>
+        <span id="test-spin" class="spin htmx-indicator"></span>
+      </div>
+    </form>
+    <div id="source-test"></div>
   </div>
-  <div class="setting">
-    <div class="row spread"><label>Site base URL</label><input name="base_url" placeholder="https://manga.url.here/" style="width:340px"></div>
-    <div class="small muted">The site's home URL — used to match this source to chapter links.</div>
-  </div>
-  <div class="setting">
-    <div class="row spread"><label>Manga page URL</label><input name="manga_url" placeholder="https://manga.url.here/manga/xyz/" style="width:340px"></div>
-    <div class="small muted">A specific manga's page to scrape chapters from (also used for the test run).</div>
-  </div>
-  <div class="setting">
-    <label>Image types to download</label>
-    <div class="chip-list" style="margin-top:6px">
-      <label class="small"><input type="checkbox" name="ext" value="jpg" checked> jpg</label>
-      <label class="small"><input type="checkbox" name="ext" value="jpeg" checked> jpeg</label>
-      <label class="small"><input type="checkbox" name="ext" value="png" checked> png</label>
-      <label class="small"><input type="checkbox" name="ext" value="webp" checked> webp</label>
-      <label class="small"><input type="checkbox" name="ext" value="gif"> gif</label>
-      <label class="small"><input type="checkbox" name="ext" value="avif"> avif</label>
-    </div>
-  </div>
-  <div class="setting">
-    <label class="small"><input type="checkbox" name="solver"> Load pages with FlareSolverr</label>
-    <div class="small muted">Use the browser solver for the chapter list and chapter pages — needed for Cloudflare-protected sites.</div>
-  </div>
-  <div class="setting">
-    <label class="small"><input type="checkbox" name="browser"> Download images with a browser</label>
-    <div class="small muted">Capture images via the browser downloader when they aren't present in the page HTML.</div>
-  </div>
-  <div class="setting">
-    <label class="small"><input type="checkbox" name="single_manga"> Single manga source</label>
-    <div class="small muted">This site hosts only the one manga above (no search). It can then be picked directly on a library title.</div>
-  </div>
-  <div class="row">
-    <button type="button" class="ghost" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run</button>
-    <button type="button" hx-post="/ui/sources/custom">Save source</button>
-    <span id="test-spin" class="spin htmx-indicator"></span>
-  </div>
-</form>
-<div id="source-test"></div>
+</div>
 {{end}}
 
 {{define "sourceTest"}}
