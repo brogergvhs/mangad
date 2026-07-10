@@ -98,7 +98,7 @@
   <h1>{{.Title.DisplayTitle}}</h1>
   <div class="nowrap">
     {{template "monitorToggle" .Title}}
-    <button class="danger" hx-post="/ui/library/{{.Title.ID}}/remove" hx-confirm="Remove this title?">Remove</button>
+    <button class="danger" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title?">Remove</button>
   </div>
 </div>
 <div class="panel result">

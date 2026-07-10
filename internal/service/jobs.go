@@ -422,7 +422,17 @@ func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Man
 
 // RemoveTitle removes a tracked title.
 func (s *JobService) RemoveTitle(ctx context.Context, id int64) (library.Title, error) {
-	return s.lib.RemoveTitle(ctx, id)
+	title, err := s.lib.GetTitle(ctx, id)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.cancelTitleJobs(ctx, id); err != nil {
+		return library.Title{}, err
+	}
+	if _, err := s.lib.RemoveTitle(ctx, id); err != nil {
+		return library.Title{}, err
+	}
+	return title, nil
 }
 
 // SetMonitored toggles monitoring for a tracked title.
@@ -759,20 +769,28 @@ func (s *JobService) EnqueueCatalog(ctx context.Context, typ string, catalogID i
 }
 
 func (s *JobService) enqueue(ctx context.Context, typ string, payload JobPayload, runAfter time.Time) (jobs.Job, error) {
+	return s.enqueueJob(ctx, typ, payload, runAfter, true)
+}
+
+func (s *JobService) enqueueExact(ctx context.Context, typ string, payload JobPayload, runAfter time.Time) (jobs.Job, error) {
+	return s.enqueueJob(ctx, typ, payload, runAfter, false)
+}
+
+func (s *JobService) enqueueJob(ctx context.Context, typ string, payload JobPayload, runAfter time.Time, useCover bool) (jobs.Job, error) {
 	if err := validateJob(typ, payload); err != nil {
 		return jobs.Job{}, err
 	}
-	if job, ok, err := s.coveringJob(ctx, typ, payload); err != nil {
-		return jobs.Job{}, err
-	} else if ok {
-		return job, nil
+	if useCover {
+		if job, ok, err := s.coveringJob(ctx, typ, payload); err != nil {
+			return jobs.Job{}, err
+		} else if ok {
+			return job, nil
+		}
 	}
-
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return jobs.Job{}, fmt.Errorf("encode job payload: %w", err)
 	}
-
 	return s.jobs.Enqueue(ctx, typ, string(data), runAfter)
 }
 
@@ -816,6 +834,25 @@ func (s *JobService) CancelJob(ctx context.Context, id int64) error {
 		return err
 	}
 	return nil
+}
+
+func (s *JobService) cancelTitleJobs(ctx context.Context, titleID int64) error {
+	js, err := s.jobs.List(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, job := range js {
+		if !titleScopedJob(job.Type) || !activeJobStatus(job.Status) {
+			continue
+		}
+		var payload JobPayload
+		if json.Unmarshal([]byte(job.Payload), &payload) != nil || payload.TitleID != titleID {
+			continue
+		}
+		errs = append(errs, s.CancelJob(ctx, job.ID))
+	}
+	return errors.Join(errs...)
 }
 
 // List returns recent jobs.
@@ -944,7 +981,7 @@ func (s *JobService) expandTitleJob(ctx context.Context, typ string) error {
 		if !globalTitleJobApplies(typ, title, now) {
 			continue
 		}
-		_, err := s.enqueue(ctx, typ, JobPayload{TitleID: title.ID}, time.Now())
+		_, err := s.enqueueExact(ctx, typ, JobPayload{TitleID: title.ID}, time.Now())
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
@@ -958,7 +995,7 @@ func (s *JobService) enqueueDownloadAfterRefresh(ctx context.Context, titleID in
 	if !title.Monitored || title.MissingCount <= 1 {
 		return nil
 	}
-	if _, err := s.enqueue(ctx, jobs.TypeDownloadMissing, JobPayload{TitleID: title.ID}, time.Now()); err != nil {
+	if _, err := s.enqueueExact(ctx, jobs.TypeDownloadMissing, JobPayload{TitleID: title.ID}, time.Now()); err != nil {
 		return fmt.Errorf("queue download missing: %w", err)
 	}
 	return nil

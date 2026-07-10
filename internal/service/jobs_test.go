@@ -151,6 +151,30 @@ func TestGlobalDownloadMissingExpandsToMissingMonitoredTitles(t *testing.T) {
 	assertNoTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, pending.ID)
 }
 
+func TestGlobalJobExpansionQueuesTitleJobsWhileGlobalIsRunning(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+	title := addJobTitle(t, ctx, svc, "https://example.test/want", true, 1, 0)
+	global, err := svc.Enqueue(ctx, jobs.TypeDownloadMissing, 0, time.Now())
+	if err != nil {
+		t.Fatalf("Enqueue(global) error = %v", err)
+	}
+	if _, err := svc.db.ExecContext(ctx, `UPDATE jobs SET status = 'running' WHERE id = ?`, global.ID); err != nil {
+		t.Fatalf("mark global running: %v", err)
+	}
+
+	if err := svc.expandTitleJob(ctx, jobs.TypeDownloadMissing); err != nil {
+		t.Fatalf("expandTitleJob() error = %v", err)
+	}
+	assertTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, title.ID)
+}
+
 func TestLinkTitleSourceURLQueuesRefresh(t *testing.T) {
 	t.Parallel()
 
@@ -224,6 +248,33 @@ func TestAutoRefreshQueuesDownloadWhenMissingThresholdMet(t *testing.T) {
 	}
 	assertTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, many.ID)
 	assertNoTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, one.ID)
+}
+
+func TestRemoveTitleCancelsTitleJobs(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+	title := addJobTitle(t, ctx, svc, "https://example.test/remove", true, 1, 0)
+	job, err := svc.enqueueExact(ctx, jobs.TypeDownloadMissing, JobPayload{TitleID: title.ID}, time.Now())
+	if err != nil {
+		t.Fatalf("enqueueExact() error = %v", err)
+	}
+
+	if _, err := svc.RemoveTitle(ctx, title.ID); err != nil {
+		t.Fatalf("RemoveTitle() error = %v", err)
+	}
+	job, err = svc.jobs.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("Get(job) error = %v", err)
+	}
+	if job.Status != "cancelled" {
+		t.Fatalf("job status = %q, want cancelled", job.Status)
+	}
 }
 
 func addTestSource(t *testing.T, ctx context.Context, svc *JobService, id string) {
