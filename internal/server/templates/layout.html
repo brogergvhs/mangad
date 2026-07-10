@@ -9,18 +9,30 @@
   <script src="/static/app.js?v={{assetVer}}" defer></script>
 </head>
 <body>
-  <header>
-    <span class="brand">MangaD</span>
-    <nav>
-      <a href="/" class="{{if eq .Nav "dashboard"}}active{{end}}">Dashboard</a>
-      <a href="/search" class="{{if eq .Nav "search"}}active{{end}}">Search</a>
-      <a href="/library" class="{{if eq .Nav "library"}}active{{end}}">Library</a>
-      <a href="/import" class="{{if eq .Nav "import"}}active{{end}}">Import</a>
-      <a href="/sources" class="{{if eq .Nav "sources"}}active{{end}}">Sources</a>
-      <a href="/settings" class="{{if eq .Nav "settings"}}active{{end}}">Settings</a>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="/">Manga<span>D</span></a>
+      <button class="icon-button sidebar-close" data-sidebar-close aria-label="Close menu">{{template "iconClose"}}</button>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="{{if eq .Nav "dashboard"}}active{{end}}">{{template "iconHome"}}<span>Dashboard</span></a>
+      <a href="/search" class="{{if eq .Nav "search"}}active{{end}}">{{template "iconSearch"}}<span>Search</span></a>
+      <a href="/library" class="{{if eq .Nav "library"}}active{{end}}">{{template "iconLibrary"}}<span>Library</span></a>
+      <a href="/import" class="{{if eq .Nav "import"}}active{{end}}">{{template "iconImport"}}<span>Import</span></a>
+      <a href="/sources" class="{{if eq .Nav "sources"}}active{{end}}">{{template "iconSources"}}<span>Sources</span></a>
     </nav>
-  </header>
-  <div id="toast" class="toast-area"></div>
-  <main>{{.Content}}</main>
+    <nav class="sidebar-nav sidebar-foot">
+      <a href="/settings" class="{{if eq .Nav "settings"}}active{{end}}">{{template "iconSettings"}}<span>Settings</span></a>
+    </nav>
+  </aside>
+  <div class="sidebar-backdrop" data-sidebar-close hidden></div>
+  <div class="app">
+    <div class="topbar">
+      <button class="icon-button" data-sidebar-open aria-label="Open menu">{{template "iconMenu"}}</button>
+      <a class="brand" href="/">Manga<span>D</span></a>
+    </div>
+    <div id="toast" class="toast-area"></div>
+    <main>{{.Content}}</main>
+  </div>
 </body>
 </html>

@@ -94,11 +94,22 @@
 {{end}}
 
 {{define "title"}}
-<div class="row spread">
+<div class="row spread page-head">
   <h1>{{.Title.DisplayTitle}}</h1>
-  <div class="nowrap">
-    {{template "monitorToggle" .Title}}
-    <button class="danger" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title?">Remove</button>
+  <div class="row title-actions">
+    {{if gt .Title.CompletedCount 0}}<a class="button ghost" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+    {{if and (linked .Title.SourceURL) (or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0))}}
+    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download missing{{if gt .Title.FailedCount 0}} · retry {{.Title.FailedCount}} failed{{end}}</button>
+    {{end}}
+    <details class="menu">
+      <summary class="icon-button" aria-label="More actions">{{template "iconDots"}}</summary>
+      <div class="menu-list">
+        {{if linked .Title.SourceURL}}<button class="ghost" hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>{{end}}
+        <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
+        {{template "monitorToggle" .Title}}
+        <button class="danger" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">Remove title</button>
+      </div>
+    </details>
   </div>
 </div>
 <div class="panel result">
@@ -122,15 +133,7 @@
   </div>
 </div>
 
-<div class="panel stack">
-  <div class="row title-actions">
-    {{if gt .Title.CompletedCount 0}}<a class="button ghost" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
-    {{if linked .Title.SourceURL}}
-    <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>
-    {{if or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0)}}<button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download missing{{if gt .Title.FailedCount 0}} · retry {{.Title.FailedCount}} failed{{end}}</button>{{end}}
-    {{end}}
-    <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
-  </div>
+<div class="stack">
   {{template "titleActivity" .}}
 </div>
 
