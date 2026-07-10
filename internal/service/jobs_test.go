@@ -27,14 +27,15 @@ func TestApplyLimitsFromSettings(t *testing.T) {
 	defer closeDB()
 
 	// Defaults before any override.
-	if svc.jobs.MaxAttempts != 3 || svc.lib.repo.MaxDownloadAttempts != 3 || svc.jobTimeout != defaultJobTimeout {
-		t.Fatalf("defaults = %d/%d/%s", svc.jobs.MaxAttempts, svc.lib.repo.MaxDownloadAttempts, svc.jobTimeout)
+	if svc.jobs.MaxAttempts != 3 || svc.lib.repo.MaxDownloadAttempts != 3 || svc.jobTimeout != defaultJobTimeout || svc.jobWorkers != defaultJobWorkers {
+		t.Fatalf("defaults = %d/%d/%s/%d", svc.jobs.MaxAttempts, svc.lib.repo.MaxDownloadAttempts, svc.jobTimeout, svc.jobWorkers)
 	}
 
 	for key, value := range map[string]string{
 		SettingJobsMaxAttempts:      "5",
 		SettingDownloadsMaxAttempts: "7",
 		SettingJobsTimeout:          "2m",
+		SettingJobsWorkers:          "6",
 	} {
 		if err := svc.SetSetting(ctx, key, value); err != nil {
 			t.Fatalf("SetSetting(%s) error = %v", key, err)
@@ -50,6 +51,9 @@ func TestApplyLimitsFromSettings(t *testing.T) {
 	}
 	if svc.jobTimeout != 2*time.Minute {
 		t.Errorf("jobTimeout = %s, want 2m", svc.jobTimeout)
+	}
+	if svc.jobWorkers != 6 {
+		t.Errorf("jobWorkers = %d, want 6", svc.jobWorkers)
 	}
 }
 

@@ -152,6 +152,8 @@ func settingMeta(key string) (label, desc string) {
 		return "Job retry limit", "How many times a failed background job (refresh, scan) is retried before it is given up."
 	case service.SettingJobsTimeout:
 		return "Job stall limit", "How long a background job may go without making progress before it is aborted (e.g. 10m). Jobs that keep downloading run as long as they need."
+	case service.SettingJobsWorkers:
+		return "Job worker count", "How many background jobs can run at the same time. Jobs for the same manga still run one at a time."
 	case service.SettingDownloadsMaxAttempts:
 		return "Download retry limit", "How many times a failed chapter download is retried before giving up."
 	case service.SettingServicesHealthInterval:

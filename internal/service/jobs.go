@@ -29,12 +29,14 @@ type JobService struct {
 	db         *sql.DB
 	dbPath     string
 	jobTimeout time.Duration
+	jobWorkers int
 	runtime    func() (*config.Config, ui.Log, error)
 	jobs       *jobs.Repository
 	lib        *LibraryService
 	src        *sourceService
 	want       *WantedService
 	running    sync.Map // job ID -> context.CancelCauseFunc for in-flight jobs
+	titleLocks sync.Map // title ID -> *sync.Mutex
 }
 
 // errJobCancelled aborts an in-flight job on explicit user cancellation.
@@ -72,11 +74,13 @@ const (
 
 	SettingJobsMaxAttempts      = "jobs.max_attempts"
 	SettingJobsTimeout          = "jobs.timeout"
+	SettingJobsWorkers          = "jobs.workers"
 	SettingDownloadsMaxAttempts = "downloads.max_attempts"
 
 	SettingServicesHealthInterval = "services.health_interval"
 
 	defaultJobTimeout = 10 * time.Minute
+	defaultJobWorkers = 4
 )
 
 // SettingDefault returns the built-in value for an app setting.
@@ -110,6 +114,8 @@ func SettingDefault(key string) string {
 		return "3"
 	case SettingJobsTimeout:
 		return "10m"
+	case SettingJobsWorkers:
+		return "4"
 	case SettingServicesHealthInterval:
 		return "60s"
 	default:
@@ -134,6 +140,7 @@ func SettingKeys() []string {
 		SettingSourceRegistryURL,
 		SettingJobsMaxAttempts,
 		SettingJobsTimeout,
+		SettingJobsWorkers,
 		SettingDownloadsMaxAttempts,
 		SettingServicesHealthInterval,
 	}
@@ -174,7 +181,7 @@ func ValidateSetting(key, value string) error {
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("invalid registry url for %s", key)
 		}
-	case SettingJobsMaxAttempts, SettingDownloadsMaxAttempts:
+	case SettingJobsMaxAttempts, SettingDownloadsMaxAttempts, SettingJobsWorkers:
 		if n, err := strconv.Atoi(value); err != nil || n <= 0 {
 			return fmt.Errorf("invalid positive integer for %s", key)
 		}
@@ -244,6 +251,7 @@ func newJobService(db *sql.DB) *JobService {
 		db:         db,
 		dbPath:     database.DefaultPath(),
 		jobTimeout: defaultJobTimeout,
+		jobWorkers: defaultJobWorkers,
 		runtime: func() (*config.Config, ui.Log, error) {
 			return config.DefaultConfig(), ui.NewLogger(false), nil
 		},
@@ -264,6 +272,9 @@ func (s *JobService) applyLimits(ctx context.Context) {
 	}
 	if d, err := time.ParseDuration(s.Setting(ctx, SettingJobsTimeout, SettingDefault(SettingJobsTimeout))); err == nil && d > 0 {
 		s.jobTimeout = d
+	}
+	if n, err := strconv.Atoi(s.Setting(ctx, SettingJobsWorkers, SettingDefault(SettingJobsWorkers))); err == nil && n > 0 {
+		s.jobWorkers = n
 	}
 }
 
@@ -863,50 +874,117 @@ func (s *JobService) List(ctx context.Context) ([]jobs.Job, error) {
 // RunDue claims and runs due jobs until the queue is empty.
 func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc ui.Log) (RunSummary, error) {
 	var summary RunSummary
+	var summaryMu sync.Mutex
+	var firstErr error
+	var errMu sync.Mutex
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	// Outcomes must be persisted even when ctx is cancelled mid-job;
 	// marking with the cancelled ctx would strand the job as running.
 	markCtx := context.WithoutCancel(ctx)
-	for {
-		job, ok, err := s.jobs.ClaimNext(ctx)
-		if err != nil || !ok {
-			return summary, err
-		}
 
-		// A user-cancellable layer wraps the inactivity-timeout layer. The
-		// inactivity timeout lets a job that keeps making progress run as long
-		// as it needs; only stalled or explicitly cancelled jobs abort.
-		userCtx, userCancel := context.WithCancelCause(ctx)
-		jobCtx, guard, stopStall := stallContext(userCtx, s.jobTimeout)
-		s.running.Store(job.ID, userCancel)
-		err = s.run(jobCtx, cfg, logSvc, job, guard)
-		s.running.Delete(job.ID)
-		cancelled := errors.Is(context.Cause(userCtx), errJobCancelled)
-		if err != nil && !cancelled {
-			if cause := context.Cause(jobCtx); cause != nil && !errors.Is(cause, context.Canceled) {
-				err = fmt.Errorf("%v: %w", cause, err)
-			}
+	workers := s.jobWorkers
+	if workers < 1 {
+		workers = 1
+	}
+	setErr := func(err error) {
+		if err == nil {
+			return
 		}
-		stopStall()
-		userCancel(nil)
-		if cancelled {
-			summary.Failed++
-			if markErr := s.jobs.MarkCancelled(markCtx, job.ID); markErr != nil {
-				return summary, markErr
-			}
-			continue
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+			cancel()
 		}
-		if err != nil {
-			summary.Failed++
-			if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {
-				return summary, markErr
+		errMu.Unlock()
+	}
+	add := func(done, failed int) {
+		summaryMu.Lock()
+		summary.Done += done
+		summary.Failed += failed
+		summaryMu.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for runCtx.Err() == nil {
+				job, ok, err := s.jobs.ClaimNext(runCtx)
+				if err != nil {
+					setErr(err)
+					return
+				}
+				if !ok {
+					return
+				}
+				done, failed, err := s.runClaimedJob(runCtx, markCtx, cfg, logSvc, job)
+				add(done, failed)
+				if err != nil {
+					setErr(err)
+					return
+				}
 			}
-			continue
-		}
-		summary.Done++
-		if err := s.jobs.MarkDone(markCtx, job.ID); err != nil {
-			return summary, err
+		}()
+	}
+	wg.Wait()
+	return summary, firstErr
+}
+
+func (s *JobService) runClaimedJob(ctx, markCtx context.Context, cfg *config.Config, logSvc ui.Log, job jobs.Job) (done, failed int, err error) {
+	// A user-cancellable layer wraps the inactivity-timeout layer. The
+	// inactivity timeout lets a job that keeps making progress run as long
+	// as it needs; only stalled or explicitly cancelled jobs abort.
+	userCtx, userCancel := context.WithCancelCause(ctx)
+	s.running.Store(job.ID, userCancel)
+	unlock := s.lockTitleJob(jobTitleID(job))
+	jobCtx, guard, stopStall := stallContext(userCtx, s.jobTimeout)
+	err = s.run(jobCtx, cfg, logSvc, job, guard)
+	s.running.Delete(job.ID)
+	cancelled := errors.Is(context.Cause(userCtx), errJobCancelled)
+	if err != nil && !cancelled {
+		if cause := context.Cause(jobCtx); cause != nil && !errors.Is(cause, context.Canceled) {
+			err = fmt.Errorf("%v: %w", cause, err)
 		}
 	}
+	stopStall()
+	unlock()
+	userCancel(nil)
+	if cancelled {
+		if markErr := s.jobs.MarkCancelled(markCtx, job.ID); markErr != nil {
+			return 0, 1, markErr
+		}
+		return 0, 1, nil
+	}
+	if err != nil {
+		if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {
+			return 0, 1, markErr
+		}
+		return 0, 1, nil
+	}
+	if err := s.jobs.MarkDone(markCtx, job.ID); err != nil {
+		return 1, 0, err
+	}
+	return 1, 0, nil
+}
+
+func (s *JobService) lockTitleJob(titleID int64) func() {
+	if titleID <= 0 {
+		return func() {}
+	}
+	v, _ := s.titleLocks.LoadOrStore(titleID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+func jobTitleID(job jobs.Job) int64 {
+	var payload JobPayload
+	if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+		return 0
+	}
+	return payload.TitleID
 }
 
 func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log, job jobs.Job, progress ProgressManager) error {
