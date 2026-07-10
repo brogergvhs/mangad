@@ -98,6 +98,13 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		// ?chapter=N returns the window around that chapter — the reader uses
+		// this to keep extending the strip while scrolling.
+		if c, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64); c > 0 {
+			manifest, _, _ := readerManifestWindow(progress, c)
+			writeJSON(w, http.StatusOK, manifest)
+			return
+		}
 		writeJSON(w, http.StatusOK, readerManifest(progress))
 	})
 

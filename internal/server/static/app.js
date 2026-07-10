@@ -105,20 +105,31 @@ document.addEventListener("click", function (e) {
   // loaded (dimensions known), so the layout never collapses and a later
   // chapter can never appear before every earlier page is in place.
   var queue = [];
-  (manifest.chapters || []).forEach(function (chapter) {
-    queue.push({ kind: "sep", label: chapter.label });
-    (chapter.pages || []).forEach(function (page) {
-      queue.push({
-        kind: "page",
-        chapter: String(chapter.id),
-        label: chapter.label,
-        page: page.page,
-        total: chapter.page_count,
-        url: page.url,
-        read: !!page.read,
+  var seenChapters = {};
+  var lastChapterID = 0;
+  function enqueueChapters(chapters) {
+    var added = 0;
+    (chapters || []).forEach(function (chapter) {
+      if (seenChapters[chapter.id]) return;
+      seenChapters[chapter.id] = true;
+      lastChapterID = chapter.id;
+      added++;
+      queue.push({ kind: "sep", label: chapter.label });
+      (chapter.pages || []).forEach(function (page) {
+        queue.push({
+          kind: "page",
+          chapter: String(chapter.id),
+          label: chapter.label,
+          page: page.page,
+          total: chapter.page_count,
+          url: page.url,
+          read: !!page.read,
+        });
       });
     });
-  });
+    return added;
+  }
+  enqueueChapters(manifest.chapters);
 
   var resumeChapter = shell.dataset.resumeChapter;
   var resumePage = parseInt(shell.dataset.resumePage || "0", 10);
@@ -209,11 +220,47 @@ document.addEventListener("click", function (e) {
   window.addEventListener("scroll", requestCheck, { passive: true });
   window.addEventListener("resize", requestCheck);
 
-  // --- sequential builder: preload a few ahead, append strictly in order ---
+  // --- sequential builder: preload a few ahead, append strictly in order.
+  // Appending is gated on scroll proximity so a long title isn't downloaded
+  // in the background, and the strip keeps extending with the next chapter
+  // as the reader approaches the end — no need to reopen the reader. ---
   var LOOKAHEAD = 3;
+  var GATE_PX = window.innerHeight * 2.5;
   var loaders = {}; // queue index -> Promise settling when its image is loaded
   var appended = 0;
   var built = false;
+  var waiting = false;   // paused until the reader scrolls closer to the end
+  var fetching = false;  // a manifest extension request is in flight
+  var noMore = false;    // the server has no further chapters
+  var resumed = !resumeChapter || !resumePage;
+
+  function nearEnd() {
+    var doc = document.documentElement;
+    return doc.scrollHeight - (window.scrollY + window.innerHeight) < GATE_PX;
+  }
+
+  function extend() {
+    if (fetching || noMore || !lastChapterID) return finish();
+    fetching = true;
+    fetch("/api/reader/titles/" + manifest.title_id + "/manifest?chapter=" + lastChapterID)
+      .then(function (resp) { if (!resp.ok) throw new Error("manifest fetch failed"); return resp.json(); })
+      .then(function (m) {
+        fetching = false;
+        if (enqueueChapters(m.chapters) > 0) {
+          appendNext();
+        } else {
+          noMore = true;
+          finish();
+        }
+      })
+      .catch(function () { fetching = false; noMore = true; finish(); });
+  }
+
+  function finish() {
+    built = true;
+    if (loadingEl) loadingEl.remove();
+    requestCheck();
+  }
 
   function loaderFor(i) {
     var item = queue[i];
@@ -237,9 +284,13 @@ document.addEventListener("click", function (e) {
 
   function appendNext() {
     if (appended >= queue.length) {
-      built = true;
-      if (loadingEl) loadingEl.remove();
-      requestCheck();
+      extend();
+      return;
+    }
+    // Past the resume point, only build while the reader is near the end of
+    // the strip; the scroll handler resumes the pipeline.
+    if (resumed && !nearEnd()) {
+      waiting = true;
       return;
     }
     // Warm the pipeline (network only; nothing enters the DOM out of order).
@@ -278,13 +329,21 @@ document.addEventListener("click", function (e) {
       if (img) pages.push(el);
       delete loaders[idx];
       appended++;
-      if (String(item.chapter) === resumeChapter && item.page === resumePage) {
+      if (!resumed && String(item.chapter) === resumeChapter && item.page === resumePage) {
         el.scrollIntoView({ block: "start" });
+        resumed = true;
       }
       requestCheck();
       appendNext();
     });
   }
+
+  window.addEventListener("scroll", function () {
+    if (waiting && nearEnd()) {
+      waiting = false;
+      appendNext();
+    }
+  }, { passive: true });
 
   appendNext();
 })();
