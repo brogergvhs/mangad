@@ -235,7 +235,11 @@ func (u *webUI) frag(w http.ResponseWriter, name string, data any) {
 }
 
 func (u *webUI) fail(w http.ResponseWriter, err error) {
-	w.WriteHeader(http.StatusBadRequest)
+	// htmx 2 does not swap 4xx bodies, and mutating controls use
+	// hx-swap="none", so route the error toast to a global container with a
+	// 200 status — otherwise failures are silently invisible.
+	w.Header().Set("HX-Retarget", "#toast")
+	w.Header().Set("HX-Reswap", "innerHTML")
 	u.frag(w, "toast", toastView{Msg: err.Error()})
 }
 

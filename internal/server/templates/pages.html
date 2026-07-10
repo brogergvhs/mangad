@@ -136,8 +136,8 @@
       <td class="nowrap">{{.Name}}{{if .Active}} <span class="badge done">active</span>{{end}}</td>
       <td class="small muted" style="word-break:break-all">{{.URL}}</td>
       <td class="nowrap">
-        {{if not .Active}}<form style="display:inline" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-swap="none"><input type="hidden" name="source_id" value="{{.SourceID}}"><input type="hidden" name="url" value="{{.URL}}"><button class="ghost small">Use</button></form>{{end}}
-        <form style="display:inline" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-swap="none" hx-confirm="Unlink this source?"><input type="hidden" name="url" value="{{.URL}}"><button class="danger small">Unlink</button></form>
+        {{if not .Active}}<button class="ghost small" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
+        <button class="danger small" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none" hx-confirm="Unlink this source?">Unlink</button>
       </td>
     </tr>
     {{end}}
