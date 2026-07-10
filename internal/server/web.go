@@ -41,11 +41,11 @@ type pageData struct {
 	Content    template.HTML
 }
 type readerView struct {
-	Title    library.Title
-	Manifest readerManifestResponse
-	Empty    string
-	PrevURL  string
-	NextURL  string
+	Title        library.Title
+	Manifest     readerManifestResponse
+	Empty        string
+	NextURL      string
+	PagePosition string
 }
 type dashData struct {
 	Titles     []library.Title
@@ -320,18 +320,27 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	currentID, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64)
-	manifest, prevID, nextID := readerManifestWindow(progress, currentID)
-	data := readerView{Title: progress.Title, Manifest: manifest}
+	manifest, _, nextID := readerManifestWindow(progress, currentID)
+	data := readerView{Title: progress.Title, Manifest: manifest, PagePosition: initialReaderPosition(manifest)}
 	if len(data.Manifest.Chapters) == 0 {
 		data.Empty = "No downloaded chapters are available to read yet."
-	}
-	if prevID > 0 {
-		data.PrevURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, prevID)
 	}
 	if nextID > 0 {
 		data.NextURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, nextID)
 	}
 	u.readerLayout(w, progress.DisplayTitle, data)
+}
+
+func initialReaderPosition(manifest readerManifestResponse) string {
+	if manifest.ResumePage <= 0 {
+		return ""
+	}
+	for _, chapter := range manifest.Chapters {
+		if chapter.ID == manifest.ResumeChapterID && chapter.PageCount > 0 {
+			return fmt.Sprintf("%d/%d", manifest.ResumePage, chapter.PageCount)
+		}
+	}
+	return strconv.Itoa(manifest.ResumePage)
 }
 
 func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableData {

@@ -80,7 +80,7 @@ document.addEventListener("click", function (e) {
         best = img;
       }
     });
-    position.textContent = best.dataset.page + " / " + best.dataset.total;
+    position.textContent = best.dataset.page + "/" + best.dataset.total;
   }
 
   function preloadFrom(start) {
