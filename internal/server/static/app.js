@@ -74,10 +74,19 @@ document.addEventListener("click", function (e) {
   function updatePosition() {
     if (!position || pages.length === 0) return;
     var best = pages[0];
-    var marker = window.scrollY + window.innerHeight * 0.45;
+    var marker = window.innerHeight * 0.45;
+    var bestDistance = Infinity;
     pages.forEach(function (img) {
-      if (img.offsetTop <= marker) {
+      var rect = img.getBoundingClientRect();
+      if (rect.top <= marker && rect.bottom >= marker) {
         best = img;
+        bestDistance = 0;
+      } else if (bestDistance !== 0 && rect.bottom >= 0 && rect.top <= window.innerHeight) {
+        var distance = Math.min(Math.abs(rect.top - marker), Math.abs(rect.bottom - marker));
+        if (distance < bestDistance) {
+          best = img;
+          bestDistance = distance;
+        }
       }
     });
     position.textContent = best.dataset.page + "/" + best.dataset.total;
