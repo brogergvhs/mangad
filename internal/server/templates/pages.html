@@ -110,7 +110,7 @@
       {{else}}<div class="small muted">No source linked</div>{{end}}
       {{if linked .Title.SourceURL}}
       <form class="small muted" hx-post="/ui/library/{{.Title.ID}}/refresh-interval" hx-swap="none" style="display:flex;align-items:center;gap:6px">
-        checked for new chapters every
+        Refresh chapters every
         <input name="interval" value="{{.Title.RefreshInterval}}" placeholder="{{.RefreshEvery}} (global)" size="7" title="Custom cadence like 6h or 30m; leave blank to use the global setting">
         <button class="ghost small">Save</button>
         {{if not .Title.Monitored}}<span>· monitoring off</span>{{end}}

@@ -136,15 +136,19 @@ func TestGlobalDownloadMissingExpandsToMissingMonitoredTitles(t *testing.T) {
 	}
 	defer closeDB()
 	want := addJobTitle(t, ctx, svc, "https://example.test/want", true, 1, 0)
+	empty := addJobTitle(t, ctx, svc, "https://example.test/empty", true, 0, 0)
 	complete := addJobTitle(t, ctx, svc, "https://example.test/complete", true, 1, 1)
 	off := addJobTitle(t, ctx, svc, "https://example.test/off", false, 1, 0)
+	pending := addJobTitle(t, ctx, svc, "pending:demo", true, 0, 0)
 
 	if err := svc.expandTitleJob(ctx, jobs.TypeDownloadMissing); err != nil {
 		t.Fatalf("expandTitleJob() error = %v", err)
 	}
 	assertTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, want.ID)
+	assertTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, empty.ID)
 	assertNoTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, complete.ID)
 	assertNoTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, off.ID)
+	assertNoTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, pending.ID)
 }
 
 func TestLinkTitleSourceURLQueuesRefresh(t *testing.T) {

@@ -898,6 +898,15 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 					return err
 				}
 			}
+			title, err := s.lib.GetTitle(ctx, payload.TitleID)
+			if err != nil {
+				return err
+			}
+			if title.DiscoveredCount == 0 {
+				if _, err := s.lib.RefreshTitle(ctx, cfg, logSvc, title); err != nil {
+					return err
+				}
+			}
 			if _, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID, progress); err != nil {
 				return err
 			}
@@ -949,7 +958,7 @@ func globalTitleJobApplies(typ string, title library.Title, now time.Time) bool 
 	case jobs.TypeRefreshTitle:
 		return title.Monitored && titleRefreshDue(title, now)
 	case jobs.TypeDownloadMissing:
-		return title.Monitored && title.MissingCount > 0
+		return title.Monitored && strings.HasPrefix(title.SourceURL, "http") && (title.MissingCount > 0 || title.DiscoveredCount == 0)
 	case jobs.TypeScanDownloads:
 		return title.CompletedCount > 0
 	default:
