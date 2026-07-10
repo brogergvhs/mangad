@@ -104,3 +104,30 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
+
+func TestSearchMangaHitsAPI(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/api/search" || req.URL.Query().Get("q") != "demonic sword" {
+			t.Fatalf("unexpected request %s", req.URL)
+		}
+		body := `{"data":[{"slug":"the-supreme-demonic-sword"},{"slug":"another-one"},{"slug":""}]}`
+		return response(body), nil
+	})}
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
+	urls, err := scraper.SearchManga(context.Background(), "https://comickz.co.uk/search?q=demonic+sword", "demonic sword")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"https://comickz.co.uk/comic/the-supreme-demonic-sword",
+		"https://comickz.co.uk/comic/another-one",
+	}
+	if len(urls) != len(want) {
+		t.Fatalf("urls = %#v", urls)
+	}
+	for i := range want {
+		if urls[i] != want[i] {
+			t.Fatalf("urls[%d] = %q, want %q", i, urls[i], want[i])
+		}
+	}
+}

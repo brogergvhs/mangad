@@ -50,6 +50,44 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 	return s.fallback.GetImages(ctx, chapterURL)
 }
 
+// SearchManga queries the Comickz search API (its results page is JS-rendered
+// and unscrapeable) and returns comic page URLs.
+func (s *Scraper) SearchManga(ctx context.Context, searchURL, query string) ([]string, error) {
+	u, err := url.Parse(searchURL)
+	if err != nil || u.Host == "" {
+		return nil, fmt.Errorf("invalid search URL %q", searchURL)
+	}
+	api := (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/api/search", RawQuery: "q=" + url.QueryEscape(query)}).String()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, api, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := util.DoWithRetry(s.client, req, 2, 500*time.Millisecond)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("search API HTTP %d", resp.StatusCode)
+	}
+	var out struct {
+		Data []struct {
+			Slug string `json:"slug"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&out); err != nil {
+		return nil, err
+	}
+	var urls []string
+	for _, d := range out.Data {
+		if d.Slug != "" {
+			urls = append(urls, fmt.Sprintf("%s://%s/comic/%s", u.Scheme, u.Host, d.Slug))
+		}
+	}
+	return urls, nil
+}
+
 func (s *Scraper) fetchAPIChapters(ctx context.Context, pageURL string) ([]providers.Chapter, error) {
 	slug, err := comicSlug(pageURL)
 	if err != nil {

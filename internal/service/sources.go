@@ -236,6 +236,27 @@ func (s *sourceService) verifySearch(ctx context.Context, cfg *config.Config, lo
 	searchURL := strings.ReplaceAll(src.SearchURL, "{query}", url.QueryEscape(query))
 	search.Detail = fmt.Sprintf("%q", query)
 
+	// A scraper with a native search API (e.g. comickz, whose results page is
+	// JS-rendered) answers directly — no HTML parsing.
+	if urls, handled, err := s.nativeSearch(ctx, cfg, src, searchURL, query); handled {
+		if err != nil || len(urls) == 0 {
+			search.Status = sources.StepFailed
+			if err != nil {
+				search.Log = fmt.Sprintf("search API: %v", err)
+			} else {
+				search.Log = fmt.Sprintf("search API returned no results for %q", query)
+			}
+			pick.Detail = "falling back to sample manga"
+			return search, pick, mangaURL
+		}
+		search.Status = sources.StepOK
+		search.Detail = fmt.Sprintf("%d results for %q", len(urls), query)
+		mangaURL = urls[rand.Intn(len(urls))]
+		pick.Status = sources.StepOK
+		pick.Detail = mangaURL
+		return search, pick, mangaURL
+	}
+
 	fake := catalog.Manga{TitleRomaji: query}
 
 	solverPinned := src.RequiresBrowserSolver || src.ChapterFetch == sources.FetchSolver
@@ -367,6 +388,16 @@ func (s *sourceService) fetchSearch(ctx context.Context, cfg *config.Config, use
 		return result.HTML, final, nil
 	}
 	return fetchSearchPage(ctx, *cfg, searchURL)
+}
+
+// nativeSearch dispatches to a scraper's built-in search API if it has one.
+func (s *sourceService) nativeSearch(ctx context.Context, cfg *config.Config, src sources.Source, searchURL, query string) (urls []string, handled bool, err error) {
+	probe := probeConfig(*cfg, src, false, false)
+	svc, err := NewSourceDownloadService(&probe, nil, nil, src.Scraper)
+	if err != nil {
+		return nil, false, err
+	}
+	return svc.SearchManga(ctx, searchURL, query)
 }
 
 func solverTag(useSolver bool) string {

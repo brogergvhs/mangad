@@ -33,6 +33,13 @@ type Scraper interface {
 	GetImages(ctx context.Context, chapterURL string) ([]string, error)
 }
 
+// Searcher is an optional Scraper capability for sources with a native search
+// API (rather than a scrapeable HTML results page). searchURL supplies the
+// host; it returns manga page URLs.
+type Searcher interface {
+	SearchManga(ctx context.Context, searchURL, query string) ([]string, error)
+}
+
 // ResolveURL resolves href against baseURL, tolerating malformed input.
 func ResolveURL(baseURL, href string) string {
 	if href == "" {

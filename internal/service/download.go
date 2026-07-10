@@ -320,6 +320,17 @@ func (s *DownloadService) FetchImages(ctx context.Context, chapter chapters.Chap
 	return images, nil
 }
 
+// SearchManga uses the scraper's native search API when it has one. handled is
+// false for scrapers that only support HTML search-page parsing.
+func (s *DownloadService) SearchManga(ctx context.Context, searchURL, query string) (urls []string, handled bool, err error) {
+	searcher, ok := s.scraper.(providers.Searcher)
+	if !ok {
+		return nil, false, nil
+	}
+	urls, err = searcher.SearchManga(ctx, searchURL, query)
+	return urls, true, err
+}
+
 // VerifyImage downloads one image to a temporary folder to confirm the image
 // host is actually reachable (catching CDN 403s that URL extraction misses).
 func (s *DownloadService) VerifyImage(ctx context.Context, imageURL, referer string) error {
