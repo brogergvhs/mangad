@@ -137,7 +137,7 @@
       <td class="small muted" style="word-break:break-all">{{.URL}}</td>
       <td class="nowrap">
         {{if not .Active}}<button class="ghost small" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
-        <button class="danger small" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none" hx-confirm="Unlink this source?">Unlink</button>
+        <button class="danger small" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
       </td>
     </tr>
     {{end}}

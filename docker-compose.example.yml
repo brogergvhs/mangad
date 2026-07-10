@@ -63,13 +63,13 @@ services:
       timeout: 5s
       retries: 10
 
-  tools:
-    image: alpine:latest
-    profiles: ["tools"]
-    volumes:
-      - mangad-config:/config
-      - mangad-data:/data
-      - mangad-downloads:/downloads
+# tools:
+#   image: alpine:latest
+#   profiles: ["tools"]
+#   volumes:
+#     - mangad-config:/config
+#     - mangad-data:/data
+#     - mangad-downloads:/downloads
 
 volumes:
   mangad-config:
