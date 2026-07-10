@@ -404,6 +404,11 @@ func (s *JobService) ReaderProgress(ctx context.Context, id int64) (library.Titl
 	return s.lib.ReaderProgress(ctx, id)
 }
 
+// ChapterReadStatus returns reader/download state for one chapter.
+func (s *JobService) ChapterReadStatus(ctx context.Context, chapterID int64) (library.ChapterReadStatus, error) {
+	return s.lib.ChapterReadStatus(ctx, chapterID)
+}
+
 // MarkPageRead records one completed page for reader resume/progress.
 func (s *JobService) MarkPageRead(ctx context.Context, chapterID int64, page, totalPages int) (library.ChapterReadStatus, error) {
 	return s.lib.MarkPageRead(ctx, chapterID, page, totalPages)

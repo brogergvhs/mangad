@@ -1,9 +1,11 @@
 package server
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -96,10 +98,8 @@ func TestAPIReaderProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	chapterFile := filepath.Join(t.TempDir(), "chapter-1.cbz")
-	if err := os.WriteFile(chapterFile, []byte("not a real cbz"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.MarkDownloadCompleted(ctx, chapter.ID, chapterFile, 100, 2); err != nil {
+	writeReaderTestCBZ(t, chapterFile)
+	if err := repo.MarkDownloadCompleted(ctx, chapter.ID, chapterFile, 100, 3); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -126,14 +126,58 @@ func TestAPIReaderProgress(t *testing.T) {
 		t.Fatalf("reader progress = %+v, want chapter %d page 1", progress, chapter.ID)
 	}
 
+	var manifest readerManifestResponse
+	requestJSON(t, api, http.MethodGet, "/api/reader/titles/"+strconv.FormatInt(title.ID, 10)+"/manifest", nil, http.StatusOK, &manifest)
+	if len(manifest.Chapters) != 1 || len(manifest.Chapters[0].Pages) != 3 || manifest.Chapters[0].Pages[1].URL == "" {
+		t.Fatalf("manifest = %+v, want one chapter with 3 page URLs", manifest)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/pages/2", nil)
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("page status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "two" {
+		t.Fatalf("page 2 body = %q, want natural-order entry two", got)
+	}
+
 	var status library.ChapterReadStatus
-	requestJSON(t, api, http.MethodPost, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/pages", map[string]int{"page": 1, "total_pages": 2}, http.StatusOK, &status)
+	requestJSON(t, api, http.MethodPost, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/pages", map[string]int{"page": 1, "total_pages": 3}, http.StatusOK, &status)
 	if status.ReadPages != 1 || status.FirstUnreadPage != 2 || status.Completed {
 		t.Fatalf("page status = %+v, want page 2 incomplete", status)
 	}
 	requestJSON(t, api, http.MethodPost, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/complete", nil, http.StatusOK, &status)
 	if !status.Completed || status.FirstUnreadPage != 0 {
 		t.Fatalf("complete status = %+v, want complete", status)
+	}
+}
+
+func writeReaderTestCBZ(t *testing.T, path string) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, item := range []struct {
+		name string
+		body string
+	}{
+		{"10.jpg", "ten"},
+		{"1.jpg", "one"},
+		{"2.jpg", "two"},
+	} {
+		w, err := zw.Create(item.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(w, item.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
 	}
 }
 

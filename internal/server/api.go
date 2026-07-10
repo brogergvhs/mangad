@@ -2,15 +2,21 @@
 package server
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
@@ -81,6 +87,20 @@ func New(
 		writeJSON(w, http.StatusOK, progress)
 	})
 
+	mux.HandleFunc("GET /api/reader/titles/{id}/manifest", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid title id")
+			return
+		}
+		progress, err := svc.ReaderProgress(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, readerManifest(progress))
+	})
+
 	mux.HandleFunc("POST /api/reader/chapters/{id}/pages", func(w http.ResponseWriter, r *http.Request) {
 		id, err := parseInt64Path(r, "id")
 		if err != nil {
@@ -101,6 +121,42 @@ func New(
 			return
 		}
 		writeJSON(w, http.StatusOK, progress)
+	})
+
+	mux.HandleFunc("GET /api/reader/chapters/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid chapter id")
+			return
+		}
+		page, err := parseIntPath(r, "page")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid page")
+			return
+		}
+		status, err := svc.ChapterReadStatus(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !status.Downloaded || status.OutputFile == "" {
+			writeError(w, http.StatusNotFound, "chapter is not downloaded")
+			return
+		}
+		file, rc, err := cbzPage(status.OutputFile, page)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		defer rc.Close()
+		if ct := mime.TypeByExtension(filepath.Ext(file.Name)); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+		w.Header().Set("ETag", strconv.Quote(strconv.FormatUint(uint64(file.CRC32), 16)))
+		w.Header().Set("Content-Length", strconv.FormatUint(file.UncompressedSize64, 10))
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, rc)
 	})
 
 	mux.HandleFunc("POST /api/reader/chapters/{id}/complete", func(w http.ResponseWriter, r *http.Request) {
@@ -542,6 +598,149 @@ func parseInt64Path(r *http.Request, key string) (int64, error) {
 		return 0, strconv.ErrSyntax
 	}
 	return id, nil
+}
+
+func parseIntPath(r *http.Request, key string) (int, error) {
+	n, err := strconv.Atoi(r.PathValue(key))
+	if err != nil || n <= 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return n, nil
+}
+
+type readerManifestChapter struct {
+	ID        int64                `json:"id"`
+	Label     string               `json:"label"`
+	Title     string               `json:"title,omitempty"`
+	PageCount int                  `json:"page_count"`
+	ReadPages int                  `json:"read_pages"`
+	Completed bool                 `json:"completed"`
+	Pages     []readerManifestPage `json:"pages"`
+}
+
+type readerManifestPage struct {
+	Page int    `json:"page"`
+	URL  string `json:"url"`
+	Read bool   `json:"read"`
+}
+
+type readerManifestResponse struct {
+	TitleID         int64                   `json:"title_id"`
+	Title           string                  `json:"title"`
+	ResumeChapterID int64                   `json:"resume_chapter_id,omitempty"`
+	ResumePage      int                     `json:"resume_page,omitempty"`
+	Chapters        []readerManifestChapter `json:"chapters"`
+}
+
+func readerManifest(progress library.TitleReadProgress) readerManifestResponse {
+	out := readerManifestResponse{
+		TitleID:         progress.ID,
+		Title:           progress.DisplayTitle,
+		ResumeChapterID: progress.NextChapterID,
+		ResumePage:      progress.NextPage,
+		Chapters:        make([]readerManifestChapter, 0, len(progress.Chapters)),
+	}
+	for _, chapter := range progress.Chapters {
+		pageCount := chapter.TotalPages
+		if pageCount < chapter.Pages {
+			pageCount = chapter.Pages
+		}
+		item := readerManifestChapter{
+			ID:        chapter.ID,
+			Label:     chapter.Label,
+			Title:     chapter.Title,
+			PageCount: pageCount,
+			ReadPages: chapter.ReadPages,
+			Completed: chapter.Completed,
+			Pages:     make([]readerManifestPage, 0, pageCount),
+		}
+		for page := 1; page <= pageCount; page++ {
+			item.Pages = append(item.Pages, readerManifestPage{
+				Page: page,
+				URL:  "/api/reader/chapters/" + strconv.FormatInt(chapter.ID, 10) + "/pages/" + strconv.Itoa(page),
+				Read: chapter.Completed || page <= chapter.ReadPages,
+			})
+		}
+		out.Chapters = append(out.Chapters, item)
+	}
+	return out
+}
+
+func cbzPage(path string, page int) (*zip.File, io.ReadCloser, error) {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	entries := cbzImageEntries(zr.File)
+	if page > len(entries) {
+		zr.Close()
+		return nil, nil, strconv.ErrSyntax
+	}
+	rc, err := entries[page-1].Open()
+	if err != nil {
+		zr.Close()
+		return nil, nil, err
+	}
+	return entries[page-1], readCloserFunc{
+		Reader: rc,
+		close: func() error {
+			return errors.Join(rc.Close(), zr.Close())
+		},
+	}, nil
+}
+
+func cbzImageEntries(files []*zip.File) []*zip.File {
+	out := make([]*zip.File, 0, len(files))
+	for _, file := range files {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(file.Name)) {
+		case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif":
+			out = append(out, file)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return naturalLess(out[i].Name, out[j].Name)
+	})
+	return out
+}
+
+type readCloserFunc struct {
+	io.Reader
+	close func() error
+}
+
+func (r readCloserFunc) Close() error {
+	return r.close()
+}
+
+func naturalLess(a, b string) bool {
+	as, bs := []rune(strings.ToLower(filepath.Base(a))), []rune(strings.ToLower(filepath.Base(b)))
+	for len(as) > 0 && len(bs) > 0 {
+		ac, ar := nextNaturalChunk(as)
+		bc, br := nextNaturalChunk(bs)
+		if unicode.IsDigit(ac[0]) && unicode.IsDigit(bc[0]) {
+			ai, _ := strconv.Atoi(string(ac))
+			bi, _ := strconv.Atoi(string(bc))
+			if ai != bi {
+				return ai < bi
+			}
+		} else if string(ac) != string(bc) {
+			return string(ac) < string(bc)
+		}
+		as, bs = ar, br
+	}
+	return len(as) < len(bs)
+}
+
+func nextNaturalChunk(s []rune) ([]rune, []rune) {
+	digit := unicode.IsDigit(s[0])
+	i := 1
+	for i < len(s) && unicode.IsDigit(s[i]) == digit {
+		i++
+	}
+	return s[:i], s[i:]
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
