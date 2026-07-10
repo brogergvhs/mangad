@@ -1,65 +1,43 @@
-// --- app shell: collapsible sidebar + drawer ---
-(function () {
-  var sidebar = document.getElementById("sidebar");
-  if (!sidebar) return;
-  var backdrop = document.querySelector(".sidebar-backdrop");
-  var mobile = window.matchMedia("(max-width: 900px)");
-
-  function setOpen(open) {
-    document.body.classList.toggle("nav-open", open);
-    if (backdrop) backdrop.hidden = !open || !mobile.matches;
-    if (!mobile.matches) {
-      try { localStorage.setItem("mangad.nav", open ? "open" : "closed"); } catch (e) {}
-    }
-  }
-  // Desktop: restore preference (default open). Mobile: start closed.
-  var pref = "open";
-  try { pref = localStorage.getItem("mangad.nav") || "open"; } catch (e) {}
-  setOpen(!mobile.matches && pref === "open");
-
-  document.addEventListener("click", function (e) {
-    if (e.target.closest("[data-sidebar-open]")) { setOpen(true); return; }
-    if (e.target.closest("[data-sidebar-close]")) { setOpen(false); return; }
-    if (mobile.matches && document.body.classList.contains("nav-open") && !e.target.closest(".sidebar")) {
-      setOpen(false);
-    }
-  });
-  mobile.addEventListener("change", function () { setOpen(!mobile.matches && pref === "open"); });
-})();
-
-// --- overflow menus: one open at a time, close on outside click / action ---
+// --- dropdowns: close any open <details.dropdown> on outside click or action ---
 document.addEventListener("click", function (e) {
-  var inMenu = e.target.closest("details.menu");
-  document.querySelectorAll("details.menu[open]").forEach(function (menu) {
-    if (menu !== inMenu || e.target.closest(".menu-list button, .menu-list a, .menu-list .button")) {
-      menu.removeAttribute("open");
+  var inDrop = e.target.closest("details.dropdown");
+  document.querySelectorAll("details.dropdown[open]").forEach(function (d) {
+    if (d !== inDrop || e.target.closest(".menu a, .menu button, .dropdown-content button")) {
+      d.removeAttribute("open");
     }
   });
 });
 
-// --- confirm modal: replaces native hx-confirm dialogs (which browsers can
-// silently suppress) with an in-app modal ---
+// --- close the mobile drawer after navigating or acting from within it ---
+document.addEventListener("click", function (e) {
+  if (!e.target.closest(".drawer-side .menu a")) return;
+  var toggle = document.getElementById("app-drawer");
+  if (toggle && window.matchMedia("(max-width: 1023px)").matches) toggle.checked = false;
+});
+
+// --- confirm modal: replaces native hx-confirm (browsers can suppress the
+// native dialog); renders an in-app daisyUI modal instead ---
 document.addEventListener("htmx:confirm", function (e) {
   var question = e.detail.question;
   if (!question) return;
   e.preventDefault();
-  var overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  overlay.innerHTML =
-    '<div class="modal panel confirm-modal" role="alertdialog" aria-modal="true">' +
-    '<p></p><div class="row confirm-actions">' +
-    '<button class="ghost" data-cancel>Cancel</button>' +
-    '<button class="danger" data-ok>Confirm</button></div></div>';
-  overlay.querySelector("p").textContent = question;
-  function closeModal() { overlay.remove(); document.removeEventListener("keydown", onKey); }
-  function onKey(ev) { if (ev.key === "Escape") closeModal(); }
-  overlay.addEventListener("click", function (ev) {
-    if (ev.target === overlay || ev.target.closest("[data-cancel]")) { closeModal(); return; }
-    if (ev.target.closest("[data-ok]")) { closeModal(); e.detail.issueRequest(true); }
+  var dlg = document.createElement("dialog");
+  dlg.className = "modal modal-open";
+  dlg.innerHTML =
+    '<div class="modal-box"><p class="py-2"></p>' +
+    '<div class="modal-action"><button class="btn btn-ghost" data-cancel>Cancel</button>' +
+    '<button class="btn btn-error" data-ok>Confirm</button></div></div>' +
+    '<div class="modal-backdrop" data-cancel></div>';
+  dlg.querySelector("p").textContent = question;
+  function close() { dlg.remove(); document.removeEventListener("keydown", onKey); }
+  function onKey(ev) { if (ev.key === "Escape") close(); }
+  dlg.addEventListener("click", function (ev) {
+    if (ev.target.closest("[data-cancel]")) { close(); return; }
+    if (ev.target.closest("[data-ok]")) { close(); e.detail.issueRequest(true); }
   });
   document.addEventListener("keydown", onKey);
-  document.body.appendChild(overlay);
-  overlay.querySelector("[data-ok]").focus();
+  document.body.appendChild(dlg);
+  dlg.querySelector("[data-ok]").focus();
 });
 
 // Collapsible table rows: a .row-toggle reveals the detail row it points at.

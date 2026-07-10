@@ -1,345 +1,329 @@
 {{define "dashboard"}}
-<h1>Dashboard</h1>
-<div class="grid dashboard-stats">
-  <div class="panel"><div class="muted small">Tracked titles</div><div style="font-size:26px">{{len .Titles}}</div></div>
-  <div class="panel"><div class="muted small">Total chapters</div><div style="font-size:26px">{{.TotalChaps}}</div></div>
-  <div class="panel"><div class="muted small">Missing chapters</div><div style="font-size:26px">{{missingTotal .Titles}}</div></div>
-  <div class="panel"><div class="muted small">Library size</div><div style="font-size:26px">{{humanBytes .TotalBytes}}</div><div class="small muted">{{.TotalPages}} pages</div></div>
-  <div class="panel"><div class="muted small">Sources healthy</div><div style="font-size:26px">{{healthyCount .Sources}}/{{len .Sources}}</div></div>
+<div class="stats stats-vertical sm:stats-horizontal bg-base-100 w-full mb-6 max-sm:w-full">
+  <div class="stat"><div class="stat-title">Tracked titles</div><div class="stat-value text-3xl">{{len .Titles}}</div></div>
+  <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.TotalChaps}}</div><div class="stat-desc">{{missingTotal .Titles}} missing</div></div>
+  <div class="stat"><div class="stat-title">Library size</div><div class="stat-value text-3xl">{{humanBytes .TotalBytes}}</div><div class="stat-desc">{{.TotalPages}} pages</div></div>
+  <div class="stat"><div class="stat-title">Sources healthy</div><div class="stat-value text-3xl">{{healthyCount .Sources}}<span class="text-base-content/40">/{{len .Sources}}</span></div></div>
 </div>
-<h2>Services</h2>
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
 {{template "servicesHealth" .Health}}
-<h2>Jobs</h2>
-<div hx-get="/ui/jobs/table" hx-trigger="load"></div>
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Recent jobs</h2>
+<div class="card bg-base-100"><div class="card-body p-2 sm:p-4"><div hx-get="/ui/jobs/table" hx-trigger="load"></div></div></div>
 {{end}}
 
 {{define "servicesHealth"}}
-<div id="services-health" class="panel" style="padding:0" hx-get="/ui/health" hx-trigger="every {{.Interval}}" hx-swap="outerHTML">
-  <table style="margin:0">
-    <tr><th>Service</th><th>Status</th><th>Endpoint</th></tr>
+<div id="services-health" class="overflow-x-auto card bg-base-100" hx-get="/ui/health" hx-trigger="every {{.Interval}}" hx-swap="outerHTML">
+  <table class="table table-sm">
+    <thead><tr><th>Service</th><th>Status</th><th>Endpoint</th></tr></thead>
+    <tbody>
     {{range .Services}}
     <tr>
-      <td class="nowrap">{{.Name}}</td>
-      <td class="nowrap">
-        {{if not .Enabled}}<span class="badge">disabled</span>
-        {{else if .Healthy}}<span class="badge healthy">healthy</span>
-        {{else}}<span class="badge broken">unreachable</span>{{end}}
-        {{if .Error}}<div class="small muted" style="max-width:420px;word-break:break-all">{{.Error}}</div>{{end}}
+      <td class="whitespace-nowrap">{{.Name}}</td>
+      <td class="whitespace-nowrap">
+        {{if not .Enabled}}<span class="badge badge-ghost badge-sm">disabled</span>
+        {{else if .Healthy}}<span class="badge badge-success badge-soft badge-sm">healthy</span>
+        {{else}}<span class="badge badge-error badge-soft badge-sm">unreachable</span>{{end}}
+        {{if .Error}}<div class="text-xs text-base-content/50 max-w-md break-all">{{.Error}}</div>{{end}}
       </td>
-      <td class="small muted">{{orDash .Endpoint}}</td>
+      <td class="text-sm text-base-content/60">{{orDash .Endpoint}}</td>
     </tr>
-    {{else}}<tr><td colspan="3" class="muted">No services configured.</td></tr>{{end}}
+    {{else}}<tr><td colspan="3" class="text-base-content/60">No services configured.</td></tr>{{end}}
+    </tbody>
   </table>
 </div>
 {{end}}
 
 {{define "search"}}
-<h1>Search manga</h1>
-<form class="panel row" hx-post="/ui/search" hx-target="#search-results" hx-indicator="#search-spin">
-  <input name="q" placeholder="Search AniList…" autofocus style="flex:1" required>
-  <button>Search</button>
-  <span id="search-spin" class="spin htmx-indicator"></span>
+<form class="join w-full mb-4" hx-post="/ui/search" hx-target="#search-results" hx-indicator="#search-spin">
+  <input name="q" class="input join-item w-full" placeholder="Search AniList…" autofocus required>
+  <button class="btn btn-primary join-item">Search</button>
 </form>
+<div id="search-spin" class="htmx-indicator flex justify-center py-4"><span class="loading loading-spinner"></span></div>
 <div id="search-results"></div>
 {{end}}
 
 {{define "library"}}
-<h1>Library</h1>
-<form class="panel library-controls" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change, keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML">
-  <label class="small">Search
-    <input name="q" value="{{.Controls.Q}}" placeholder="Title, source, status…" hx-trigger="keyup changed delay:300ms">
-  </label>
-  <label class="small">Monitor
-    <select name="monitor">
+<form class="card bg-base-100 card-body p-4 mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change, keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML">
+  <label class="fieldset sm:col-span-2 lg:col-span-1"><span class="fieldset-legend">Search</span>
+    <input name="q" class="input input-sm w-full" value="{{.Controls.Q}}" placeholder="Title…" hx-trigger="keyup changed delay:300ms"></label>
+  <label class="fieldset"><span class="fieldset-legend">Monitor</span>
+    <select name="monitor" class="select select-sm w-full">
       <option value="all" {{if eq .Controls.Monitor "all"}}selected{{end}}>All</option>
       <option value="on" {{if eq .Controls.Monitor "on"}}selected{{end}}>Monitored</option>
       <option value="off" {{if eq .Controls.Monitor "off"}}selected{{end}}>Off</option>
-    </select>
-  </label>
-  <label class="small">Source
-    <select name="source">
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Source</span>
+    <select name="source" class="select select-sm w-full">
       <option value="all" {{if eq .Controls.Source "all"}}selected{{end}}>All</option>
       <option value="linked" {{if eq .Controls.Source "linked"}}selected{{end}}>Linked</option>
       <option value="unlinked" {{if eq .Controls.Source "unlinked"}}selected{{end}}>Unlinked</option>
       <option value="imported" {{if eq .Controls.Source "imported"}}selected{{end}}>Imported</option>
-    </select>
-  </label>
-  <label class="small">Progress
-    <select name="progress">
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Progress</span>
+    <select name="progress" class="select select-sm w-full">
       <option value="all" {{if eq .Controls.Progress "all"}}selected{{end}}>All</option>
       <option value="missing" {{if eq .Controls.Progress "missing"}}selected{{end}}>Missing</option>
       <option value="complete" {{if eq .Controls.Progress "complete"}}selected{{end}}>Complete</option>
       <option value="empty" {{if eq .Controls.Progress "empty"}}selected{{end}}>No chapters</option>
-    </select>
-  </label>
-  <label class="small">Sort
-    <select name="sort">
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Sort</span>
+    <select name="sort" class="select select-sm w-full">
       <option value="added" {{if eq .Controls.Sort "added"}}selected{{end}}>Last added</option>
       <option value="title" {{if eq .Controls.Sort "title"}}selected{{end}}>Title</option>
       <option value="missing" {{if eq .Controls.Sort "missing"}}selected{{end}}>Missing chapters</option>
       <option value="chapters" {{if eq .Controls.Sort "chapters"}}selected{{end}}>Total chapters</option>
       <option value="size" {{if eq .Controls.Sort "size"}}selected{{end}}>Size</option>
       <option value="updated" {{if eq .Controls.Sort "updated"}}selected{{end}}>Updated</option>
-      <option value="status" {{if eq .Controls.Sort "status"}}selected{{end}}>Release status</option>
-    </select>
-  </label>
-  <label class="small">Direction
-    <select name="dir">
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Direction</span>
+    <select name="dir" class="select select-sm w-full">
       <option value="asc" {{if eq .Controls.Dir "asc"}}selected{{end}}>Ascending</option>
       <option value="desc" {{if eq .Controls.Dir "desc"}}selected{{end}}>Descending</option>
-    </select>
-  </label>
+    </select></label>
 </form>
-<div id="library-results">{{template "table" .Table}}</div>
+<div id="library-results" class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "table" .Table}}</div></div>
 {{end}}
 
 {{define "title"}}
-<div class="row spread page-head">
-  <h1>{{.Title.DisplayTitle}}</h1>
-  <div class="row title-actions">
-    {{if gt .Title.CompletedCount 0}}<a class="button ghost" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
-    {{if and (linked .Title.SourceURL) (or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0))}}
-    <button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download missing{{if gt .Title.FailedCount 0}} · retry {{.Title.FailedCount}} failed{{end}}</button>
-    {{end}}
-    <details class="menu">
-      <summary class="icon-button" aria-label="More actions">{{template "iconDots"}}</summary>
-      <div class="menu-list">
-        {{if linked .Title.SourceURL}}<button class="ghost" hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>{{end}}
-        <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
-        {{template "monitorToggle" .Title}}
-        <button class="danger" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">Remove title</button>
-      </div>
+<div class="flex items-start justify-between gap-3 mb-4">
+  <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
+  <div class="flex items-center gap-2 shrink-0">
+    {{if gt .Title.CompletedCount 0}}<a class="btn btn-sm btn-primary" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+    <details class="dropdown dropdown-end">
+      <summary class="btn btn-sm btn-ghost btn-square" aria-label="Actions">{{template "iconDots"}}</summary>
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-56 p-2 shadow-lg border border-base-300">
+        {{if and (linked .Title.SourceURL) (or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0))}}
+        <li><button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>{{template "iconDownload"}}Download missing{{if gt .Title.FailedCount 0}} · {{.Title.FailedCount}} failed{{end}}</button></li>{{end}}
+        {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
+        <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
+        {{if linked .Title.SourceURL}}<li><button onclick="settings_modal_{{.Title.ID}}.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+        <li>{{template "monitorToggle" .Title}}</li>
+        <li><button class="text-error" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">{{template "iconTrash"}}Remove title</button></li>
+      </ul>
     </details>
   </div>
 </div>
-<div class="panel result">
-  <img class="cover lg" src="{{.Title.CoverImage}}" alt="" loading="lazy">
-  <div class="meta">
-    <div class="row spread">
-      {{if linked .Title.SourceURL}}<div class="small muted">{{.Title.SourceID}} · <a href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a></div>
-      {{else if imported .Title.SourceURL}}<div class="small muted">Imported from disk · no source linked</div>
-      {{else}}<div class="small muted">No source linked</div>{{end}}
-      {{if linked .Title.SourceURL}}
-      <form class="small muted" hx-post="/ui/library/{{.Title.ID}}/refresh-interval" hx-swap="none" style="display:flex;align-items:center;gap:6px">
-        Refresh chapters every
-        <input name="interval" value="{{.Title.RefreshInterval}}" placeholder="{{.RefreshEvery}} (global)" size="7" title="Custom cadence like 6h or 30m; leave blank to use the global setting">
-        <button class="ghost small">Save</button>
-        {{if not .Title.Monitored}}<span>· monitoring off</span>{{end}}
-      </form>
-      {{end}}
+
+<div class="card card-side bg-base-100 mb-4 max-sm:card-sm">
+  <figure class="shrink-0 p-4"><img class="h-40 w-28 rounded-lg object-cover bg-base-300 max-sm:h-28 max-sm:w-20" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
+  <div class="card-body gap-3">
+    <div class="text-sm text-base-content/60">
+      {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a>
+      {{else if imported .Title.SourceURL}}Imported from disk · no source linked
+      {{else}}No source linked{{end}}
     </div>
-    <div style="margin:12px 0">{{template "progressBar" .Title}}</div>
+    {{template "progressBar" .Title}}
     {{template "mangaDetail" .Manga}}
   </div>
 </div>
 
-<div class="stack">
-  {{template "titleActivity" .}}
-</div>
+{{template "titleActivity" .}}
 
-{{if .LinkedSources}}
-<details class="panel source-fold">
-  <summary>Linked sources <span class="small muted">({{len .LinkedSources}})</span></summary>
-  <table style="margin:0">
-    <tr><th>Source</th><th>Page</th><th></th></tr>
-    {{range .LinkedSources}}
-    <tr>
-      <td class="nowrap">{{.Name}}{{if .Active}} <span class="badge done">active</span>{{end}}</td>
-      <td class="small muted" style="word-break:break-all">{{.URL}}</td>
-      <td class="nowrap">
-        {{if not .Active}}<button class="ghost small" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
-        <button class="danger small" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
-      </td>
-    </tr>
-    {{end}}
-  </table>
-</details>
+{{if linked .Title.SourceURL}}
+<dialog id="settings_modal_{{.Title.ID}}" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Title settings</h3>
+    <form hx-post="/ui/library/{{.Title.ID}}/refresh-interval" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Check for new chapters every</span>
+        <input class="input w-full" name="interval" value="{{.Title.RefreshInterval}}" placeholder="{{.RefreshEvery}} (global default)">
+        <span class="label">Leave blank to use the global schedule. Example: 6h, 30m.</span>
+      </label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="settings_modal_{{.Title.ID}}.close()">Close</button>
+        <button class="btn btn-primary" onclick="settings_modal_{{.Title.ID}}.close()">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 {{end}}
 
-<details class="panel source-fold">
-  <summary>Sources</summary>
-  <div class="row spread" style="margin-top:12px"><h2 style="margin:0">Matches</h2>
-    <button class="ghost small" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Find sources</button></div>
-  {{template "matches" .Sources}}
-  {{if .SingleSources}}
-  <form class="row" hx-post="/ui/library/{{.Title.ID}}/link-source" hx-swap="none" style="margin-top:12px">
-    <select name="source_id" style="flex:1">
-      {{range .SingleSources}}<option value="{{.ID}}">{{.Name}} — {{.SampleMangaURL}}</option>{{end}}
-    </select>
-    <button class="ghost">Use this source</button>
-  </form>
-  <div class="small muted" style="margin-top:4px">Single-manga sources carry their own fetch methods and image types.</div>
-  {{end}}
-  {{if .LinkSources}}
-  <div style="margin-top:14px">
-    <div class="small muted">Wrong match, or need a specific page? Pick the source and paste that manga's page URL — it's checked before linking.</div>
-    <form class="row" hx-post="/ui/library/{{.Title.ID}}/verify-source" hx-target="#verify-{{.Title.ID}}" hx-indicator="#verify-spin" style="margin-top:6px">
-      <select name="source_id">{{range .LinkSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
-      <input name="url" placeholder="https://source/manga/…" style="flex:1" required>
-      <button class="ghost">Check</button>
-      <span id="verify-spin" class="spin htmx-indicator"></span>
-    </form>
-    <div id="verify-{{.Title.ID}}"></div>
-  </div>
-  {{end}}
-</details>
+<div class="collapse collapse-arrow bg-base-100 mt-4">
+  <input type="checkbox" {{if not .LinkedSources}}checked{{end}}>
+  <div class="collapse-title font-semibold">Sources{{if .LinkedSources}} <span class="badge badge-sm badge-ghost">{{len .LinkedSources}} linked</span>{{end}}</div>
+  <div class="collapse-content space-y-4">
+    {{if .LinkedSources}}
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead><tr><th>Source</th><th>Page</th><th></th></tr></thead>
+        <tbody>
+        {{range .LinkedSources}}
+        <tr>
+          <td class="whitespace-nowrap">{{.Name}}{{if .Active}} <span class="badge badge-success badge-soft badge-sm">active</span>{{end}}</td>
+          <td class="text-xs text-base-content/50 break-all">{{.URL}}</td>
+          <td class="whitespace-nowrap text-right">
+            {{if not .Active}}<button class="btn btn-ghost btn-xs" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
+            <button class="btn btn-ghost btn-xs text-error" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
+          </td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
 
-<h2>Chapters ({{.ChaptersTable.Total}})</h2>
-<form class="row read-range" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
-  <span class="small muted">Read range</span>
-  <input name="from" inputmode="numeric" placeholder="from" required>
-  <input name="to" inputmode="numeric" placeholder="to" required>
-  <button class="ghost" name="action" value="read">Mark read</button>
-  <button class="ghost" name="action" value="unread">Mark unread</button>
-</form>
-{{template "table" .ChaptersTable}}
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <span class="text-sm font-medium">Find another source</span>
+      <button class="btn btn-sm btn-ghost" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
+    </div>
+    {{template "matches" .Sources}}
+
+    {{if or .SingleSources .LinkSources}}
+    <details class="dropdown">
+      <summary class="btn btn-sm btn-ghost">Link manually</summary>
+      <div class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-80 max-w-[90vw] shadow-lg p-3 space-y-3">
+        {{if .SingleSources}}
+        <form hx-post="/ui/library/{{.Title.ID}}/link-source" hx-swap="none" class="grid gap-2">
+          <span class="text-xs text-base-content/60">Single-manga source</span>
+          <select name="source_id" class="select select-sm w-full">{{range .SingleSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+          <button class="btn btn-sm">Use this source</button>
+        </form>
+        {{end}}
+        {{if .LinkSources}}
+        <form hx-post="/ui/library/{{.Title.ID}}/verify-source" hx-target="#verify-{{.Title.ID}}" hx-indicator="#verify-spin" class="grid gap-2">
+          <span class="text-xs text-base-content/60">Paste a specific manga page URL</span>
+          <select name="source_id" class="select select-sm w-full">{{range .LinkSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+          <input name="url" class="input input-sm w-full" placeholder="https://source/manga/…" required>
+          <button class="btn btn-sm">Check &amp; link</button>
+          <span id="verify-spin" class="htmx-indicator loading loading-spinner loading-sm"></span>
+        </form>
+        {{end}}
+      </div>
+    </details>
+    <div id="verify-{{.Title.ID}}"></div>
+    {{end}}
+  </div>
+</div>
+
+<div class="flex items-center justify-between gap-2 mt-6 mb-2">
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Chapters · {{.ChaptersTable.Total}}</h2>
+  <details class="dropdown dropdown-end">
+    <summary class="btn btn-xs btn-ghost">Bulk read range</summary>
+    <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
+      <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
+      <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
+    </form>
+  </details>
+</div>
+<div class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "table" .ChaptersTable}}</div></div>
 {{end}}
 
 {{define "sourceProbe"}}
-<div class="panel" style="margin-top:10px">
-  {{if .Result.Error}}<div class="toast err">{{.Result.Error}}</div>{{end}}
+<div class="card bg-base-100 card-sm mt-3"><div class="card-body">
+  {{if .Result.Error}}<div class="alert alert-error alert-soft">{{.Result.Error}}</div>{{end}}
   {{if gt .Result.ChaptersFound 0}}
-  <div class="row spread">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
     <span>Found <strong>{{.Result.ChaptersFound}}</strong> chapters{{if .Result.SampleChapter}} · first: {{.Result.SampleChapter}}{{end}}</span>
-    <form hx-post="/ui/library/{{.TitleID}}/link-source-url" hx-swap="none">
-      <input type="hidden" name="source_id" value="{{.SourceID}}">
-      <input type="hidden" name="url" value="{{.URL}}">
-      <button>Link this page</button>
-    </form>
+    <button class="btn btn-sm btn-primary" hx-post="/ui/library/{{.TitleID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Link this page</button>
   </div>
   {{end}}
-</div>
+</div></div>
 {{end}}
 
 {{define "import"}}
-<h1>Import from disk</h1>
-<p class="muted small">Folders in your download directory that aren't tracked yet. Match each to an AniList title to import it and recognize its existing chapters.</p>
+<p class="text-sm text-base-content/60 mb-4">Folders in your download directory that aren't tracked yet. Match each to an AniList title to import it and recognize its existing chapters.</p>
 {{range $i, $c := .}}
-<div class="panel">
-  <div class="row spread">
-    <div><strong>{{$c.Folder}}</strong> <span class="small muted">· {{$c.ChapterFiles}} chapter files</span></div>
-    <button class="ghost" hx-post="/ui/import/{{pathEscape $c.Folder}}/search" hx-target="#picker-{{$i}}" hx-swap="innerHTML">Match on AniList</button>
+<div class="card bg-base-100 mb-3"><div class="card-body p-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <div><strong>{{$c.Folder}}</strong> <span class="text-sm text-base-content/50">· {{$c.ChapterFiles}} chapter files</span></div>
+    <button class="btn btn-sm" hx-post="/ui/import/{{pathEscape $c.Folder}}/search" hx-target="#picker-{{$i}}" hx-swap="innerHTML">Match on AniList</button>
   </div>
   <div id="picker-{{$i}}"></div>
-</div>
-{{else}}<p class="muted">No untracked folders with chapter files found in the download directory.</p>{{end}}
+</div></div>
+{{else}}<p class="text-base-content/60">No untracked folders with chapter files found in the download directory.</p>{{end}}
 {{end}}
 
 {{define "importPicker"}}
-<form hx-post="/ui/import" hx-swap="none" style="margin-top:12px">
+<form hx-post="/ui/import" hx-swap="none" class="mt-3 grid gap-3">
   <input type="hidden" name="folder" value="{{.Folder}}">
-  <div class="row">
-    <input name="q" value="{{.Query}}" style="flex:1"
-      hx-post="/ui/import/{{pathEscape .Folder}}/search" hx-target="closest form" hx-swap="outerHTML"
-      hx-trigger="keyup changed delay:500ms">
-    <span class="small muted">refine search</span>
-  </div>
-  <div class="stack" style="margin-top:10px">
+  <input name="q" class="input input-sm w-full" value="{{.Query}}" placeholder="Refine search…"
+    hx-post="/ui/import/{{pathEscape .Folder}}/search" hx-target="closest form" hx-swap="outerHTML" hx-trigger="keyup changed delay:500ms">
+  <div class="grid gap-1">
     {{range $i, $m := .Results}}
-    <label class="row"><input type="radio" name="anilist_id" value="{{$m.ProviderID}}" {{if eq $i 0}}checked{{end}}>
-      <img class="cover" src="{{$m.CoverImage}}" style="width:34px;height:48px" loading="lazy">
-      <span>{{mangaTitle $m}} <span class="small muted">{{$m.Format}} {{$m.Status}}{{if $m.Chapters}} · {{$m.Chapters}} ch{{end}}</span></span></label>
-    {{else}}<p class="muted small">No AniList results — refine the search above.</p>{{end}}
+    <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 cursor-pointer">
+      <input type="radio" class="radio radio-sm" name="anilist_id" value="{{$m.ProviderID}}" {{if eq $i 0}}checked{{end}}>
+      <img class="h-12 w-8 rounded object-cover bg-base-300" src="{{$m.CoverImage}}" loading="lazy">
+      <span>{{mangaTitle $m}} <span class="text-xs text-base-content/50">{{$m.Format}} {{$m.Status}}{{if $m.Chapters}} · {{$m.Chapters}} ch{{end}}</span></span>
+    </label>
+    {{else}}<p class="text-sm text-base-content/50">No AniList results — refine the search above.</p>{{end}}
   </div>
-  {{if .Results}}<button style="margin-top:10px">Import this folder</button>{{end}}
+  {{if .Results}}<button class="btn btn-primary btn-sm justify-self-start">Import this folder</button>{{end}}
 </form>
 {{end}}
 
 {{define "sources"}}
-<div class="row spread">
-  <h1>Sources</h1>
-  <div class="row">
-    <button class="ghost" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
-    <button type="button" onclick="document.getElementById('source-add-modal').style.display='flex'">+ Add Source</button>
-  </div>
+<div class="flex items-center justify-end gap-2 mb-4">
+  <button class="btn btn-sm btn-ghost" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
+  <button class="btn btn-sm btn-primary" onclick="source_add_modal.showModal()">+ Add source</button>
 </div>
-{{template "sourcesTable" .}}
+<div class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "sourcesTable" .}}</div></div>
 
-<div class="modal-overlay" id="source-add-modal" style="display:none">
-  <div class="modal panel">
-    <div class="row spread"><h2>Add a custom source</h2>
-      <button type="button" class="ghost small" onclick="document.getElementById('source-add-modal').style.display='none'">✕</button></div>
-    <form class="stack" id="custom-source">
-      <div class="setting">
-        <div class="row spread"><label>Name</label><input name="name" placeholder="Manga Name" class="field-input"></div>
-      </div>
-      <div class="setting">
-        <div class="row spread"><label>Site base URL</label><input name="base_url" placeholder="https://manga.url.here/" class="field-input"></div>
-        <div class="small muted">The site's home URL — used to match this source to chapter links.</div>
-      </div>
-      <div class="setting">
-        <div class="row spread"><label>Manga page URL</label><input name="manga_url" placeholder="https://manga.url.here/manga/xyz/" class="field-input"></div>
-        <div class="small muted">A specific manga's page to scrape chapters from (also used for the test run).</div>
-      </div>
-      <div class="setting">
-        <label>Image types to download</label>
-        <div class="chip-list" style="margin-top:6px">
-          <label class="small"><input type="checkbox" name="ext" value="jpg" checked> jpg</label>
-          <label class="small"><input type="checkbox" name="ext" value="jpeg" checked> jpeg</label>
-          <label class="small"><input type="checkbox" name="ext" value="png" checked> png</label>
-          <label class="small"><input type="checkbox" name="ext" value="webp" checked> webp</label>
-          <label class="small"><input type="checkbox" name="ext" value="gif"> gif</label>
-          <label class="small"><input type="checkbox" name="ext" value="avif"> avif</label>
+<dialog id="source_add_modal" class="modal">
+  <div class="modal-box max-w-xl">
+    <h3 class="text-lg font-bold mb-1">Add a custom source</h3>
+    <p class="text-sm text-base-content/60 mb-3">Fill in the essentials; fetch methods are detected automatically on the test run.</p>
+    <form id="custom-source" class="grid gap-3">
+      <label class="fieldset"><span class="fieldset-legend">Name</span><input class="input w-full" name="name" placeholder="Manga site name"></label>
+      <label class="fieldset"><span class="fieldset-legend">Site base URL</span><input class="input w-full" name="base_url" placeholder="https://site.example/"><span class="label">The home URL — used to match this source to chapter links.</span></label>
+      <label class="fieldset"><span class="fieldset-legend">Sample manga page URL</span><input class="input w-full" name="manga_url" placeholder="https://site.example/manga/xyz/"><span class="label">A manga to scrape chapters from and test-run.</span></label>
+      <details class="collapse collapse-arrow bg-base-200">
+        <summary class="collapse-title text-sm font-medium">Advanced options</summary>
+        <div class="collapse-content grid gap-2">
+          <div class="text-sm">Image types
+            <div class="flex flex-wrap gap-3 mt-1">
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="jpg" checked> jpg</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="jpeg" checked> jpeg</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="png" checked> png</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="webp" checked> webp</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="gif"> gif</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="avif"> avif</label>
+            </div>
+          </div>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="solver"> Load pages with FlareSolverr (Cloudflare)</label>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="browser"> Capture images with a browser</label>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="single_manga"> Single-manga source (no search)</label>
         </div>
-      </div>
-      <div class="setting">
-        <label class="small"><input type="checkbox" name="solver"> Load pages with FlareSolverr</label>
-        <div class="small muted">Use the browser solver for the chapter list and chapter pages — needed for Cloudflare-protected sites.</div>
-      </div>
-      <div class="setting">
-        <label class="small"><input type="checkbox" name="browser"> Download images with a browser</label>
-        <div class="small muted">Capture images via the browser downloader when they aren't present in the page HTML.</div>
-      </div>
-      <div class="setting">
-        <label class="small"><input type="checkbox" name="single_manga"> Single manga source</label>
-        <div class="small muted">This site hosts only the one manga above (no search). It can then be picked directly on a library title.</div>
-      </div>
-      <div class="row">
-        <button type="button" class="ghost" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run</button>
-        <button type="button" hx-post="/ui/sources/custom">Save source</button>
-        <button type="button" class="ghost" onclick="document.getElementById('source-add-modal').style.display='none'">Cancel</button>
-        <span id="test-spin" class="spin htmx-indicator"></span>
+      </details>
+      <div id="source-test"></div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run <span id="test-spin" class="htmx-indicator loading loading-spinner loading-xs"></span></button>
+        <button type="button" class="btn btn-primary" hx-post="/ui/sources/custom">Save source</button>
+        <button type="button" class="btn btn-ghost" onclick="source_add_modal.close()">Cancel</button>
       </div>
     </form>
-    <div id="source-test"></div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 {{end}}
 
 {{define "sourceTest"}}
-<div class="panel" style="margin-top:12px">
-  {{if .Error}}<div class="toast err">{{.Error}}</div>{{end}}
-  <div class="stats">
-    <div><div class="k">Chapters found</div>{{.ChaptersFound}}</div>
-    <div><div class="k">Chapter fetch</div>{{.ChapterFetch}}</div>
-    {{if .SampleChapter}}<div><div class="k">Sample chapter</div>{{.SampleChapter}}</div>{{end}}
-    <div><div class="k">Images in sample</div>{{len .Images}}</div>
-    {{if .ImageFetch}}<div><div class="k">Image fetch</div>{{.ImageFetch}}</div>{{end}}
+<div class="card bg-base-200 card-sm mt-2"><div class="card-body">
+  {{if .Error}}<div class="alert alert-error alert-soft">{{.Error}}</div>{{end}}
+  <div class="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+    <div><div class="text-xs text-base-content/50">Chapters found</div>{{.ChaptersFound}}</div>
+    <div><div class="text-xs text-base-content/50">Chapter fetch</div>{{.ChapterFetch}}</div>
+    {{if .SampleChapter}}<div><div class="text-xs text-base-content/50">Sample chapter</div>{{.SampleChapter}}</div>{{end}}
+    <div><div class="text-xs text-base-content/50">Images in sample</div>{{len .Images}}</div>
+    {{if .ImageFetch}}<div><div class="text-xs text-base-content/50">Image fetch</div>{{.ImageFetch}}</div>{{end}}
   </div>
-  {{if .ImageExtensions}}<div class="small muted" style="margin-top:8px">Detected image types: {{range $i, $e := .ImageExtensions}}{{if $i}}, {{end}}{{$e}}{{end}}</div>{{end}}
-  {{if .Images}}
-  <details style="margin-top:8px">
-    <summary class="small">Show {{len .Images}} image URLs</summary>
-    <div class="stack small" style="margin-top:6px;max-height:240px;overflow:auto">
-      {{range .Images}}<div class="muted" style="word-break:break-all">{{.}}</div>{{end}}
-    </div>
-  </details>
-  {{end}}
-</div>
+  {{if .ImageExtensions}}<div class="text-xs text-base-content/50 mt-2">Detected image types: {{range $i, $e := .ImageExtensions}}{{if $i}}, {{end}}{{$e}}{{end}}</div>{{end}}
+</div></div>
 {{end}}
 
 {{define "settings"}}
-<h1>Settings</h1>
-<form class="panel stack" hx-put="/ui/settings" hx-target="#settings-msg">
+<form class="card bg-base-100 card-body gap-0" hx-put="/ui/settings" hx-target="#settings-msg">
   {{range .Fields}}
-  <div class="setting row spread">
-    <div>
-      <label for="set-{{.Key}}">{{.Label}}</label>
-      {{if .Desc}}<div class="small muted">{{.Desc}}</div>{{end}}
+  <div class="flex items-start justify-between gap-4 py-3 border-b border-base-200 last:border-0 max-sm:flex-col max-sm:gap-1">
+    <div class="min-w-0">
+      <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
+      {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
     </div>
-    <input id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}" class="field-input">
+    <input class="input input-sm w-40 max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}">
   </div>
   {{end}}
-  <div class="row"><button>Save</button><span id="settings-msg"></span></div>
+  <div class="flex items-center gap-3 pt-4">
+    <button class="btn btn-primary btn-sm">Save settings</button>
+    <span id="settings-msg"></span>
+  </div>
 </form>
 {{end}}

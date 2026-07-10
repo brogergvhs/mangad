@@ -11,13 +11,23 @@ func TestTitleActivityFromTargetedTitleJob(t *testing.T) {
 	t.Parallel()
 
 	title := library.Title{ID: 42, Monitored: true}
+	// A queued job locks the button (running map) but shows no live label.
 	running, label, failed, _ := titleActivityFrom([]jobs.Job{{
 		Type:    jobs.TypeDownloadMissing,
 		Status:  "queued",
 		Payload: `{"title_id":42}`,
 	}}, title)
+	if failed || label != "" || !running[jobs.TypeDownloadMissing] {
+		t.Fatalf("queued: running %v label %q failed %v", running, label, failed)
+	}
+	// A running job additionally surfaces the live label.
+	running, label, failed, _ = titleActivityFrom([]jobs.Job{{
+		Type:    jobs.TypeDownloadMissing,
+		Status:  "running",
+		Payload: `{"title_id":42}`,
+	}}, title)
 	if failed || label != "downloading" || !running[jobs.TypeDownloadMissing] {
-		t.Fatalf("activity = running %v label %q failed %v", running, label, failed)
+		t.Fatalf("running: running %v label %q failed %v", running, label, failed)
 	}
 }
 

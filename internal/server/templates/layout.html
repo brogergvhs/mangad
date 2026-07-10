@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="mocha">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,30 +9,32 @@
   <script src="/static/app.js?v={{assetVer}}" defer></script>
 </head>
 <body>
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-head">
-      <a class="brand" href="/">Manga<span>D</span></a>
-      <button class="icon-button sidebar-close" data-sidebar-close aria-label="Close menu">{{template "iconClose"}}</button>
+<div class="drawer lg:drawer-open">
+  <input id="app-drawer" type="checkbox" class="drawer-toggle">
+  <div class="drawer-content min-h-screen bg-base-200">
+    <div class="navbar bg-base-200 border-b border-base-100 lg:hidden sticky top-0 z-30">
+      <label for="app-drawer" class="btn btn-ghost btn-square drawer-button" aria-label="Open menu">{{template "iconMenu"}}</label>
+      <a href="/" class="text-lg font-bold px-2">Manga<span class="text-primary">D</span></a>
     </div>
-    <nav class="sidebar-nav">
-      <a href="/" class="{{if eq .Nav "dashboard"}}active{{end}}">{{template "iconHome"}}<span>Dashboard</span></a>
-      <a href="/search" class="{{if eq .Nav "search"}}active{{end}}">{{template "iconSearch"}}<span>Search</span></a>
-      <a href="/library" class="{{if eq .Nav "library"}}active{{end}}">{{template "iconLibrary"}}<span>Library</span></a>
-      <a href="/import" class="{{if eq .Nav "import"}}active{{end}}">{{template "iconImport"}}<span>Import</span></a>
-      <a href="/sources" class="{{if eq .Nav "sources"}}active{{end}}">{{template "iconSources"}}<span>Sources</span></a>
-    </nav>
-    <nav class="sidebar-nav sidebar-foot">
-      <a href="/settings" class="{{if eq .Nav "settings"}}active{{end}}">{{template "iconSettings"}}<span>Settings</span></a>
-    </nav>
-  </aside>
-  <div class="sidebar-backdrop" data-sidebar-close hidden></div>
-  <div class="app">
-    <div class="topbar">
-      <button class="icon-button" data-sidebar-open aria-label="Open menu">{{template "iconMenu"}}</button>
-      <a class="brand" href="/">Manga<span>D</span></a>
-    </div>
-    <div id="toast" class="toast-area"></div>
-    <main>{{.Content}}</main>
+    <div id="toast" class="toast toast-top toast-end z-50"></div>
+    <main class="mx-auto w-full max-w-5xl p-4 lg:p-8">{{.Content}}</main>
   </div>
+  <div class="drawer-side z-40">
+    <label for="app-drawer" aria-label="Close menu" class="drawer-overlay"></label>
+    <div class="flex min-h-full w-64 flex-col bg-base-300">
+      <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Manga<span class="text-primary">D</span></a>
+      <ul class="menu w-full grow px-4">
+        <li><a href="/" class="{{if eq .Nav "dashboard"}}menu-active{{end}}">{{template "iconHome"}}Dashboard</a></li>
+        <li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>
+        <li><a href="/library" class="{{if eq .Nav "library"}}menu-active{{end}}">{{template "iconLibrary"}}Library</a></li>
+        <li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>
+        <li><a href="/sources" class="{{if eq .Nav "sources"}}menu-active{{end}}">{{template "iconSources"}}Sources</a></li>
+      </ul>
+      <ul class="menu w-full px-4 pb-4">
+        <li><a href="/settings" class="{{if eq .Nav "settings"}}menu-active{{end}}">{{template "iconSettings"}}Settings</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
 </body>
 </html>

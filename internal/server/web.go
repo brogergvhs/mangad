@@ -1405,7 +1405,10 @@ func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]b
 		switch {
 		case active:
 			running[j.Type] = true
-			if label == "" {
+			// Only surface a live indicator for a job that is actually
+			// running; a merely-queued job shows nothing (but still locks its
+			// button and keeps the poll alive via the running map).
+			if label == "" && j.Status == "running" {
 				label = verb
 			}
 		case isFailed && !failed:

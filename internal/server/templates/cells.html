@@ -1,70 +1,66 @@
-{{define "cellCover"}}<img class="cover" style="width:40px;height:56px" src="{{.}}" alt="" loading="lazy">{{end}}
+{{define "cellCover"}}<img class="h-14 w-10 rounded object-cover bg-base-300" src="{{.}}" alt="" loading="lazy">{{end}}
 
 {{define "cellTitle"}}
-<a href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a>
-<div class="small muted">{{if .Title.ReleaseStatus}}{{releaseStatus .Title.ReleaseStatus}}{{else}}unknown status{{end}} · {{humanBytes .Title.SizeBytes}}</div>
-{{end}}
-
-{{define "cellActivity"}}
-{{if .Running}}<span class="spin"></span> <span class="small">{{.ActiveLabel}}…</span>
-{{else if .Failed}}<span class="badge broken">failed</span>{{end}}
+<a class="link link-hover font-medium" href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a>
+<div class="text-xs text-base-content/50">{{humanBytes .Title.SizeBytes}}{{if gt .Title.MissingCount 0}} · {{.Title.MissingCount}} missing{{end}}</div>
 {{end}}
 
 {{define "mangaDetail"}}
-<div class="detail">
-  {{if .Description}}<div class="desc">{{.Description}}</div>{{end}}
-  <div class="stats">
-    {{if .Authors}}<div><div class="k">Authors</div>{{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</div>{{end}}
-    {{if .Chapters}}<div><div class="k">AniList chapters</div>{{.Chapters}}</div>{{end}}
-    {{if .Volumes}}<div><div class="k">Volumes</div>{{.Volumes}}</div>{{end}}
-    {{if .Year}}<div><div class="k">Year</div>{{.Year}}</div>{{end}}
-    {{if .AverageScore}}<div><div class="k">Score</div>{{.AverageScore}}%</div>{{end}}
-    {{if .Status}}<div><div class="k">Status</div>{{.Status}}</div>{{end}}
+<div class="grid gap-2 py-1">
+  {{if .Description}}<p class="text-sm text-base-content/60 leading-relaxed max-w-prose">{{.Description}}</p>{{end}}
+  <div class="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+    {{if .Authors}}<div><div class="text-xs text-base-content/50">Authors</div>{{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</div>{{end}}
+    {{if .Chapters}}<div><div class="text-xs text-base-content/50">AniList chapters</div>{{.Chapters}}</div>{{end}}
+    {{if .Volumes}}<div><div class="text-xs text-base-content/50">Volumes</div>{{.Volumes}}</div>{{end}}
+    {{if .Year}}<div><div class="text-xs text-base-content/50">Year</div>{{.Year}}</div>{{end}}
+    {{if .AverageScore}}<div><div class="text-xs text-base-content/50">Score</div>{{.AverageScore}}%</div>{{end}}
+    {{if .Status}}<div><div class="text-xs text-base-content/50">Status</div>{{.Status}}</div>{{end}}
   </div>
-  {{if .Genres}}<div class="chip-list">{{range .Genres}}<span class="badge">{{.}}</span>{{end}}</div>{{end}}
+  {{if .Genres}}<div class="flex flex-wrap gap-1.5">{{range .Genres}}<span class="badge badge-ghost badge-sm">{{.}}</span>{{end}}</div>{{end}}
 </div>
 {{end}}
 
 {{define "chapterName"}}
-{{if .Downloaded}}<a href="/reader/{{.TitleID}}?chapter={{.ID}}"><strong>{{.Label}}</strong></a>{{else}}<strong>{{.Label}}</strong>{{end}} <span class="small muted">{{.Title}}</span>
+{{if .Downloaded}}<a class="link link-hover font-semibold" href="/reader/{{.TitleID}}?chapter={{.ID}}">{{.Label}}</a>{{else}}<span class="font-semibold">{{.Label}}</span>{{end}} <span class="text-xs text-base-content/50">{{.Title}}</span>
 {{end}}
 
 {{define "chapterStatus"}}
-{{- if .Downloaded}}<span class="badge done">downloaded</span>
-{{- else if .Failed}}<span class="badge broken" title="{{.Error}}">failed ({{.Attempts}} attempts)</span>
-{{- else}}<span class="badge">missing</span>{{end -}}
-{{- if .Downloaded}}
-  {{- if .Read}} <span class="read-state read-state--read" title="Read" aria-label="Read">{{template "iconEye"}}</span>
-  {{- else if gt .ReadPages 0}} <span class="read-state read-state--partial" title="Reading">{{.ReadPages}}{{if gt .TotalPages 0}}/{{.TotalPages}}{{end}}</span>
-  {{- else}} <span class="read-state read-state--unread" title="Unread" aria-label="Unread">{{template "iconEyeOff"}}</span>{{end -}}
-{{- end -}}
+{{- if .Downloaded}}<span class="badge badge-success badge-soft badge-sm">downloaded</span>
+{{- else if .Failed}}<span class="badge badge-error badge-soft badge-sm" title="{{.Error}}">failed ({{.Attempts}} attempts)</span>
+{{- else}}<span class="badge badge-ghost badge-sm">missing</span>{{end -}}
 {{end}}
 
 {{define "chapterReadAction"}}
 {{if .Downloaded}}
   {{if or .Read (gt .ReadPages 0)}}
-  <button class="ghost small icon-button" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark unread" title="Mark unread">
-    {{template "iconEyeOff"}}
-  </button>
-  {{else}}
-  <button class="ghost small icon-button" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark read" title="Mark read">
+  <button class="btn btn-ghost btn-xs btn-square text-success" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">
     {{template "iconEye"}}
   </button>
+  {{else}}
+  <button class="btn btn-ghost btn-xs btn-square text-base-content/40" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">
+    {{template "iconEyeOff"}}
+  </button>
   {{end}}
-{{else}}<span class="small muted">—</span>{{end}}
+{{else}}<span class="text-base-content/40">—</span>{{end}}
 {{end}}
 
-{{define "jobCancel"}}<button class="danger small" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
+{{define "jobCancel"}}<button class="btn btn-error btn-soft btn-xs" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
 
-{{define "jobStatusBadge"}}<span class="badge {{.Status}}">{{.Status}}</span>{{end}}
+{{define "jobStatusBadge"}}
+{{- if eq .Status "done"}}<span class="badge badge-success badge-soft badge-sm">done</span>
+{{- else if eq .Status "running"}}<span class="badge badge-info badge-soft badge-sm">running</span>
+{{- else if eq .Status "queued"}}<span class="badge badge-warning badge-soft badge-sm">queued</span>
+{{- else if or (eq .Status "failed") (eq .Status "dead")}}<span class="badge badge-error badge-soft badge-sm">{{.Status}}</span>
+{{- else}}<span class="badge badge-ghost badge-sm">{{.Status}}</span>{{end -}}
+{{end}}
 
 {{define "jobDetail"}}
-<div class="detail">
-  <div class="stats">
-    <div><div class="k">Payload</div><code class="small">{{.Payload}}</code></div>
-    <div><div class="k">Run after</div>{{since .RunAfter}}</div>
-    <div><div class="k">Created</div>{{since .CreatedAt}}</div>
+<div class="grid gap-2 py-1 text-sm">
+  <div class="flex flex-wrap gap-x-5 gap-y-2">
+    <div><div class="text-xs text-base-content/50">Payload</div><code class="text-xs">{{.Payload}}</code></div>
+    <div><div class="text-xs text-base-content/50">Run after</div>{{since .RunAfter}}</div>
+    <div><div class="text-xs text-base-content/50">Created</div>{{since .CreatedAt}}</div>
   </div>
-  {{if .LastError}}<div class="small" style="color:var(--bad)">{{.LastError}}</div>{{end}}
+  {{if .LastError}}<div class="text-sm text-error">{{.LastError}}</div>{{end}}
 </div>
 {{end}}
