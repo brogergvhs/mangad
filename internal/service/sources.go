@@ -8,8 +8,10 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/sources"
@@ -86,7 +88,6 @@ func (s *sourceService) TestProfile(ctx context.Context, cfg *config.Config, log
 	res.ImageExtensions = imageExtensions(images)
 	switch {
 	case useBrowser:
-		// The user chose browser capture; that's what the source will use.
 		res.ImageFetch = sources.FetchBrowser
 		if len(images) == 0 {
 			res.Error = "no image URLs in the chapter HTML — images will be captured by the browser downloader"
@@ -197,7 +198,7 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 		attempts = append(attempts, true)
 	}
 	if src.ChapterFetch == sources.FetchSolver {
-		attempts = []bool{true} // source is pinned to the solver; don't waste an http probe
+		attempts = []bool{true}
 	}
 	var chapStep, imgStep sources.VerifyStep
 	var lastErr error
@@ -213,7 +214,6 @@ func (s *sourceService) verify(ctx context.Context, cfg *config.Config, logSvc u
 		return lastErr
 	}
 	if searchStep.Status == sources.StepFailed {
-		// Downloads work but the site can't be searched for new matches.
 		result.Status = sources.StatusDegraded
 		return nil
 	}
@@ -235,28 +235,39 @@ func (s *sourceService) verifySearch(ctx context.Context, cfg *config.Config, lo
 	query := sampleTitleQuery(src)
 	searchURL := strings.ReplaceAll(src.SearchURL, "{query}", url.QueryEscape(query))
 	search.Detail = fmt.Sprintf("%q", query)
-	body, finalURL, err := fetchSearchPage(ctx, *cfg, searchURL)
-	if err != nil {
-		search.Status = sources.StepFailed
-		search.Log = fmt.Sprintf("GET %s: %v", searchURL, err)
-		pick.Detail = "falling back to sample manga"
-		return search, pick, mangaURL
-	}
-	// Reuse the matcher's result parsing with a synthetic manga titled after
-	// the sample slug, so at least the sample manga should be found.
+
 	fake := catalog.Manga{TitleRomaji: query}
-	var links []string
-	if doc, err := goquery.NewDocumentFromReader(strings.NewReader(body)); err == nil {
-		links = searchLinks(doc, src, fake)
+
+	solverPinned := src.RequiresBrowserSolver || src.ChapterFetch == sources.FetchSolver
+	solverReady := strings.TrimSpace(cfg.BrowserSolver.Endpoint) != ""
+	attempts := []bool{false}
+	if solverPinned {
+		attempts = []bool{true}
+	} else if solverReady {
+		attempts = []bool{false, true}
 	}
-	links = uniqueStrings(append(links, searchStructuredLinks(body, src, fake)...))
-	if len(links) == 0 && finalURL != searchURL && looksLikeMangaResult(src, fake, finalURL, "") {
-		// A single-result search redirected straight to the manga page.
-		links = []string{finalURL}
+
+	var links []string
+	for _, useSolver := range attempts {
+		body, finalURL, err := s.fetchSearch(ctx, cfg, useSolver, searchURL)
+		if err != nil {
+			search.Log = fmt.Sprintf("GET %s%s: %v", searchURL, solverTag(useSolver), err)
+			continue
+		}
+		if doc, derr := goquery.NewDocumentFromReader(strings.NewReader(body)); derr == nil {
+			links = searchLinks(doc, src, fake)
+		}
+		links = uniqueStrings(append(links, searchStructuredLinks(body, src, fake)...))
+		if len(links) == 0 && finalURL != searchURL && looksLikeMangaResult(src, fake, finalURL, "") {
+			links = []string{finalURL}
+		}
+		if len(links) > 0 {
+			break
+		}
+		search.Log = fmt.Sprintf("GET %s%s returned %d bytes but no usable manga results for %q", searchURL, solverTag(useSolver), len(body), query)
 	}
 	if len(links) == 0 {
 		search.Status = sources.StepFailed
-		search.Log = fmt.Sprintf("GET %s returned %d bytes but no usable manga results for %q", searchURL, len(body), query)
 		pick.Detail = "falling back to sample manga"
 		return search, pick, mangaURL
 	}
@@ -299,8 +310,6 @@ func (s *sourceService) verifyFetch(ctx context.Context, cfg *config.Config, log
 
 	ch := list[rand.Intn(len(list))]
 	if src.ImageFetch == sources.FetchBrowser || src.RequiresBrowserDownload {
-		// Images are pinned to browser capture; the http probe doesn't apply
-		// and must not relearn "http" over the user's choice.
 		images, _ := svc.FetchImages(ctx, ch)
 		result.ImagesFound = len(images)
 		result.ImageExtensions = imageExtensions(images)
@@ -309,6 +318,7 @@ func (s *sourceService) verifyFetch(ctx context.Context, cfg *config.Config, log
 		img.Detail = fmt.Sprintf("chapter %s: browser capture", ch.Label)
 		return chap, img, nil
 	}
+
 	img.Status = sources.StepFailed
 	images, err := svc.FetchImages(ctx, ch)
 	if err != nil {
@@ -328,7 +338,7 @@ func (s *sourceService) verifyFetch(ctx context.Context, cfg *config.Config, log
 		img.Log = err.Error()
 		return chap, img, err
 	}
-	// Actually download a sample image so CDN 403s surface here, not at download.
+
 	if err := svc.VerifyImage(ctx, images[rand.Intn(len(images))], ch.URL); err != nil {
 		result.ImageFetch = ""
 		img.Log = err.Error()
@@ -338,6 +348,32 @@ func (s *sourceService) verifyFetch(ctx context.Context, cfg *config.Config, log
 	img.Detail = fmt.Sprintf("%d images in chapter %s", len(images), ch.Label)
 	result.ImageFetch = sources.FetchHTTP
 	return chap, img, nil
+}
+
+// fetchSearch loads a source's search page over plain HTTP or, when useSolver
+// is set, through FlareSolverr (bypasses Cloudflare 403s and renders JS search
+// pages so results are parseable).
+func (s *sourceService) fetchSearch(ctx context.Context, cfg *config.Config, useSolver bool, searchURL string) (body, finalURL string, err error) {
+	if useSolver {
+		solver := browserfetch.NewFlareSolverr(cfg.BrowserSolver.Endpoint, time.Duration(cfg.BrowserSolver.TimeoutSeconds)*time.Second, nil)
+		result, err := solver.Fetch(ctx, searchURL)
+		if err != nil {
+			return "", searchURL, err
+		}
+		final := searchURL
+		if result.URL != "" {
+			final = result.URL
+		}
+		return result.HTML, final, nil
+	}
+	return fetchSearchPage(ctx, *cfg, searchURL)
+}
+
+func solverTag(useSolver bool) string {
+	if useSolver {
+		return " (via solver)"
+	}
+	return ""
 }
 
 // sampleTitleQuery derives a search query from the sample manga URL's slug.
