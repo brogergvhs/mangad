@@ -420,6 +420,11 @@ func (s *JobService) RemoveTitle(ctx context.Context, id int64) (library.Title, 
 }
 
 // SetMonitored toggles monitoring for a tracked title.
+// SetRefreshInterval sets a title's custom refresh cadence (empty = global).
+func (s *JobService) SetRefreshInterval(ctx context.Context, id int64, interval string) error {
+	return s.lib.SetRefreshInterval(ctx, id, interval)
+}
+
 func (s *JobService) SetMonitored(ctx context.Context, id int64, monitored bool) error {
 	return s.lib.SetMonitored(ctx, id, monitored)
 }
@@ -884,9 +889,10 @@ func (s *JobService) expandTitleJob(ctx context.Context, typ string) error {
 	if err != nil {
 		return err
 	}
+	now := time.Now()
 	var errs []error
 	for _, title := range titles {
-		if !globalTitleJobApplies(typ, title) {
+		if !globalTitleJobApplies(typ, title, now) {
 			continue
 		}
 		_, err := s.enqueue(ctx, typ, JobPayload{TitleID: title.ID}, time.Now())
@@ -895,10 +901,22 @@ func (s *JobService) expandTitleJob(ctx context.Context, typ string) error {
 	return errors.Join(errs...)
 }
 
-func globalTitleJobApplies(typ string, title library.Title) bool {
+func titleRefreshDue(title library.Title, now time.Time) bool {
+	interval := strings.TrimSpace(title.RefreshInterval)
+	if interval == "" {
+		return true // no override: follow the global sweep cadence
+	}
+	d, err := time.ParseDuration(interval)
+	if err != nil || d <= 0 || title.LastRefreshedAt == nil {
+		return true
+	}
+	return now.Sub(*title.LastRefreshedAt) >= d
+}
+
+func globalTitleJobApplies(typ string, title library.Title, now time.Time) bool {
 	switch typ {
 	case jobs.TypeRefreshTitle:
-		return title.Monitored
+		return title.Monitored && titleRefreshDue(title, now)
 	case jobs.TypeDownloadMissing:
 		return title.Monitored && title.MissingCount > 0
 	case jobs.TypeScanDownloads:

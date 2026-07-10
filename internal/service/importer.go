@@ -85,7 +85,7 @@ func (s *WantedService) ImportFolder(ctx context.Context, root, folder string, a
 		DisplayTitle:    displayMangaTitle(manga),
 		OutputPath:      folder,
 		Monitored:       defaultMonitored(manga),
-		RefreshInterval: "24h",
+		RefreshInterval: "",
 	})
 	if err != nil {
 		return library.Title{}, err
@@ -159,7 +159,7 @@ func (s *WantedService) AddCatalogTitle(ctx context.Context, anilistID int) (lib
 		SourceURL:       fmt.Sprintf("pending:%d", manga.ID),
 		DisplayTitle:    displayMangaTitle(manga),
 		Monitored:       defaultMonitored(manga),
-		RefreshInterval: "24h",
+		RefreshInterval: "",
 	})
 }
 

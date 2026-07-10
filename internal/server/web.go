@@ -72,6 +72,7 @@ type activityView struct {
 	LinkedSources []linkedSourceView // sources already linked to this title
 	SingleSources []sources.Source   // single-manga sources selectable for linking
 	LinkSources   []sources.Source   // searchable sources for specifying a page URL
+	RefreshEvery  string             // effective global refresh cadence
 	Running       map[string]bool    // job type -> active (for button locking)
 	ActiveLabel   string
 	Failed        bool
@@ -191,6 +192,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/scan", u.libAction(jobs.TypeScanDownloads, "scanning"))
 	mux.HandleFunc("GET /ui/library/{id}/activity", u.libActivity)
 	mux.HandleFunc("POST /ui/library/{id}/monitored", u.libMonitored)
+	mux.HandleFunc("POST /ui/library/{id}/refresh-interval", u.libRefreshInterval)
 	mux.HandleFunc("POST /ui/library/{id}/remove", u.libRemove)
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
@@ -474,6 +476,7 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	view := u.titleActivity(r.Context(), id)
 	view.Title = title
+	view.RefreshEvery = u.svc.Setting(r.Context(), service.SettingServeRefreshEvery, service.SettingDefault(service.SettingServeRefreshEvery))
 	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
 	linked := u.linkedSourceIDs(r.Context(), id)
 	view.LinkedSources = u.linkedSourceViews(r.Context(), title)
@@ -723,6 +726,19 @@ func (u *webUI) libActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Title = title
 	u.frag(w, "titleActivity", view)
+}
+
+func (u *webUI) libRefreshInterval(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.SetRefreshInterval(r.Context(), id, r.FormValue("interval")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", id))
 }
 
 func (u *webUI) libMonitored(w http.ResponseWriter, r *http.Request) {

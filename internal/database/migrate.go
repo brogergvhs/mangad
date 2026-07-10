@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS titles (
 	display_title TEXT NOT NULL,
 	output_path TEXT NOT NULL DEFAULT '',
 	monitored INTEGER NOT NULL DEFAULT 1,
-	refresh_interval TEXT NOT NULL DEFAULT '24h',
+	refresh_interval TEXT NOT NULL DEFAULT '',
 	last_refreshed_at TEXT,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -231,6 +231,11 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
 		}
+	}
+	// The per-title refresh interval used to default to 24h; treat those
+	// (never a user choice) as "use the global cadence".
+	if _, err = tx.ExecContext(ctx, `UPDATE titles SET refresh_interval = '' WHERE refresh_interval = '24h'`); err != nil {
+		return fmt.Errorf("clear default refresh interval: %w", err)
 	}
 	// Backfill title_sources from titles already linked to a real (http) source.
 	if _, err = tx.ExecContext(ctx, `

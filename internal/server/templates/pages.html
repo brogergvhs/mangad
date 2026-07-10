@@ -108,7 +108,14 @@
       {{if linked .Title.SourceURL}}<div class="small muted">{{.Title.SourceID}} · <a href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a></div>
       {{else if imported .Title.SourceURL}}<div class="small muted">Imported from disk · no source linked</div>
       {{else}}<div class="small muted">No source linked</div>{{end}}
-      <div class="small muted">refresh every {{.Title.RefreshInterval}}</div>
+      {{if linked .Title.SourceURL}}
+      <form class="small muted" hx-post="/ui/library/{{.Title.ID}}/refresh-interval" hx-swap="none" style="display:flex;align-items:center;gap:6px">
+        checked for new chapters every
+        <input name="interval" value="{{.Title.RefreshInterval}}" placeholder="{{.RefreshEvery}} (global)" size="7" title="Custom cadence like 6h or 30m; leave blank to use the global setting">
+        <button class="ghost small">Save</button>
+        {{if not .Title.Monitored}}<span>· monitoring off</span>{{end}}
+      </form>
+      {{end}}
     </div>
     <div style="margin:12px 0">{{template "progressBar" .Title}}</div>
     {{template "mangaDetail" .Manga}}

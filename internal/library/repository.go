@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/database"
@@ -295,6 +296,29 @@ func chapterHost(raw string) string {
 		return ""
 	}
 	return strings.TrimPrefix(strings.ToLower(u.Host), "www.")
+}
+
+// SetRefreshInterval sets a title's custom refresh cadence; empty means follow
+// the global schedule.
+func (r *Repository) SetRefreshInterval(ctx context.Context, id int64, interval string) error {
+	interval = strings.TrimSpace(interval)
+	if interval != "" {
+		if d, err := time.ParseDuration(interval); err != nil || d <= 0 {
+			return fmt.Errorf("invalid refresh interval %q (use e.g. 6h, 30m)", interval)
+		}
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE titles SET refresh_interval = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, interval, id)
+	if err != nil {
+		return fmt.Errorf("set refresh interval %d: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("title %d not found", id)
+	}
+	return nil
 }
 
 // SetMonitored toggles monitoring for a title.
@@ -664,9 +688,6 @@ func normalizeTitleParams(params AddTitleParams) AddTitleParams {
 
 	if params.DisplayTitle == "" {
 		params.DisplayTitle = params.SourceURL
-	}
-	if params.RefreshInterval == "" {
-		params.RefreshInterval = "24h"
 	}
 
 	return params

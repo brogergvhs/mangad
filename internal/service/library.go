@@ -71,6 +71,11 @@ func (s *LibraryService) ReconcileStartedDownloads(ctx context.Context) (int64, 
 	return s.repo.ReconcileStartedDownloads(ctx)
 }
 
+// SetRefreshInterval sets a title's custom refresh cadence (empty = global).
+func (s *LibraryService) SetRefreshInterval(ctx context.Context, id int64, interval string) error {
+	return s.repo.SetRefreshInterval(ctx, id, interval)
+}
+
 // SetMonitored toggles monitoring for a tracked title.
 func (s *LibraryService) SetMonitored(ctx context.Context, id int64, monitored bool) error {
 	return s.repo.SetMonitored(ctx, id, monitored)
