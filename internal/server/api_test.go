@@ -6,11 +6,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	chaptersPkg "github.com/brogergvhs/mangad/internal/chapters"
+	"github.com/brogergvhs/mangad/internal/database"
 	"github.com/brogergvhs/mangad/internal/jobs"
+	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/service"
 )
 
@@ -58,6 +64,76 @@ func TestAPIJobs(t *testing.T) {
 	requestJSON(t, api, http.MethodGet, "/api/jobs", nil, http.StatusOK, &all)
 	if len(all) != 1 || all[0].ID != job.ID {
 		t.Fatalf("jobs = %#v", all)
+	}
+}
+
+func TestAPIReaderProgress(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "mangad.db")
+	db, err := database.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := library.NewRepository(db)
+	title, err := repo.AddTitle(ctx, library.AddTitleParams{
+		SourceURL:    "https://example.test/manga",
+		DisplayTitle: "Example",
+		Monitored:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.UpsertChapters(ctx, title.ID, []chaptersPkg.Chapter{{
+		Chapter: providers.Chapter{URL: "https://example.test/ch-1", Label: "1", NumMain: 1},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	chapter, err := repo.GetChapterByLabel(ctx, title.ID, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chapterFile := filepath.Join(t.TempDir(), "chapter-1.cbz")
+	if err := os.WriteFile(chapterFile, []byte("not a real cbz"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkDownloadCompleted(ctx, chapter.ID, chapterFile, 100, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, closeDB, err := service.OpenJobs(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeDB()
+	api := New(
+		svc,
+		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
+		"",
+	)
+
+	var progress library.TitleReadProgress
+	requestJSON(t, api, http.MethodGet, "/api/reader/titles/"+strconv.FormatInt(title.ID, 10), nil, http.StatusOK, &progress)
+	if progress.NextChapterID != chapter.ID || progress.NextPage != 1 {
+		t.Fatalf("reader progress = %+v, want chapter %d page 1", progress, chapter.ID)
+	}
+
+	var status library.ChapterReadStatus
+	requestJSON(t, api, http.MethodPost, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/pages", map[string]int{"page": 1, "total_pages": 2}, http.StatusOK, &status)
+	if status.ReadPages != 1 || status.FirstUnreadPage != 2 || status.Completed {
+		t.Fatalf("page status = %+v, want page 2 incomplete", status)
+	}
+	requestJSON(t, api, http.MethodPost, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/complete", nil, http.StatusOK, &status)
+	if !status.Completed || status.FirstUnreadPage != 0 {
+		t.Fatalf("complete status = %+v, want complete", status)
 	}
 }
 

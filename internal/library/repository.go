@@ -504,6 +504,137 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 	return out, rows.Err()
 }
 
+// ReaderProgress returns downloaded chapters and read progress for a title.
+func (r *Repository) ReaderProgress(ctx context.Context, titleID int64) (TitleReadProgress, error) {
+	title, err := r.GetTitle(ctx, titleID)
+	if err != nil {
+		return TitleReadProgress{}, err
+	}
+	chapters, err := r.listReadChapters(ctx, `WHERE c.title_id = ? AND d.status = 'completed'`, titleID)
+	if err != nil {
+		return TitleReadProgress{}, err
+	}
+
+	out := TitleReadProgress{Title: title, Chapters: chapters, TotalChapters: len(chapters)}
+	for _, ch := range chapters {
+		out.ReadPages += int64(ch.ReadPages)
+		out.TotalPages += int64(ch.TotalPages)
+		if ch.Completed {
+			out.ReadChapters++
+			continue
+		}
+		if out.NextChapterID == 0 {
+			out.NextChapterID = ch.ID
+			out.NextPage = ch.FirstUnreadPage
+		}
+	}
+	return out, nil
+}
+
+// MarkPageRead records one completed page and updates the chapter read summary.
+func (r *Repository) MarkPageRead(ctx context.Context, chapterID int64, page, totalPages int) (ChapterReadStatus, error) {
+	if page <= 0 {
+		return ChapterReadStatus{}, fmt.Errorf("page must be positive")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("begin read progress: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var downloadPages int
+	if err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(d.pages, 0)
+		FROM chapters c
+		LEFT JOIN downloads d ON d.chapter_id = c.id
+		WHERE c.id = ?
+	`, chapterID).Scan(&downloadPages); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ChapterReadStatus{}, fmt.Errorf("chapter %d not found", chapterID)
+		}
+		return ChapterReadStatus{}, fmt.Errorf("load chapter page count: %w", err)
+	}
+	totalPagesProvided := totalPages > 0
+	if !totalPagesProvided {
+		totalPages = downloadPages
+	}
+	if totalPagesProvided && totalPages < page {
+		totalPages = page
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO chapter_read_pages (chapter_id, page)
+		VALUES (?, ?)
+	`, chapterID, page); err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("mark page read: %w", err)
+	}
+	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, false); err != nil {
+		return ChapterReadStatus{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("commit read progress: %w", err)
+	}
+	return r.GetChapterReadStatus(ctx, chapterID)
+}
+
+// MarkChapterRead marks every known page in a chapter and completes it.
+func (r *Repository) MarkChapterRead(ctx context.Context, chapterID int64) (ChapterReadStatus, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("begin chapter completion: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var totalPages int
+	if err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(NULLIF(d.pages, 0), rp.total_pages, 0)
+		FROM chapters c
+		LEFT JOIN downloads d ON d.chapter_id = c.id
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+		WHERE c.id = ?
+	`, chapterID).Scan(&totalPages); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ChapterReadStatus{}, fmt.Errorf("chapter %d not found", chapterID)
+		}
+		return ChapterReadStatus{}, fmt.Errorf("load chapter completion count: %w", err)
+	}
+	for page := 1; page <= totalPages; page++ {
+		if _, err = tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO chapter_read_pages (chapter_id, page)
+			VALUES (?, ?)
+		`, chapterID, page); err != nil {
+			return ChapterReadStatus{}, fmt.Errorf("mark chapter page %d read: %w", page, err)
+		}
+	}
+	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, true); err != nil {
+		return ChapterReadStatus{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("commit chapter completion: %w", err)
+	}
+	return r.GetChapterReadStatus(ctx, chapterID)
+}
+
+// GetChapterReadStatus returns read progress for one chapter.
+func (r *Repository) GetChapterReadStatus(ctx context.Context, chapterID int64) (ChapterReadStatus, error) {
+	chapters, err := r.listReadChapters(ctx, `WHERE c.id = ?`, chapterID)
+	if err != nil {
+		return ChapterReadStatus{}, err
+	}
+	if len(chapters) == 0 {
+		return ChapterReadStatus{}, fmt.Errorf("chapter %d not found", chapterID)
+	}
+	return chapters[0], nil
+}
+
 // TitlesByProvider maps a catalog provider's manga IDs to tracked title IDs,
 // for marking search results that are already in the library.
 func (r *Repository) TitlesByProvider(ctx context.Context, provider string) (map[string]int64, error) {
@@ -665,6 +796,122 @@ func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, 
 	}
 
 	return nil
+}
+
+func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapterID int64, totalPages int, forceComplete bool) error {
+	var readPages int
+	var lastPage int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(MAX(page), 0)
+		FROM chapter_read_pages
+		WHERE chapter_id = ?
+	`, chapterID).Scan(&readPages, &lastPage); err != nil {
+		return fmt.Errorf("count read pages: %w", err)
+	}
+	completed := forceComplete || (totalPages > 0 && readPages >= totalPages)
+	completedInt := 0
+	if completed {
+		completedInt = 1
+		if totalPages > 0 {
+			readPages = totalPages
+			lastPage = totalPages
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO chapter_read_progress (
+			chapter_id,
+			last_page,
+			read_pages,
+			total_pages,
+			completed,
+			last_read_at,
+			completed_at
+		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END)
+		ON CONFLICT(chapter_id) DO UPDATE SET
+			last_page = MAX(chapter_read_progress.last_page, excluded.last_page),
+			read_pages = excluded.read_pages,
+			total_pages = MAX(chapter_read_progress.total_pages, excluded.total_pages),
+			completed = CASE WHEN excluded.completed = 1 THEN 1 ELSE chapter_read_progress.completed END,
+			last_read_at = CURRENT_TIMESTAMP,
+			completed_at = CASE
+				WHEN excluded.completed = 1 THEN COALESCE(chapter_read_progress.completed_at, CURRENT_TIMESTAMP)
+				ELSE chapter_read_progress.completed_at
+			END
+	`, chapterID, lastPage, readPages, totalPages, completedInt, completedInt); err != nil {
+		return fmt.Errorf("update read progress: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) listReadChapters(ctx context.Context, where string, args ...any) ([]ChapterReadStatus, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.id, c.title_id, c.label, c.title, c.url, c.number_main, c.suffix_type, c.suffix_num,
+			c.discovered_at, c.updated_at,
+			COALESCE(d.status, ''), COALESCE(d.output_file, ''), COALESCE(d.bytes, 0), COALESCE(d.pages, 0),
+			COALESCE(rp.last_page, 0), COALESCE(rp.read_pages, 0), COALESCE(NULLIF(rp.total_pages, 0), d.pages, 0),
+			COALESCE(rp.completed, 0), rp.last_read_at, rp.completed_at
+		FROM chapters c
+		LEFT JOIN downloads d ON d.chapter_id = c.id
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+		`+where+`
+		ORDER BY c.number_main, c.suffix_type, c.suffix_num, c.label
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list read chapters: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ChapterReadStatus
+	for rows.Next() {
+		var cs ChapterReadStatus
+		var discoveredAt, updatedAt, status string
+		var completed int
+		var lastReadAt, completedAt sql.NullString
+		if err := rows.Scan(&cs.ID, &cs.TitleID, &cs.Label, &cs.Title, &cs.URL, &cs.NumberMain,
+			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt,
+			&status, &cs.OutputFile, &cs.Bytes, &cs.Pages,
+			&cs.LastPage, &cs.ReadPages, &cs.TotalPages, &completed, &lastReadAt, &completedAt); err != nil {
+			return nil, fmt.Errorf("scan read chapter: %w", err)
+		}
+		cs.Downloaded = status == "completed"
+		cs.Completed = completed != 0
+		cs.DiscoveredAt, _ = database.ParseTime(discoveredAt)
+		cs.UpdatedAt, _ = database.ParseTime(updatedAt)
+		cs.LastReadAt = parseOptionalTime(lastReadAt)
+		cs.CompletedAt = parseOptionalTime(completedAt)
+		setFirstUnreadPage(&cs)
+		out = append(out, cs)
+	}
+	return out, rows.Err()
+}
+
+func parseOptionalTime(value sql.NullString) *time.Time {
+	if !value.Valid || value.String == "" {
+		return nil
+	}
+	t, err := database.ParseTime(value.String)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
+
+func setFirstUnreadPage(chapter *ChapterReadStatus) {
+	if chapter.Completed {
+		chapter.FirstUnreadPage = 0
+		return
+	}
+	if chapter.TotalPages > 0 {
+		chapter.FirstUnreadPage = chapter.ReadPages + 1
+		if chapter.FirstUnreadPage > chapter.TotalPages {
+			chapter.FirstUnreadPage = chapter.TotalPages
+		}
+		return
+	}
+	chapter.FirstUnreadPage = chapter.LastPage + 1
+	if chapter.FirstUnreadPage <= 0 {
+		chapter.FirstUnreadPage = 1
+	}
 }
 
 func hasDotDot(path string) bool {

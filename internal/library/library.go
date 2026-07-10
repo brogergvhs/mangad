@@ -53,3 +53,31 @@ type Chapter struct {
 	DiscoveredAt time.Time
 	UpdatedAt    time.Time
 }
+
+// ChapterReadStatus describes reader progress for one downloaded chapter.
+type ChapterReadStatus struct {
+	Chapter
+	Downloaded      bool
+	OutputFile      string
+	Bytes           int64
+	Pages           int
+	ReadPages       int
+	TotalPages      int
+	LastPage        int
+	Completed       bool
+	FirstUnreadPage int
+	LastReadAt      *time.Time
+	CompletedAt     *time.Time
+}
+
+// TitleReadProgress describes resume/progress state for a title.
+type TitleReadProgress struct {
+	Title
+	Chapters      []ChapterReadStatus
+	ReadChapters  int
+	TotalChapters int
+	ReadPages     int64
+	TotalPages    int64
+	NextChapterID int64
+	NextPage      int
+}

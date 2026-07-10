@@ -44,6 +44,8 @@ func TestOpenAndMigrate(t *testing.T) {
 		{"sources", "search_url"},
 		{"title_source_matches", "chapters_found"},
 		{"title_source_matches", "updated_at"},
+		{"chapter_read_progress", "read_pages"},
+		{"chapter_read_pages", "read_at"},
 	} {
 		ok, exists, err := tableHasColumn(ctx, db, tc.table, tc.column)
 		if err != nil {

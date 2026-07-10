@@ -399,6 +399,21 @@ func (s *JobService) TitleChapters(ctx context.Context, id int64) ([]library.Cha
 	return s.lib.ListChapters(ctx, id)
 }
 
+// ReaderProgress returns downloaded chapters and read state for a title.
+func (s *JobService) ReaderProgress(ctx context.Context, id int64) (library.TitleReadProgress, error) {
+	return s.lib.ReaderProgress(ctx, id)
+}
+
+// MarkPageRead records one completed page for reader resume/progress.
+func (s *JobService) MarkPageRead(ctx context.Context, chapterID int64, page, totalPages int) (library.ChapterReadStatus, error) {
+	return s.lib.MarkPageRead(ctx, chapterID, page, totalPages)
+}
+
+// MarkChapterRead records a completed chapter.
+func (s *JobService) MarkChapterRead(ctx context.Context, chapterID int64) (library.ChapterReadStatus, error) {
+	return s.lib.MarkChapterRead(ctx, chapterID)
+}
+
 // ListTitleSources returns all sources linked to a title.
 func (s *JobService) ListTitleSources(ctx context.Context, id int64) ([]library.LinkedSource, error) {
 	return s.lib.ListTitleSources(ctx, id)

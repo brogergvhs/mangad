@@ -129,6 +129,24 @@ CREATE TABLE IF NOT EXISTS downloads (
 	UNIQUE(chapter_id)
 );
 
+CREATE TABLE IF NOT EXISTS chapter_read_progress (
+	chapter_id INTEGER PRIMARY KEY REFERENCES chapters(id) ON DELETE CASCADE,
+	last_page INTEGER NOT NULL DEFAULT 0,
+	read_pages INTEGER NOT NULL DEFAULT 0,
+	total_pages INTEGER NOT NULL DEFAULT 0,
+	completed INTEGER NOT NULL DEFAULT 0,
+	started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	last_read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS chapter_read_pages (
+	chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+	page INTEGER NOT NULL,
+	read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(chapter_id, page)
+);
+
 CREATE TABLE IF NOT EXISTS title_sources (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
@@ -171,6 +189,7 @@ CREATE TABLE IF NOT EXISTS browser_cookies (
 CREATE INDEX IF NOT EXISTS idx_titles_monitored ON titles(monitored);
 CREATE INDEX IF NOT EXISTS idx_chapters_title_id ON chapters(title_id);
 CREATE INDEX IF NOT EXISTS idx_downloads_chapter_id ON downloads(chapter_id);
+CREATE INDEX IF NOT EXISTS idx_chapter_read_pages_chapter_id ON chapter_read_pages(chapter_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status_run_after ON jobs(status, run_after);
 CREATE INDEX IF NOT EXISTS idx_browser_cookies_expires_at ON browser_cookies(expires_at);
 

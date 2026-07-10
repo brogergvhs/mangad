@@ -67,6 +67,56 @@ func New(
 		writeJSON(w, http.StatusOK, titles)
 	})
 
+	mux.HandleFunc("GET /api/reader/titles/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid title id")
+			return
+		}
+		progress, err := svc.ReaderProgress(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, progress)
+	})
+
+	mux.HandleFunc("POST /api/reader/chapters/{id}/pages", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid chapter id")
+			return
+		}
+		var req struct {
+			Page       int `json:"page"`
+			TotalPages int `json:"total_pages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		progress, err := svc.MarkPageRead(r.Context(), id, req.Page, req.TotalPages)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, progress)
+	})
+
+	mux.HandleFunc("POST /api/reader/chapters/{id}/complete", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid chapter id")
+			return
+		}
+		progress, err := svc.MarkChapterRead(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, progress)
+	})
+
 	mux.HandleFunc("/api/wanted", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -480,6 +530,14 @@ func errorString(err error) string {
 func parseInt64Query(r *http.Request, key string) (int64, error) {
 	value := r.URL.Query().Get(key)
 	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return id, nil
+}
+
+func parseInt64Path(r *http.Request, key string) (int64, error) {
+	id, err := strconv.ParseInt(r.PathValue(key), 10, 64)
 	if err != nil || id <= 0 {
 		return 0, strconv.ErrSyntax
 	}

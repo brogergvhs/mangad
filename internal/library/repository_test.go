@@ -214,6 +214,83 @@ func TestRepositoryDownloadAttemptCap(t *testing.T) {
 	}
 }
 
+func TestRepositoryReadProgress(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	repo := NewRepository(db)
+	title, err := repo.AddTitle(ctx, AddTitleParams{
+		SourceURL:    "https://example.test/manga",
+		DisplayTitle: "Example Manga",
+		Monitored:    true,
+	})
+	if err != nil {
+		t.Fatalf("AddTitle() error = %v", err)
+	}
+	if _, err := repo.UpsertChapters(ctx, title.ID, []chapters.Chapter{
+		{Chapter: providers.Chapter{URL: "https://example.test/ch-1", Label: "1", NumMain: 1}},
+		{Chapter: providers.Chapter{URL: "https://example.test/ch-2", Label: "2", NumMain: 2}},
+	}); err != nil {
+		t.Fatalf("UpsertChapters() error = %v", err)
+	}
+
+	ch1, err := repo.GetChapterByLabel(ctx, title.ID, "1")
+	if err != nil {
+		t.Fatalf("GetChapterByLabel(1) error = %v", err)
+	}
+	ch2, err := repo.GetChapterByLabel(ctx, title.ID, "2")
+	if err != nil {
+		t.Fatalf("GetChapterByLabel(2) error = %v", err)
+	}
+	if err := repo.MarkDownloadCompleted(ctx, ch1.ID, "chapter-1.cbz", 100, 3); err != nil {
+		t.Fatalf("MarkDownloadCompleted(1) error = %v", err)
+	}
+	if err := repo.MarkDownloadCompleted(ctx, ch2.ID, "chapter-2.cbz", 100, 2); err != nil {
+		t.Fatalf("MarkDownloadCompleted(2) error = %v", err)
+	}
+
+	status, err := repo.MarkPageRead(ctx, ch1.ID, 1, 3)
+	if err != nil {
+		t.Fatalf("MarkPageRead() error = %v", err)
+	}
+	if status.ReadPages != 1 || status.TotalPages != 3 || status.FirstUnreadPage != 2 || status.Completed {
+		t.Fatalf("page status = %+v, want 1/3 first unread 2 incomplete", status)
+	}
+
+	progress, err := repo.ReaderProgress(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ReaderProgress() error = %v", err)
+	}
+	if progress.TotalChapters != 2 || progress.ReadChapters != 0 || progress.NextChapterID != ch1.ID || progress.NextPage != 2 {
+		t.Fatalf("progress = %+v, want next chapter 1 page 2", progress)
+	}
+
+	status, err = repo.MarkChapterRead(ctx, ch1.ID)
+	if err != nil {
+		t.Fatalf("MarkChapterRead() error = %v", err)
+	}
+	if !status.Completed || status.ReadPages != 3 || status.FirstUnreadPage != 0 {
+		t.Fatalf("completed status = %+v, want complete 3 pages", status)
+	}
+
+	progress, err = repo.ReaderProgress(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ReaderProgress(after complete) error = %v", err)
+	}
+	if progress.ReadChapters != 1 || progress.NextChapterID != ch2.ID || progress.NextPage != 1 {
+		t.Fatalf("progress after complete = %+v, want next chapter 2 page 1", progress)
+	}
+}
+
 func TestUnlinkSourcePrunesUndownloadedChapters(t *testing.T) {
 	t.Parallel()
 

@@ -121,6 +121,21 @@ func (s *LibraryService) ListChapters(ctx context.Context, titleID int64) ([]lib
 	return s.repo.ListChapters(ctx, titleID)
 }
 
+// ReaderProgress returns downloaded chapters and read state for a title.
+func (s *LibraryService) ReaderProgress(ctx context.Context, titleID int64) (library.TitleReadProgress, error) {
+	return s.repo.ReaderProgress(ctx, titleID)
+}
+
+// MarkPageRead records one completed page for reader resume/progress.
+func (s *LibraryService) MarkPageRead(ctx context.Context, chapterID int64, page, totalPages int) (library.ChapterReadStatus, error) {
+	return s.repo.MarkPageRead(ctx, chapterID, page, totalPages)
+}
+
+// MarkChapterRead records a completed chapter.
+func (s *LibraryService) MarkChapterRead(ctx context.Context, chapterID int64) (library.ChapterReadStatus, error) {
+	return s.repo.MarkChapterRead(ctx, chapterID)
+}
+
 // MissingChapters returns a title and its missing chapters.
 func (s *LibraryService) MissingChapters(ctx context.Context, id int64) (library.Title, []library.Chapter, error) {
 	title, err := s.repo.GetTitle(ctx, id)
