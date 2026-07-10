@@ -6,6 +6,7 @@
   <div class="reader-controls">
     <div class="reader-nav-left">
       <a class="button ghost" href="/library/{{.Title.ID}}">Back</a>
+      {{if .PrevURL}}<a class="button ghost" data-reader-prev href="{{.PrevURL}}">Prev chapter</a>{{end}}
     </div>
     <div class="reader-title">
       <span id="reader-position">{{.PagePosition}}</span>
@@ -17,26 +18,9 @@
   {{if .Empty}}
   <div class="reader-empty">{{.Empty}}</div>
   {{else}}
-  <div class="reader-strip">
-    {{range .Manifest.Chapters}}
-    {{$chapter := .}}
-    <div class="reader-separator">Chapter {{.Label}}</div>
-    {{range .Pages}}
-    <img
-      id="chapter-{{$chapter.ID}}-page-{{.Page}}"
-      class="reader-page {{if .Read}}is-read{{end}}"
-      src="{{.URL}}"
-      alt="Chapter {{$chapter.Label}} page {{.Page}}"
-      loading="lazy"
-      decoding="async"
-      data-chapter="{{$chapter.ID}}"
-      data-chapter-label="{{$chapter.Label}}"
-      data-page="{{.Page}}"
-      data-total="{{$chapter.PageCount}}"
-      data-read="{{if .Read}}true{{end}}">
-    {{end}}
-    {{end}}
-  </div>
+  <script type="application/json" id="reader-manifest">{{.ManifestJSON}}</script>
+  <div class="reader-strip" id="reader-strip"></div>
+  <div class="reader-loading" id="reader-loading"><span class="spin"></span></div>
   {{end}}
 </div>
 {{end}}

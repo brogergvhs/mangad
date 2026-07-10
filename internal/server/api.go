@@ -149,11 +149,16 @@ func New(
 			return
 		}
 		defer rc.Close()
+		etag := strconv.Quote(strconv.FormatUint(uint64(file.CRC32), 16))
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		if ct := mime.TypeByExtension(filepath.Ext(file.Name)); ct != "" {
 			w.Header().Set("Content-Type", ct)
 		}
-		w.Header().Set("Cache-Control", "private, max-age=86400")
-		w.Header().Set("ETag", strconv.Quote(strconv.FormatUint(uint64(file.CRC32), 16)))
 		w.Header().Set("Content-Length", strconv.FormatUint(file.UncompressedSize64, 10))
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.Copy(w, rc)
@@ -709,10 +714,9 @@ func readerManifestWindow(progress library.TitleReadProgress, requestedChapterID
 		resumePage = progress.NextPage
 	}
 
-	start, end := current-1, current+2
-	if start < 0 {
-		start = 0
-	}
+	// Hard cutoff: the strip starts at the selected chapter (no previous
+	// chapters above it); the next chapter is included for continuous reading.
+	start, end := current, current+2
 	if end > len(progress.Chapters) {
 		end = len(progress.Chapters)
 	}

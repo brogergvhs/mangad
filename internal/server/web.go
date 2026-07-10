@@ -41,8 +41,10 @@ type pageData struct {
 	Content    template.HTML
 }
 type readerView struct {
+	PrevURL      string
 	Title        library.Title
 	Manifest     readerManifestResponse
+	ManifestJSON template.JS // consumed by the reader script to build the strip
 	Empty        string
 	NextURL      string
 	PagePosition string
@@ -320,13 +322,19 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	currentID, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64)
-	manifest, _, nextID := readerManifestWindow(progress, currentID)
+	manifest, prevID, nextID := readerManifestWindow(progress, currentID)
 	data := readerView{Title: progress.Title, Manifest: manifest, PagePosition: initialReaderPosition(manifest)}
 	if len(data.Manifest.Chapters) == 0 {
 		data.Empty = "No downloaded chapters are available to read yet."
 	}
+	if prevID > 0 {
+		data.PrevURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, prevID)
+	}
 	if nextID > 0 {
 		data.NextURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, nextID)
+	}
+	if raw, err := json.Marshal(data.Manifest); err == nil {
+		data.ManifestJSON = template.JS(raw)
 	}
 	u.readerLayout(w, progress.DisplayTitle, data)
 }

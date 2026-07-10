@@ -53,7 +53,7 @@
 
 {{define "progressBar"}}
 <div class="progressbar"><span style="width:{{pct .CompletedCount .DiscoveredCount}}%"></span></div>
-<div class="small muted">{{.CompletedCount}}/{{.DiscoveredCount}} · {{.MissingCount}} missing · {{humanBytes .SizeBytes}} · {{.Pages}} pages</div>
+<div class="small muted">{{.CompletedCount}}/{{.DiscoveredCount}} · {{.MissingCount}} missing{{if gt .FailedCount 0}} · {{.FailedCount}} failed{{end}} · {{humanBytes .SizeBytes}} · {{.Pages}} pages</div>
 {{end}}
 
 {{define "monitorToggle"}}

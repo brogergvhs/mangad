@@ -21,6 +21,7 @@ type Title struct {
 	LastRefreshedAt *time.Time
 	DiscoveredCount int64
 	MissingCount    int64
+	FailedCount     int64 // chapters that gave up after the attempt cap
 	CompletedCount  int64
 	SizeBytes       int64
 	Pages           int64

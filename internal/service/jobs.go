@@ -862,6 +862,12 @@ func (s *JobService) coveringJob(ctx context.Context, typ string, payload JobPay
 		if typ == jobs.TypeRefreshTitle && payload.DownloadAfterRefresh && !existing.DownloadAfterRefresh {
 			continue
 		}
+		// A reset request is stronger than a plain download job: it must not
+		// be swallowed by an active sweep job, or attempt-capped titles become
+		// unrecoverable from the UI.
+		if typ == jobs.TypeDownloadMissing && payload.ResetFailed && !existing.ResetFailed {
+			continue
+		}
 		if existing.TitleID == 0 || existing.TitleID == payload.TitleID {
 			return job, true, nil
 		}

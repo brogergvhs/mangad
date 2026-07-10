@@ -98,12 +98,23 @@ func TestEnqueueTitleJobReusesActiveGlobalJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue(global) error = %v", err)
 	}
+	// A user's targeted download carries ResetFailed and must NOT be
+	// swallowed by the plain global sweep job, or attempt-capped titles
+	// could never be retried from the UI.
 	targeted, err := svc.Enqueue(ctx, jobs.TypeDownloadMissing, 123, time.Now())
 	if err != nil {
 		t.Fatalf("Enqueue(targeted) error = %v", err)
 	}
-	if targeted.ID != global.ID {
-		t.Fatalf("targeted job ID = %d, want global ID %d", targeted.ID, global.ID)
+	if targeted.ID == global.ID {
+		t.Fatalf("reset request was swallowed by the global job %d", global.ID)
+	}
+	// But an identical second reset request is covered by the first.
+	again, err := svc.Enqueue(ctx, jobs.TypeDownloadMissing, 123, time.Now())
+	if err != nil {
+		t.Fatalf("Enqueue(again) error = %v", err)
+	}
+	if again.ID != targeted.ID {
+		t.Fatalf("duplicate reset request = job %d, want %d", again.ID, targeted.ID)
 	}
 }
 
@@ -117,7 +128,7 @@ func TestEnqueueTitleJobReusesActiveTitleJob(t *testing.T) {
 	}
 	defer closeDB()
 
-	pending, err := svc.enqueue(ctx, jobs.TypeDownloadMissing, JobPayload{TitleID: 123}, time.Now())
+	pending, err := svc.enqueue(ctx, jobs.TypeDownloadMissing, JobPayload{TitleID: 123, ResetFailed: true}, time.Now())
 	if err != nil {
 		t.Fatalf("enqueue(pending) error = %v", err)
 	}

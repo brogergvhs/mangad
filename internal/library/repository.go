@@ -92,7 +92,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 
 // GetTitle returns a tracked title by ID.
 func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
-	row := r.db.QueryRowContext(ctx, titleSelectQuery()+` WHERE t.id = ? GROUP BY t.id`, id)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ? GROUP BY t.id`, id)
 
 	title, err := scanTitle(row)
 	if err != nil {
@@ -107,7 +107,7 @@ func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
 
 // ListTitles returns all tracked titles with chapter counts.
 func (r *Repository) ListTitles(ctx context.Context) ([]Title, error) {
-	rows, err := r.db.QueryContext(ctx, titleSelectQuery()+` GROUP BY t.id ORDER BY t.display_title COLLATE NOCASE, t.id`)
+	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` GROUP BY t.id ORDER BY t.display_title COLLATE NOCASE, t.id`)
 	if err != nil {
 		return nil, fmt.Errorf("list titles: %w", err)
 	}
@@ -837,7 +837,7 @@ func (r *Repository) TitlesByProvider(ctx context.Context, provider string) (map
 
 // FindByCatalog returns the tracked title for a catalog manga, if any.
 func (r *Repository) FindByCatalog(ctx context.Context, catalogID int64) (Title, bool, error) {
-	row := r.db.QueryRowContext(ctx, titleSelectQuery()+` WHERE t.catalog_manga_id = ? GROUP BY t.id LIMIT 1`, catalogID)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? GROUP BY t.id LIMIT 1`, catalogID)
 	title, err := scanTitle(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Title{}, false, nil
@@ -1133,8 +1133,11 @@ func chapterSelectQuery() string {
 	`
 }
 
-func titleSelectQuery() string {
-	return `
+func (r *Repository) titleSelectQuery() string {
+	// missing_count must agree with ListMissingChapters (what a download job
+	// will actually act on); chapters that failed past the attempt cap are
+	// reported separately as failed_count.
+	return fmt.Sprintf(`
 		SELECT
 			t.id,
 			t.catalog_manga_id,
@@ -1147,7 +1150,9 @@ func titleSelectQuery() string {
 			t.last_refreshed_at,
 			COUNT(DISTINCT c.id) AS discovered_count,
 			COUNT(DISTINCT CASE WHEN d.status = 'completed' THEN d.id END) AS completed_count,
-			COUNT(DISTINCT CASE WHEN d.id IS NULL OR d.status != 'completed' THEN c.id END) AS missing_count,
+			COUNT(DISTINCT CASE WHEN d.id IS NULL
+				OR (d.status != 'completed' AND NOT (d.status = 'failed' AND d.attempts >= %d)) THEN c.id END) AS missing_count,
+			COUNT(DISTINCT CASE WHEN d.status = 'failed' AND d.attempts >= %d THEN c.id END) AS failed_count,
 			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.bytes END), 0) AS size_bytes,
 			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.pages END), 0) AS pages,
 			t.created_at,
@@ -1158,7 +1163,7 @@ func titleSelectQuery() string {
 		LEFT JOIN chapters c ON c.title_id = t.id
 		LEFT JOIN downloads d ON d.chapter_id = c.id
 		LEFT JOIN catalog_manga m ON m.id = t.catalog_manga_id
-	`
+	`, r.MaxDownloadAttempts, r.MaxDownloadAttempts)
 }
 
 func scanTitle(row database.Scanner) (Title, error) {
@@ -1182,6 +1187,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&title.DiscoveredCount,
 		&title.CompletedCount,
 		&title.MissingCount,
+		&title.FailedCount,
 		&title.SizeBytes,
 		&title.Pages,
 		&createdAt,

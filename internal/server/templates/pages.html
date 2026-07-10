@@ -127,7 +127,7 @@
     {{if gt .Title.CompletedCount 0}}<a class="button ghost" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
     {{if linked .Title.SourceURL}}
     <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>
-    {{if gt .Title.MissingCount 0}}<button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download {{.Title.MissingCount}} missing</button>{{end}}
+    {{if or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0)}}<button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download missing{{if gt .Title.FailedCount 0}} · retry {{.Title.FailedCount}} failed{{end}}</button>{{end}}
     {{end}}
     <button class="ghost" hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>Scan files</button>
   </div>

@@ -204,6 +204,12 @@ func (s *LibraryService) RefreshTitle(
 	if err != nil {
 		return RefreshResult{}, err
 	}
+	if len(chapters) == 0 {
+		// Zero chapters means a challenge page or selector drift, not a real
+		// result; erroring keeps last_refreshed_at unstamped and surfaces the
+		// failure in the jobs table instead of silently succeeding.
+		return RefreshResult{}, fmt.Errorf("no chapters found at %s — the site may need FlareSolverr, or the source URL is wrong", title.SourceURL)
+	}
 	count, err := s.repo.UpsertChapters(ctx, title.ID, chapters)
 	if err != nil {
 		return RefreshResult{}, err
