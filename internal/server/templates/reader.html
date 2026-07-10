@@ -5,10 +5,12 @@
   data-resume-page="{{.Manifest.ResumePage}}">
   <div class="reader-controls">
     <a class="button ghost" href="/library/{{.Title.ID}}">Back</a>
+    {{if .PrevURL}}<a class="button ghost" data-reader-prev href="{{.PrevURL}}">Prev chapter</a>{{else}}<span></span>{{end}}
     <div class="reader-title">
       <strong>{{.Title.DisplayTitle}}</strong>
-      {{if .Manifest.ResumeChapterID}}<span class="muted small">Continue from page {{.Manifest.ResumePage}}</span>{{end}}
+      <span id="reader-position" class="muted small">{{if .Manifest.ResumeChapterID}}Page {{.Manifest.ResumePage}}{{end}}</span>
     </div>
+    {{if .NextURL}}<a class="button ghost" data-reader-next href="{{.NextURL}}">Next chapter</a>{{else}}<span></span>{{end}}
   </div>
   {{if .Empty}}
   <div class="reader-empty">{{.Empty}}</div>
@@ -26,6 +28,7 @@
       loading="lazy"
       decoding="async"
       data-chapter="{{$chapter.ID}}"
+      data-chapter-label="{{$chapter.Label}}"
       data-page="{{.Page}}"
       data-total="{{$chapter.PageCount}}"
       data-read="{{if .Read}}true{{end}}">

@@ -124,7 +124,7 @@
 
 <div class="panel stack">
   <div class="row title-actions">
-    {{if gt .Title.CompletedCount 0}}<a class="button ghost" href="/reader/{{.Title.ID}}">Read</a>{{end}}
+    {{if gt .Title.CompletedCount 0}}<a class="button ghost" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
     {{if linked .Title.SourceURL}}
     <button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>Refresh chapters</button>
     {{if gt .Title.MissingCount 0}}<button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>Download {{.Title.MissingCount}} missing</button>{{end}}

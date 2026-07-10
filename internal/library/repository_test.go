@@ -265,6 +265,13 @@ func TestRepositoryReadProgress(t *testing.T) {
 	if status.ReadPages != 1 || status.TotalPages != 3 || status.FirstUnreadPage != 2 || status.Completed {
 		t.Fatalf("page status = %+v, want 1/3 first unread 2 incomplete", status)
 	}
+	list, err := repo.ListChapters(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ListChapters() error = %v", err)
+	}
+	if !list[0].Downloaded || list[0].Read || list[0].ReadPages != 1 || list[0].TotalPages != 3 {
+		t.Fatalf("chapter list progress = %+v, want partial read state", list[0])
+	}
 
 	progress, err := repo.ReaderProgress(ctx, title.ID)
 	if err != nil {

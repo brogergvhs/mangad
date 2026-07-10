@@ -464,10 +464,16 @@ tr:last-child td {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(12px);
 }
+.reader-controls > .button,
+.reader-controls > span {
+  flex: 0 0 auto;
+}
 .reader-title {
   min-width: 0;
+  flex: 1;
   display: grid;
   line-height: 1.25;
+  text-align: center;
 }
 .reader-strip {
   display: flex;
@@ -513,6 +519,14 @@ tr:last-child td {
   .reader-body.controls-on .reader-controls {
     opacity: 1;
     pointer-events: auto;
+  }
+  .reader-controls {
+    gap: 8px;
+    padding: 8px;
+  }
+  .reader-controls .button {
+    padding: 7px 9px;
+    font-size: 13px;
   }
   .reader-strip {
     padding-top: 0;

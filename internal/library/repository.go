@@ -467,6 +467,9 @@ type ChapterStatus struct {
 	OutputFile string
 	Bytes      int64
 	Pages      int
+	ReadPages  int
+	TotalPages int
+	Read       bool
 }
 
 // ListChapters returns all discovered chapters for a title with download state.
@@ -475,9 +478,11 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 		SELECT c.id, c.title_id, c.label, c.title, c.url, c.number_main, c.suffix_type, c.suffix_num,
 			c.discovered_at, c.updated_at,
 			COALESCE(d.status, ''), COALESCE(d.attempts, 0), COALESCE(d.error, ''),
-			COALESCE(d.output_file, ''), COALESCE(d.bytes, 0), COALESCE(d.pages, 0)
+			COALESCE(d.output_file, ''), COALESCE(d.bytes, 0), COALESCE(d.pages, 0),
+			COALESCE(rp.read_pages, 0), COALESCE(NULLIF(rp.total_pages, 0), d.pages, 0), COALESCE(rp.completed, 0)
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
 		WHERE c.title_id = ?
 		ORDER BY c.number_main, c.suffix_type, c.suffix_num, c.label
 	`, titleID)
@@ -490,13 +495,16 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 	for rows.Next() {
 		var cs ChapterStatus
 		var discoveredAt, updatedAt, status string
+		var read int
 		if err := rows.Scan(&cs.ID, &cs.TitleID, &cs.Label, &cs.Title, &cs.URL, &cs.NumberMain,
 			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt,
-			&status, &cs.Attempts, &cs.Error, &cs.OutputFile, &cs.Bytes, &cs.Pages); err != nil {
+			&status, &cs.Attempts, &cs.Error, &cs.OutputFile, &cs.Bytes, &cs.Pages,
+			&cs.ReadPages, &cs.TotalPages, &read); err != nil {
 			return nil, fmt.Errorf("scan chapter: %w", err)
 		}
 		cs.Downloaded = status == "completed"
 		cs.Failed = status == "failed" && cs.Attempts >= r.MaxDownloadAttempts
+		cs.Read = read != 0
 		cs.DiscoveredAt, _ = database.ParseTime(discoveredAt)
 		cs.UpdatedAt, _ = database.ParseTime(updatedAt)
 		out = append(out, cs)

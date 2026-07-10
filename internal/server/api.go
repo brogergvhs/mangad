@@ -625,22 +625,75 @@ type readerManifestPage struct {
 }
 
 type readerManifestResponse struct {
-	TitleID         int64                   `json:"title_id"`
-	Title           string                  `json:"title"`
-	ResumeChapterID int64                   `json:"resume_chapter_id,omitempty"`
-	ResumePage      int                     `json:"resume_page,omitempty"`
-	Chapters        []readerManifestChapter `json:"chapters"`
+	TitleID          int64                   `json:"title_id"`
+	Title            string                  `json:"title"`
+	CurrentChapterID int64                   `json:"current_chapter_id,omitempty"`
+	ResumeChapterID  int64                   `json:"resume_chapter_id,omitempty"`
+	ResumePage       int                     `json:"resume_page,omitempty"`
+	Chapters         []readerManifestChapter `json:"chapters"`
 }
 
 func readerManifest(progress library.TitleReadProgress) readerManifestResponse {
-	out := readerManifestResponse{
-		TitleID:         progress.ID,
-		Title:           progress.DisplayTitle,
-		ResumeChapterID: progress.NextChapterID,
-		ResumePage:      progress.NextPage,
-		Chapters:        make([]readerManifestChapter, 0, len(progress.Chapters)),
+	return readerManifestFor(progress, progress.Chapters, progress.NextChapterID, progress.NextPage)
+}
+
+func readerManifestWindow(progress library.TitleReadProgress, requestedChapterID int64) (readerManifestResponse, int64, int64) {
+	if len(progress.Chapters) == 0 {
+		return readerManifestFor(progress, nil, 0, 0), 0, 0
 	}
-	for _, chapter := range progress.Chapters {
+	current := 0
+	target := requestedChapterID
+	if target == 0 {
+		target = progress.NextChapterID
+	}
+	if target != 0 {
+		for i, chapter := range progress.Chapters {
+			if chapter.ID == target {
+				current = i
+				break
+			}
+		}
+	} else {
+		current = len(progress.Chapters) - 1
+	}
+
+	resumeChapterID := progress.Chapters[current].ID
+	resumePage := progress.Chapters[current].FirstUnreadPage
+	if resumePage <= 0 {
+		resumePage = 1
+	}
+	if requestedChapterID == 0 && progress.NextChapterID != 0 {
+		resumeChapterID = progress.NextChapterID
+		resumePage = progress.NextPage
+	}
+
+	start, end := current-1, current+2
+	if start < 0 {
+		start = 0
+	}
+	if end > len(progress.Chapters) {
+		end = len(progress.Chapters)
+	}
+	var prevID, nextID int64
+	if current > 0 {
+		prevID = progress.Chapters[current-1].ID
+	}
+	if current+1 < len(progress.Chapters) {
+		nextID = progress.Chapters[current+1].ID
+	}
+	return readerManifestFor(progress, progress.Chapters[start:end], resumeChapterID, resumePage), prevID, nextID
+}
+
+func readerManifestFor(progress library.TitleReadProgress, chapters []library.ChapterReadStatus, resumeChapterID int64, resumePage int) readerManifestResponse {
+	out := readerManifestResponse{
+		TitleID:          progress.ID,
+		Title:            progress.DisplayTitle,
+		CurrentChapterID: resumeChapterID,
+		ResumeChapterID:  resumeChapterID,
+		ResumePage:       resumePage,
+		Chapters:         make([]readerManifestChapter, 0, len(chapters)),
+	}
+	for _, chapter := range chapters {
 		pageCount := chapter.TotalPages
 		if pageCount < chapter.Pages {
 			pageCount = chapter.Pages

@@ -18,6 +18,9 @@ document.addEventListener("click", function (e) {
   var read = {};
   var counts = {};
   var completed = {};
+  var position = document.getElementById("reader-position");
+  var prev = document.querySelector("[data-reader-prev]");
+  var next = document.querySelector("[data-reader-next]");
 
   pages.forEach(function (img) {
     var chapter = img.dataset.chapter;
@@ -56,9 +59,34 @@ document.addEventListener("click", function (e) {
     }
   }
 
+  function updatePosition() {
+    if (!position || pages.length === 0) return;
+    var anchor = window.innerHeight * 0.35;
+    var best = pages[0];
+    var bestDistance = Infinity;
+    pages.forEach(function (img) {
+      var rect = img.getBoundingClientRect();
+      var distance = Math.abs(rect.top - anchor);
+      if (rect.bottom >= 0 && rect.top <= window.innerHeight && distance < bestDistance) {
+        best = img;
+        bestDistance = distance;
+      }
+    });
+    position.textContent =
+      "Chapter " + best.dataset.chapterLabel + " · page " + best.dataset.page + " / " + best.dataset.total;
+  }
+
+  function preloadFrom(start) {
+    for (var i = start; i < Math.min(start + 4, pages.length); i++) {
+      var img = new Image();
+      img.src = pages[i].src;
+    }
+  }
+
   var ticking = false;
   function checkVisible() {
     ticking = false;
+    updatePosition();
     var threshold = window.innerHeight * 0.85;
     var atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
     pages.forEach(function (img) {
@@ -80,13 +108,31 @@ document.addEventListener("click", function (e) {
     var chapter = shell.dataset.resumeChapter;
     var page = shell.dataset.resumePage;
     var target = chapter && page ? document.getElementById("chapter-" + chapter + "-page-" + page) : null;
-    if (target) target.scrollIntoView({ block: "start" });
+    if (target) {
+      target.scrollIntoView({ block: "start" });
+      preloadFrom(Math.max(0, pages.indexOf(target) + 1));
+    }
+    requestCheck();
   });
 
   document.addEventListener("click", function (e) {
     if (e.target.closest(".reader-controls")) return;
     if (window.matchMedia("(max-width: 1024px)").matches) {
       document.body.classList.toggle("controls-on");
+    }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.target.closest("input, textarea, select")) return;
+    if (!window.matchMedia("(min-width: 761px)").matches) return;
+    if ((e.key === "ArrowLeft" || e.key === "[") && prev) {
+      location.href = prev.href;
+    } else if ((e.key === "ArrowRight" || e.key === "]") && next) {
+      location.href = next.href;
+    } else if (e.key === "j") {
+      window.scrollBy({ top: window.innerHeight * 0.9, behavior: "smooth" });
+    } else if (e.key === "k") {
+      window.scrollBy({ top: -window.innerHeight * 0.9, behavior: "smooth" });
     }
   });
 })();

@@ -31,6 +31,11 @@
 {{- if .Downloaded}}<span class="badge done">downloaded</span>
 {{- else if .Failed}}<span class="badge broken" title="{{.Error}}">failed ({{.Attempts}} attempts)</span>
 {{- else}}<span class="badge">missing</span>{{end -}}
+{{- if .Downloaded}}
+  {{- if .Read}} <span class="badge done">read</span>
+  {{- else if gt .ReadPages 0}} <span class="badge running">reading {{.ReadPages}}{{if gt .TotalPages 0}}/{{.TotalPages}}{{end}}</span>
+  {{- else}} <span class="badge">unread</span>{{end -}}
+{{- end -}}
 {{end}}
 
 {{define "jobCancel"}}<button class="danger small" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}

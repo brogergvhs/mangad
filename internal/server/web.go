@@ -44,6 +44,8 @@ type readerView struct {
 	Title    library.Title
 	Manifest readerManifestResponse
 	Empty    string
+	PrevURL  string
+	NextURL  string
 }
 type dashData struct {
 	Titles     []library.Title
@@ -82,6 +84,7 @@ type activityView struct {
 	ActiveLabel   string
 	Failed        bool
 	Error         string
+	ReadLabel     string
 }
 type sourceRowView struct {
 	Source sources.Source
@@ -313,9 +316,17 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	data := readerView{Title: progress.Title, Manifest: readerManifest(progress)}
+	currentID, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64)
+	manifest, prevID, nextID := readerManifestWindow(progress, currentID)
+	data := readerView{Title: progress.Title, Manifest: manifest}
 	if len(data.Manifest.Chapters) == 0 {
 		data.Empty = "No downloaded chapters are available to read yet."
+	}
+	if prevID > 0 {
+		data.PrevURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, prevID)
+	}
+	if nextID > 0 {
+		data.NextURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, nextID)
 	}
 	u.readerLayout(w, progress.DisplayTitle, data)
 }
@@ -528,6 +539,10 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	view := u.titleActivity(r.Context(), id)
 	view.Title = title
+	view.ReadLabel = "Read"
+	if progress, err := u.svc.ReaderProgress(r.Context(), id); err == nil && progress.NextChapterID != 0 && progress.ReadPages > 0 {
+		view.ReadLabel = "Continue reading"
+	}
 	view.RefreshEvery = u.svc.Setting(r.Context(), service.SettingServeRefreshEvery, service.SettingDefault(service.SettingServeRefreshEvery))
 	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
 	linked := u.linkedSourceIDs(r.Context(), id)
