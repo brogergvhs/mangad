@@ -87,8 +87,8 @@
 {{define "title"}}
 <div class="flex items-start justify-between gap-3 mb-4">
   <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
-  <div class="flex items-center gap-2 shrink-0">
-    {{if gt .Title.CompletedCount 0}}<a class="btn btn-sm btn-primary" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+  <div class="flex items-center gap-1 shrink-0">
+    {{template "monitorToggle" .Title}}
     <details class="dropdown dropdown-end">
       <summary class="btn btn-sm btn-ghost btn-square" aria-label="Actions">{{template "iconDots"}}</summary>
       <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-56 p-2 shadow-lg border border-base-300">
@@ -97,7 +97,6 @@
         {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
         <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
         {{if linked .Title.SourceURL}}<li><button onclick="settings_modal_{{.Title.ID}}.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
-        <li>{{template "monitorToggle" .Title}}</li>
         <li><button class="text-error" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">{{template "iconTrash"}}Remove title</button></li>
       </ul>
     </details>
@@ -195,15 +194,18 @@
   </div>
 </div>
 
-<div class="flex items-center justify-between gap-2 mt-6 mb-2">
+<div class="flex items-center justify-between gap-2 mt-6 mb-3 flex-wrap">
   <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Chapters · {{.ChaptersTable.Total}}</h2>
-  <details class="dropdown dropdown-end">
-    <summary class="btn btn-xs btn-ghost">Bulk read range</summary>
-    <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
-      <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
-      <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
-    </form>
-  </details>
+  <div class="flex items-center gap-2">
+    {{if gt .Title.CompletedCount 0}}<a class="btn btn-sm btn-primary" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+    <details class="dropdown dropdown-end">
+      <summary class="btn btn-sm btn-ghost">Bulk mark</summary>
+      <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
+        <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
+        <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
+      </form>
+    </details>
+  </div>
 </div>
 <div class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "table" .ChaptersTable}}</div></div>
 {{end}}

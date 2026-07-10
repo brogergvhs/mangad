@@ -7,16 +7,19 @@
 
 {{define "mangaDetail"}}
 <div class="grid gap-2 py-1">
-  {{if .Description}}<p class="text-sm text-base-content/60 leading-relaxed max-w-prose">{{.Description}}</p>{{end}}
-  <div class="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-    {{if .Authors}}<div><div class="text-xs text-base-content/50">Authors</div>{{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</div>{{end}}
-    {{if .Chapters}}<div><div class="text-xs text-base-content/50">AniList chapters</div>{{.Chapters}}</div>{{end}}
-    {{if .Volumes}}<div><div class="text-xs text-base-content/50">Volumes</div>{{.Volumes}}</div>{{end}}
-    {{if .Year}}<div><div class="text-xs text-base-content/50">Year</div>{{.Year}}</div>{{end}}
-    {{if .AverageScore}}<div><div class="text-xs text-base-content/50">Score</div>{{.AverageScore}}%</div>{{end}}
-    {{if .Status}}<div><div class="text-xs text-base-content/50">Status</div>{{.Status}}</div>{{end}}
+  <div class="flex flex-wrap items-center gap-1.5">
+    {{if .Status}}<span class="badge badge-soft badge-sm">{{.Status}}</span>{{end}}
+    {{if .Format}}<span class="badge badge-ghost badge-sm">{{.Format}}</span>{{end}}
+    {{if .AverageScore}}<span class="badge badge-warning badge-soft badge-sm">★ {{.AverageScore}}%</span>{{end}}
+    {{if .Year}}<span class="badge badge-ghost badge-sm">{{.Year}}</span>{{end}}
   </div>
-  {{if .Genres}}<div class="flex flex-wrap gap-1.5">{{range .Genres}}<span class="badge badge-ghost badge-sm">{{.}}</span>{{end}}</div>{{end}}
+  {{if .Description}}<p class="text-sm text-base-content/70 leading-relaxed max-w-prose">{{.Description}}</p>{{end}}
+  <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-base-content/50">
+    {{if .Authors}}<span>By {{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</span>{{end}}
+    {{if .Chapters}}<span>{{.Chapters}} chapters (AniList)</span>{{end}}
+    {{if .Volumes}}<span>{{.Volumes}} volumes</span>{{end}}
+  </div>
+  {{if .Genres}}<div class="flex flex-wrap gap-1.5">{{range .Genres}}<span class="badge badge-outline badge-sm">{{.}}</span>{{end}}</div>{{end}}
 </div>
 {{end}}
 

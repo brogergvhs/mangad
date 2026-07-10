@@ -403,7 +403,6 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 			{Label: "Title"},
 			{Label: "Chapters"},
 			{Label: "Monitor"},
-			{Label: "Status"},
 		},
 	}
 	for _, tl := range pageTitles {
@@ -425,7 +424,6 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 				u.renderToHTML("cellTitle", view),
 				u.renderToHTML("progressBar", tl),
 				u.renderToHTML("monitorToggle", tl),
-				u.renderToHTML("cellActivity", view),
 			},
 			Detail: detail,
 		})
