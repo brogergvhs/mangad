@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/browserdownload"
@@ -33,7 +34,11 @@ type JobService struct {
 	lib        *LibraryService
 	src        *sourceService
 	want       *WantedService
+	running    sync.Map // job ID -> context.CancelCauseFunc for in-flight jobs
 }
+
+// errJobCancelled aborts an in-flight job on explicit user cancellation.
+var errJobCancelled = errors.New("cancelled by user")
 
 // JobPayload is the common payload for background jobs.
 type JobPayload struct {
@@ -796,6 +801,19 @@ func (s *JobService) coveringJob(ctx context.Context, typ string, payload JobPay
 	return jobs.Job{}, false, nil
 }
 
+// CancelJob aborts a job: a running job's context is cancelled; a queued or
+// awaiting-retry job is marked cancelled so it never runs.
+func (s *JobService) CancelJob(ctx context.Context, id int64) error {
+	if v, ok := s.running.Load(id); ok {
+		v.(context.CancelCauseFunc)(errJobCancelled)
+		return nil
+	}
+	if _, err := s.jobs.Cancel(ctx, id); err != nil {
+		return err
+	}
+	return nil
+}
+
 // List returns recent jobs.
 func (s *JobService) List(ctx context.Context) ([]jobs.Job, error) {
 	return s.jobs.List(ctx)
@@ -813,16 +831,29 @@ func (s *JobService) RunDue(ctx context.Context, cfg *config.Config, logSvc ui.L
 			return summary, err
 		}
 
-		// Inactivity timeout, not wall clock: a job reporting progress (e.g.
-		// image downloads) runs as long as it needs; only stalled jobs abort.
-		jobCtx, guard, cancel := stallContext(ctx, s.jobTimeout)
+		// A user-cancellable layer wraps the inactivity-timeout layer. The
+		// inactivity timeout lets a job that keeps making progress run as long
+		// as it needs; only stalled or explicitly cancelled jobs abort.
+		userCtx, userCancel := context.WithCancelCause(ctx)
+		jobCtx, guard, stopStall := stallContext(userCtx, s.jobTimeout)
+		s.running.Store(job.ID, userCancel)
 		err = s.run(jobCtx, cfg, logSvc, job, guard)
-		if err != nil {
+		s.running.Delete(job.ID)
+		cancelled := errors.Is(context.Cause(userCtx), errJobCancelled)
+		if err != nil && !cancelled {
 			if cause := context.Cause(jobCtx); cause != nil && !errors.Is(cause, context.Canceled) {
 				err = fmt.Errorf("%v: %w", cause, err)
 			}
 		}
-		cancel()
+		stopStall()
+		userCancel(nil)
+		if cancelled {
+			summary.Failed++
+			if markErr := s.jobs.MarkCancelled(markCtx, job.ID); markErr != nil {
+				return summary, markErr
+			}
+			continue
+		}
 		if err != nil {
 			summary.Failed++
 			if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {

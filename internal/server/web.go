@@ -213,6 +213,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/sources/custom", u.srcAddCustom)
 	mux.HandleFunc("GET /ui/library/table", u.libraryTable)
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
+	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
 	mux.HandleFunc("GET /ui/health", u.health)
 	mux.HandleFunc("PUT /ui/settings", u.settingsSave)
 }
@@ -431,6 +432,19 @@ func filterTitles(titles []library.Title, c libraryControls) []library.Title {
 	return out
 }
 
+func (u *webUI) jobCancel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		u.fail(w, fmt.Errorf("invalid job id"))
+		return
+	}
+	if err := u.svc.CancelJob(r.Context(), id); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.jobsTable(w, r)
+}
+
 func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 	page, key, dir := tableParams(r.URL.Query(), jobsPerPage)
 	all, _ := u.svc.List(r.Context())
@@ -446,9 +460,14 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 			{Label: "Status"},
 			{Label: "Attempts"},
 			{Label: "When", SortKey: "updated"},
+			{Label: ""},
 		},
 	}
 	for _, j := range rows {
+		cancel := template.HTML("")
+		if active, _ := jobState(j.Status); active {
+			cancel = u.renderToHTML("jobCancel", j)
+		}
 		t.Rows = append(t.Rows, tableRow{
 			ID: strconv.FormatInt(j.ID, 10),
 			Cells: []template.HTML{
@@ -456,6 +475,7 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 				u.renderToHTML("jobStatusBadge", j),
 				text(strconv.Itoa(j.Attempts)),
 				text(since(j.UpdatedAt)),
+				cancel,
 			},
 			Detail: u.renderToHTML("jobDetail", j),
 		})

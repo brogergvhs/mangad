@@ -239,3 +239,47 @@ func TestRepositoryEnqueueDedupesPendingJobs(t *testing.T) {
 		t.Fatal("done job was reused instead of a fresh enqueue")
 	}
 }
+
+func TestCancelQueuedAndRunning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+
+	// A queued job cancels directly.
+	q, err := repo.Enqueue(ctx, TypeRefreshTitle, `{"title_id":1}`, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err := repo.Cancel(ctx, q.ID)
+	if err != nil || !ok {
+		t.Fatalf("Cancel(queued) ok=%v err=%v", ok, err)
+	}
+	if got, _ := repo.Get(ctx, q.ID); got.Status != "cancelled" {
+		t.Fatalf("status = %q, want cancelled", got.Status)
+	}
+
+	// A running job is not cancellable via Cancel (aborted by context instead).
+	r2, _ := repo.Enqueue(ctx, TypeRefreshTitle, `{"title_id":2}`, time.Now().Add(-time.Minute))
+	if _, _, err := repo.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = repo.Cancel(ctx, r2.ID)
+	if err != nil || ok {
+		t.Fatalf("Cancel(running) ok=%v err=%v, want false", ok, err)
+	}
+	// MarkCancelled works on the running job.
+	if err := repo.MarkCancelled(ctx, r2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := repo.Get(ctx, r2.ID); got.Status != "cancelled" {
+		t.Fatalf("running status = %q, want cancelled", got.Status)
+	}
+}

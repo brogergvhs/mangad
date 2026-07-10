@@ -177,6 +177,26 @@ func (r *Repository) MarkFailed(ctx context.Context, id int64, cause error) erro
 	return r.markWithRunAfter(ctx, id, status, msg, runAfter)
 }
 
+// MarkCancelled marks a running job as cancelled (terminal, no retry).
+func (r *Repository) MarkCancelled(ctx context.Context, id int64) error {
+	return r.mark(ctx, id, "cancelled", "cancelled by user")
+}
+
+// Cancel terminates a not-yet-running job (queued or awaiting retry) and
+// reports whether one was cancelled. Running jobs are aborted via their
+// context instead and return false here.
+func (r *Repository) Cancel(ctx context.Context, id int64) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE jobs SET status = 'cancelled', last_error = 'cancelled by user', updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND status IN ('queued', 'failed')
+	`, id)
+	if err != nil {
+		return false, fmt.Errorf("cancel job %d: %w", id, err)
+	}
+	n, err := result.RowsAffected()
+	return n > 0, err
+}
+
 func (r *Repository) mark(ctx context.Context, id int64, status, msg string) error {
 	return r.markWithRunAfter(ctx, id, status, msg, time.Time{})
 }

@@ -427,3 +427,5 @@ tr:last-child td {
 /* global error toast area */
 .toast-area { position: sticky; top: 56px; z-index: 20; max-width: 1000px; margin: 0 auto; padding: 0 24px; }
 .toast-area:empty { display: none; }
+
+.badge.cancelled { color: var(--muted); border-color: var(--muted); }

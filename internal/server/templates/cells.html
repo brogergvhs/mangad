@@ -33,6 +33,8 @@
 {{- else}}<span class="badge">missing</span>{{end -}}
 {{end}}
 
+{{define "jobCancel"}}<button class="danger small" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
+
 {{define "jobStatusBadge"}}<span class="badge {{.Status}}">{{.Status}}</span>{{end}}
 
 {{define "jobDetail"}}
