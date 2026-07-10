@@ -16,11 +16,12 @@ document.addEventListener("click", function (e) {
 
   var pages = Array.prototype.slice.call(document.querySelectorAll(".reader-page"));
   var read = {};
+  var pending = {};
   var counts = {};
-  var completed = {};
   var position = document.getElementById("reader-position");
   var prev = document.querySelector("[data-reader-prev]");
   var next = document.querySelector("[data-reader-next]");
+  var writeQueue = Promise.resolve();
 
   pages.forEach(function (img) {
     var chapter = img.dataset.chapter;
@@ -33,11 +34,19 @@ document.addEventListener("click", function (e) {
   });
 
   function postJSON(url, body) {
-    fetch(url, {
+    return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
-    }).catch(function () {});
+    }).then(function (resp) {
+      if (!resp.ok) throw new Error("reader write failed");
+      return resp.json();
+    });
+  }
+
+  function queueWrite(fn) {
+    writeQueue = writeQueue.then(fn, fn);
+    return writeQueue;
   }
 
   function mark(img) {
@@ -45,18 +54,21 @@ document.addEventListener("click", function (e) {
     var page = parseInt(img.dataset.page || "0", 10);
     var total = parseInt(img.dataset.total || "0", 10);
     var key = chapter + ":" + page;
-    if (!chapter || !page || read[key]) return;
-    read[key] = true;
-    counts[chapter] = (counts[chapter] || 0) + 1;
-    img.classList.add("is-read");
-    postJSON("/api/reader/chapters/" + chapter + "/pages", {
-      page: page,
-      total_pages: total,
+    if (!chapter || !page || read[key] || pending[key]) return;
+    pending[key] = true;
+    queueWrite(function () {
+      return postJSON("/api/reader/chapters/" + chapter + "/pages", {
+        page: page,
+        total_pages: total,
+      }).then(function () {
+        read[key] = true;
+        counts[chapter] = (counts[chapter] || 0) + 1;
+        img.classList.add("is-read");
+        delete pending[key];
+      }).catch(function () {
+        delete pending[key];
+      });
     });
-    if (total > 0 && counts[chapter] >= total && !completed[chapter]) {
-      completed[chapter] = true;
-      postJSON("/api/reader/chapters/" + chapter + "/complete");
-    }
   }
 
   function updatePosition() {

@@ -20,6 +20,9 @@ func TestOpenAndMigrate(t *testing.T) {
 	if err := Migrate(ctx, db); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
+	if maxOpen := db.Stats().MaxOpenConnections; maxOpen != 1 {
+		t.Fatalf("MaxOpenConnections = %d, want 1", maxOpen)
+	}
 
 	var count int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = 1`).Scan(&count); err != nil {

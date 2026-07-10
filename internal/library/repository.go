@@ -575,6 +575,29 @@ func normalizeChapterBoundary(value string) string {
 	return strings.TrimSpace(strings.TrimPrefix(value, "ch"))
 }
 
+func retryBusy[T any](ctx context.Context, fn func() (T, error)) (T, error) {
+	var zero T
+	var err error
+	for i := 0; i < 5; i++ {
+		var out T
+		out, err = fn()
+		if err == nil || !isBusyError(err) {
+			return out, err
+		}
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(time.Duration(i+1) * 75 * time.Millisecond):
+		}
+	}
+	return zero, err
+}
+
+func isBusyError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "SQLITE_BUSY") || strings.Contains(msg, "database is locked")
+}
+
 // ReaderProgress returns downloaded chapters and read progress for a title.
 func (r *Repository) ReaderProgress(ctx context.Context, titleID int64) (TitleReadProgress, error) {
 	title, err := r.GetTitle(ctx, titleID)
@@ -607,6 +630,12 @@ func (r *Repository) MarkPageRead(ctx context.Context, chapterID int64, page, to
 	if page <= 0 {
 		return ChapterReadStatus{}, fmt.Errorf("page must be positive")
 	}
+	return retryBusy(ctx, func() (ChapterReadStatus, error) {
+		return r.markPageRead(ctx, chapterID, page, totalPages)
+	})
+}
+
+func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, totalPages int) (ChapterReadStatus, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("begin read progress: %w", err)
@@ -654,6 +683,12 @@ func (r *Repository) MarkPageRead(ctx context.Context, chapterID int64, page, to
 
 // MarkChapterRead marks every known page in a chapter and completes it.
 func (r *Repository) MarkChapterRead(ctx context.Context, chapterID int64) (ChapterReadStatus, error) {
+	return retryBusy(ctx, func() (ChapterReadStatus, error) {
+		return r.markChapterRead(ctx, chapterID)
+	})
+}
+
+func (r *Repository) markChapterRead(ctx context.Context, chapterID int64) (ChapterReadStatus, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("begin chapter completion: %w", err)
@@ -696,6 +731,12 @@ func (r *Repository) MarkChapterRead(ctx context.Context, chapterID int64) (Chap
 
 // MarkChapterUnread clears read progress for a chapter.
 func (r *Repository) MarkChapterUnread(ctx context.Context, chapterID int64) (ChapterReadStatus, error) {
+	return retryBusy(ctx, func() (ChapterReadStatus, error) {
+		return r.markChapterUnread(ctx, chapterID)
+	})
+}
+
+func (r *Repository) markChapterUnread(ctx context.Context, chapterID int64) (ChapterReadStatus, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("begin chapter unread: %w", err)
