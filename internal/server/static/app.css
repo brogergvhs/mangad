@@ -164,6 +164,35 @@ button.danger,
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.read-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.read-state svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.read-state--read {
+  color: var(--good);
+}
+.read-state--unread {
+  color: var(--muted);
+}
+.read-state--partial {
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 700;
+}
 button:hover,
 .button:hover {
   filter: brightness(1.08);
