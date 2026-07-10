@@ -25,7 +25,9 @@
 </div>
 {{end}}
 
-{{define "chapterName"}}<strong>{{.Label}}</strong> <span class="small muted">{{.Title}}</span>{{end}}
+{{define "chapterName"}}
+{{if .Downloaded}}<a href="/reader/{{.TitleID}}?chapter={{.ID}}"><strong>{{.Label}}</strong></a>{{else}}<strong>{{.Label}}</strong>{{end}} <span class="small muted">{{.Title}}</span>
+{{end}}
 
 {{define "chapterStatus"}}
 {{- if .Downloaded}}<span class="badge done">downloaded</span>
@@ -41,9 +43,13 @@
 {{define "chapterReadAction"}}
 {{if .Downloaded}}
   {{if or .Read (gt .ReadPages 0)}}
-  <button class="ghost small" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML">Unread</button>
+  <button class="ghost small icon-button" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark unread" title="Mark unread">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a20.29 20.29 0 0 1 5.06-5.94M9.9 4.24A10.45 10.45 0 0 1 12 4c7 0 11 8 11 8a20.54 20.54 0 0 1-2.16 3.19M14.12 14.12a3 3 0 0 1-4.24-4.24M3 3l18 18"/></svg>
+  </button>
   {{else}}
-  <button class="ghost small" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML">Read</button>
+  <button class="ghost small icon-button" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark read" title="Mark read">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+  </button>
   {{end}}
 {{else}}<span class="small muted">—</span>{{end}}
 {{end}}

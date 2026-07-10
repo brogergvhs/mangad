@@ -4,13 +4,16 @@
   data-resume-chapter="{{.Manifest.ResumeChapterID}}"
   data-resume-page="{{.Manifest.ResumePage}}">
   <div class="reader-controls">
-    <a class="button ghost" href="/library/{{.Title.ID}}">Back</a>
-    {{if .PrevURL}}<a class="button ghost" data-reader-prev href="{{.PrevURL}}">Prev chapter</a>{{else}}<span></span>{{end}}
-    <div class="reader-title">
-      <strong>{{.Title.DisplayTitle}}</strong>
-      <span id="reader-position" class="muted small">{{if .Manifest.ResumeChapterID}}Page {{.Manifest.ResumePage}}{{end}}</span>
+    <div class="reader-nav-left">
+      <a class="button ghost" href="/library/{{.Title.ID}}">Back</a>
+      {{if .PrevURL}}<a class="button ghost" data-reader-prev href="{{.PrevURL}}">Prev chapter</a>{{end}}
     </div>
-    {{if .NextURL}}<a class="button ghost" data-reader-next href="{{.NextURL}}">Next chapter</a>{{else}}<span></span>{{end}}
+    <div class="reader-title">
+      <span id="reader-position">{{if .Manifest.ResumeChapterID}}{{.Manifest.ResumePage}}{{end}}</span>
+    </div>
+    <div class="reader-nav-right">
+      {{if .NextURL}}<a class="button ghost" data-reader-next href="{{.NextURL}}">Next chapter</a>{{end}}
+    </div>
   </div>
   {{if .Empty}}
   <div class="reader-empty">{{.Empty}}</div>

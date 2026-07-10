@@ -73,19 +73,14 @@ document.addEventListener("click", function (e) {
 
   function updatePosition() {
     if (!position || pages.length === 0) return;
-    var anchor = window.innerHeight * 0.35;
     var best = pages[0];
-    var bestDistance = Infinity;
+    var marker = window.scrollY + window.innerHeight * 0.45;
     pages.forEach(function (img) {
-      var rect = img.getBoundingClientRect();
-      var distance = Math.abs(rect.top - anchor);
-      if (rect.bottom >= 0 && rect.top <= window.innerHeight && distance < bestDistance) {
+      if (img.offsetTop <= marker) {
         best = img;
-        bestDistance = distance;
       }
     });
-    position.textContent =
-      "Chapter " + best.dataset.chapterLabel + " · page " + best.dataset.page + " / " + best.dataset.total;
+    position.textContent = best.dataset.page + " / " + best.dataset.total;
   }
 
   function preloadFrom(start) {
@@ -116,6 +111,9 @@ document.addEventListener("click", function (e) {
 
   window.addEventListener("scroll", requestCheck, { passive: true });
   window.addEventListener("resize", requestCheck);
+  pages.forEach(function (img) {
+    img.addEventListener("load", requestCheck, { once: true });
+  });
   window.addEventListener("load", function () {
     var chapter = shell.dataset.resumeChapter;
     var page = shell.dataset.resumePage;
