@@ -42,10 +42,11 @@ var errJobCancelled = errors.New("cancelled by user")
 
 // JobPayload is the common payload for background jobs.
 type JobPayload struct {
-	TitleID     int64  `json:"title_id,omitempty"`
-	SourceID    string `json:"source_id,omitempty"`
-	CatalogID   int64  `json:"catalog_id,omitempty"`
-	ResetFailed bool   `json:"reset_failed,omitempty"`
+	TitleID              int64  `json:"title_id,omitempty"`
+	SourceID             string `json:"source_id,omitempty"`
+	CatalogID            int64  `json:"catalog_id,omitempty"`
+	ResetFailed          bool   `json:"reset_failed,omitempty"`
+	DownloadAfterRefresh bool   `json:"download_after_refresh,omitempty"`
 }
 
 // RunSummary describes one queue drain.
@@ -704,7 +705,7 @@ func (s *JobService) enqueueRefreshForTitle(ctx context.Context, title library.T
 	if !strings.HasPrefix(strings.TrimSpace(title.SourceURL), "http") {
 		return nil
 	}
-	if _, err := s.Enqueue(ctx, jobs.TypeRefreshTitle, title.ID, time.Now()); err != nil {
+	if _, err := s.enqueue(ctx, jobs.TypeRefreshTitle, JobPayload{TitleID: title.ID, DownloadAfterRefresh: true}, time.Now()); err != nil {
 		return fmt.Errorf("queue chapter refresh: %w", err)
 	}
 	return nil
@@ -794,6 +795,9 @@ func (s *JobService) coveringJob(ctx context.Context, typ string, payload JobPay
 		if json.Unmarshal([]byte(job.Payload), &existing) != nil {
 			continue
 		}
+		if typ == jobs.TypeRefreshTitle && payload.DownloadAfterRefresh && !existing.DownloadAfterRefresh {
+			continue
+		}
 		if existing.TitleID == 0 || existing.TitleID == payload.TitleID {
 			return job, true, nil
 		}
@@ -881,8 +885,13 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 			if err != nil {
 				return err
 			}
-			_, err = s.lib.RefreshTitle(ctx, cfg, logSvc, title)
-			return err
+			if _, err = s.lib.RefreshTitle(ctx, cfg, logSvc, title); err != nil {
+				return err
+			}
+			if payload.DownloadAfterRefresh {
+				return s.enqueueDownloadAfterRefresh(ctx, payload.TitleID)
+			}
+			return nil
 		}
 		return s.expandTitleJob(ctx, jobs.TypeRefreshTitle)
 	case jobs.TypeScanDownloads:
@@ -939,6 +948,20 @@ func (s *JobService) expandTitleJob(ctx context.Context, typ string) error {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+func (s *JobService) enqueueDownloadAfterRefresh(ctx context.Context, titleID int64) error {
+	title, err := s.lib.GetTitle(ctx, titleID)
+	if err != nil {
+		return err
+	}
+	if !title.Monitored || title.MissingCount <= 1 {
+		return nil
+	}
+	if _, err := s.enqueue(ctx, jobs.TypeDownloadMissing, JobPayload{TitleID: title.ID}, time.Now()); err != nil {
+		return fmt.Errorf("queue download missing: %w", err)
+	}
+	return nil
 }
 
 func titleRefreshDue(title library.Title, now time.Time) bool {

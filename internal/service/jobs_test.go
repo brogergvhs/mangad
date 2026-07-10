@@ -174,6 +174,7 @@ func TestLinkTitleSourceURLQueuesRefresh(t *testing.T) {
 		t.Fatalf("LinkTitleSourceURL() error = %v", err)
 	}
 	assertTitleJob(t, ctx, svc, jobs.TypeRefreshTitle, title.ID)
+	assertRefreshDownloadsAfter(t, ctx, svc, title.ID, true)
 }
 
 func TestSourceChangeQueuesRefreshForActiveTitles(t *testing.T) {
@@ -200,6 +201,29 @@ func TestSourceChangeQueuesRefreshForActiveTitles(t *testing.T) {
 		t.Fatalf("SetSourceMethods() error = %v", err)
 	}
 	assertTitleJob(t, ctx, svc, jobs.TypeRefreshTitle, title.ID)
+	assertRefreshDownloadsAfter(t, ctx, svc, title.ID, true)
+}
+
+func TestAutoRefreshQueuesDownloadWhenMissingThresholdMet(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+	many := addJobTitle(t, ctx, svc, "https://example.test/many", true, 2, 0)
+	one := addJobTitle(t, ctx, svc, "https://example.test/one", true, 1, 0)
+
+	if err := svc.enqueueDownloadAfterRefresh(ctx, many.ID); err != nil {
+		t.Fatalf("enqueueDownloadAfterRefresh(many) error = %v", err)
+	}
+	if err := svc.enqueueDownloadAfterRefresh(ctx, one.ID); err != nil {
+		t.Fatalf("enqueueDownloadAfterRefresh(one) error = %v", err)
+	}
+	assertTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, many.ID)
+	assertNoTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, one.ID)
 }
 
 func addTestSource(t *testing.T, ctx context.Context, svc *JobService, id string) {
@@ -239,6 +263,24 @@ func assertNoTitleJob(t *testing.T, ctx context.Context, svc *JobService, typ st
 	if hasTitleJob(js, typ, titleID) {
 		t.Fatalf("unexpected job %s for title %d in %#v", typ, titleID, js)
 	}
+}
+
+func assertRefreshDownloadsAfter(t *testing.T, ctx context.Context, svc *JobService, titleID int64, want bool) {
+	t.Helper()
+	js, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	for _, job := range js {
+		var payload JobPayload
+		if job.Type == jobs.TypeRefreshTitle && json.Unmarshal([]byte(job.Payload), &payload) == nil && payload.TitleID == titleID {
+			if payload.DownloadAfterRefresh != want {
+				t.Fatalf("DownloadAfterRefresh = %t, want %t in %#v", payload.DownloadAfterRefresh, want, job)
+			}
+			return
+		}
+	}
+	t.Fatalf("refresh job for title %d not found in %#v", titleID, js)
 }
 
 func hasTitleJob(js []jobs.Job, typ string, titleID int64) bool {
