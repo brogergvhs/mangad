@@ -1,5 +1,5 @@
 {{define "table"}}
-<div id="{{.ID}}" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:2s" hx-swap="outerHTML"{{end}}>
+<div id="{{.ID}}" class="table-box" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:2s" hx-swap="outerHTML"{{end}}>
   <table>
     <tr>
       {{if .HasDetails}}<th style="width:26px"></th>{{end}}

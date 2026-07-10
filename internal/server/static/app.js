@@ -40,11 +40,21 @@ document.addEventListener("click", function (e) {
     }
   });
 
-  if (!manifestTag || !strip) return;
+  function buildFailed(msg) {
+    if (loadingEl) {
+      loadingEl.textContent = msg;
+      loadingEl.classList.add("reader-page-failed");
+    }
+  }
+  if (!manifestTag || !strip) {
+    buildFailed("Reader failed to initialise.");
+    return;
+  }
   var manifest;
   try {
     manifest = JSON.parse(manifestTag.textContent);
   } catch (err) {
+    buildFailed("Reader failed to parse the chapter manifest.");
     return;
   }
 

@@ -258,14 +258,14 @@
       <button type="button" class="ghost small" onclick="document.getElementById('source-add-modal').style.display='none'">✕</button></div>
     <form class="stack" id="custom-source">
       <div class="setting">
-        <div class="row spread"><label>Name</label><input name="name" placeholder="Manga Name" style="width:340px"></div>
+        <div class="row spread"><label>Name</label><input name="name" placeholder="Manga Name" class="field-input"></div>
       </div>
       <div class="setting">
-        <div class="row spread"><label>Site base URL</label><input name="base_url" placeholder="https://manga.url.here/" style="width:340px"></div>
+        <div class="row spread"><label>Site base URL</label><input name="base_url" placeholder="https://manga.url.here/" class="field-input"></div>
         <div class="small muted">The site's home URL — used to match this source to chapter links.</div>
       </div>
       <div class="setting">
-        <div class="row spread"><label>Manga page URL</label><input name="manga_url" placeholder="https://manga.url.here/manga/xyz/" style="width:340px"></div>
+        <div class="row spread"><label>Manga page URL</label><input name="manga_url" placeholder="https://manga.url.here/manga/xyz/" class="field-input"></div>
         <div class="small muted">A specific manga's page to scrape chapters from (also used for the test run).</div>
       </div>
       <div class="setting">
@@ -334,7 +334,7 @@
       <label for="set-{{.Key}}">{{.Label}}</label>
       {{if .Desc}}<div class="small muted">{{.Desc}}</div>{{end}}
     </div>
-    <input id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}" style="width:320px">
+    <input id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}" class="field-input">
   </div>
   {{end}}
   <div class="row"><button>Save</button><span id="settings-msg"></span></div>

@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -31,9 +32,10 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 type webUI struct {
-	svc  *service.JobService
-	tmpl *template.Template
-	kick func() // start the job runner now, non-blocking
+	svc      *service.JobService
+	tmpl     *template.Template
+	kick     func() // start the job runner now, non-blocking
+	assetVer string
 }
 
 type pageData struct {
@@ -177,6 +179,24 @@ type toastView struct {
 	Msg string
 }
 
+// staticAssetVersion hashes the embedded static files so asset URLs change
+// with every build that touches them.
+func staticAssetVersion() string {
+	h := fnv.New64a()
+	_ = fs.WalkDir(staticFS, "static", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		data, err := staticFS.ReadFile(path)
+		if err == nil {
+			_, _ = h.Write([]byte(path))
+			_, _ = h.Write(data)
+		}
+		return nil
+	})
+	return strconv.FormatUint(h.Sum64(), 36)
+}
+
 // registerUI mounts the server-rendered UI and its HTMX endpoints on mux.
 func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(context.Context) (service.RunSummary, error)) {
 	u := &webUI{svc: svc, kick: func() {
@@ -184,10 +204,18 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 			go func() { _, _ = runJobs(context.Background()) }()
 		}
 	}}
+	u.assetVer = staticAssetVersion()
 	u.tmpl = template.Must(template.New("").Funcs(u.funcs()).ParseFS(templateFS, "templates/*.html"))
 
 	static, _ := fs.Sub(staticFS, "static")
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
+	// Assets are addressed with a content-hash query (?v=...), so they can be
+	// cached hard; a new build changes the URL and busts stale copies (embedded
+	// files carry no modtime, so browsers would otherwise cache heuristically).
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(static)))
+	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		staticHandler.ServeHTTP(w, r)
+	}))
 
 	mux.HandleFunc("GET /{$}", u.dashboard)
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) { u.page(w, r, "search", "Search", nil) })
@@ -1452,6 +1480,7 @@ func pathID(r *http.Request) (int64, error) {
 
 func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
+		"assetVer":   func() string { return u.assetVer },
 		"mangaTitle": mangaTitle,
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
