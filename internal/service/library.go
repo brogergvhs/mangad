@@ -141,6 +141,21 @@ func (s *LibraryService) MarkChapterRead(ctx context.Context, chapterID int64) (
 	return s.repo.MarkChapterRead(ctx, chapterID)
 }
 
+// MarkChapterUnread clears read progress for a chapter.
+func (s *LibraryService) MarkChapterUnread(ctx context.Context, chapterID int64) (library.ChapterReadStatus, error) {
+	return s.repo.MarkChapterUnread(ctx, chapterID)
+}
+
+// MarkChapterRangeRead marks downloaded chapters in a title range read.
+func (s *LibraryService) MarkChapterRangeRead(ctx context.Context, titleID int64, from, to string) (int, error) {
+	return s.repo.MarkChapterRangeRead(ctx, titleID, from, to)
+}
+
+// MarkChapterRangeUnread clears read progress in a title range.
+func (s *LibraryService) MarkChapterRangeUnread(ctx context.Context, titleID int64, from, to string) (int, error) {
+	return s.repo.MarkChapterRangeUnread(ctx, titleID, from, to)
+}
+
 // MissingChapters returns a title and its missing chapters.
 func (s *LibraryService) MissingChapters(ctx context.Context, id int64) (library.Title, []library.Chapter, error) {
 	title, err := s.repo.GetTitle(ctx, id)

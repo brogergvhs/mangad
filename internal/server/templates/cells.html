@@ -38,6 +38,16 @@
 {{- end -}}
 {{end}}
 
+{{define "chapterReadAction"}}
+{{if .Downloaded}}
+  {{if or .Read (gt .ReadPages 0)}}
+  <button class="ghost small" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML">Unread</button>
+  {{else}}
+  <button class="ghost small" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML">Read</button>
+  {{end}}
+{{else}}<span class="small muted">—</span>{{end}}
+{{end}}
+
 {{define "jobCancel"}}<button class="danger small" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
 
 {{define "jobStatusBadge"}}<span class="badge {{.Status}}">{{.Status}}</span>{{end}}

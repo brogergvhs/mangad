@@ -173,6 +173,48 @@ func New(
 		writeJSON(w, http.StatusOK, progress)
 	})
 
+	mux.HandleFunc("POST /api/reader/chapters/{id}/unread", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid chapter id")
+			return
+		}
+		progress, err := svc.MarkChapterUnread(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, progress)
+	})
+
+	mux.HandleFunc("POST /api/reader/titles/{id}/read-range", func(w http.ResponseWriter, r *http.Request) {
+		titleID, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid title id")
+			return
+		}
+		var req struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+			Read bool   `json:"read"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		var count int
+		if req.Read {
+			count, err = svc.MarkChapterRangeRead(r.Context(), titleID, req.From, req.To)
+		} else {
+			count, err = svc.MarkChapterRangeUnread(r.Context(), titleID, req.From, req.To)
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]int{"chapters": count})
+	})
+
 	mux.HandleFunc("/api/wanted", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

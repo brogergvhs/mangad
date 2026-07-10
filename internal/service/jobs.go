@@ -419,6 +419,21 @@ func (s *JobService) MarkChapterRead(ctx context.Context, chapterID int64) (libr
 	return s.lib.MarkChapterRead(ctx, chapterID)
 }
 
+// MarkChapterUnread clears read progress for a chapter.
+func (s *JobService) MarkChapterUnread(ctx context.Context, chapterID int64) (library.ChapterReadStatus, error) {
+	return s.lib.MarkChapterUnread(ctx, chapterID)
+}
+
+// MarkChapterRangeRead marks downloaded chapters in a title range read.
+func (s *JobService) MarkChapterRangeRead(ctx context.Context, titleID int64, from, to string) (int, error) {
+	return s.lib.MarkChapterRangeRead(ctx, titleID, from, to)
+}
+
+// MarkChapterRangeUnread clears read progress in a title range.
+func (s *JobService) MarkChapterRangeUnread(ctx context.Context, titleID int64, from, to string) (int, error) {
+	return s.lib.MarkChapterRangeUnread(ctx, titleID, from, to)
+}
+
 // ListTitleSources returns all sources linked to a title.
 func (s *JobService) ListTitleSources(ctx context.Context, id int64) ([]library.LinkedSource, error) {
 	return s.lib.ListTitleSources(ctx, id)

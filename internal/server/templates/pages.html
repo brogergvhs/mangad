@@ -182,6 +182,13 @@
 </details>
 
 <h2>Chapters ({{.ChaptersTable.Total}})</h2>
+<form class="row read-range" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
+  <span class="small muted">Read range</span>
+  <input name="from" inputmode="numeric" placeholder="from" required>
+  <input name="to" inputmode="numeric" placeholder="to" required>
+  <button class="ghost" name="action" value="read">Mark read</button>
+  <button class="ghost" name="action" value="unread">Mark unread</button>
+</form>
 {{template "table" .ChaptersTable}}
 {{end}}
 

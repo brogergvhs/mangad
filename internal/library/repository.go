@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -512,6 +513,68 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 	return out, rows.Err()
 }
 
+func selectChapterRange(chapters []ChapterStatus, from, to string) ([]ChapterStatus, error) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" {
+		return nil, fmt.Errorf("chapter range needs from and to")
+	}
+	fromN, fromErr := strconv.Atoi(from)
+	toN, toErr := strconv.Atoi(to)
+	if fromErr == nil && toErr == nil {
+		if fromN > toN {
+			fromN, toN = toN, fromN
+		}
+		var out []ChapterStatus
+		for _, ch := range chapters {
+			if ch.NumberMain >= fromN && ch.NumberMain <= toN {
+				out = append(out, ch)
+			}
+		}
+		if len(out) > 0 {
+			return out, nil
+		}
+	}
+
+	start := chapterRangeIndex(chapters, from, false)
+	end := chapterRangeIndex(chapters, to, true)
+	if start < 0 || end < 0 {
+		return nil, fmt.Errorf("chapter range %q-%q not found", from, to)
+	}
+	if start > end {
+		start, end = end, start
+	}
+	return chapters[start : end+1], nil
+}
+
+func chapterRangeIndex(chapters []ChapterStatus, value string, last bool) int {
+	value = normalizeChapterBoundary(value)
+	number, err := strconv.Atoi(value)
+	hasNumber := err == nil
+	found := -1
+	for i, ch := range chapters {
+		match := normalizeChapterBoundary(ch.Label) == value
+		if !match && hasNumber {
+			match = ch.NumberMain == number
+		}
+		if match {
+			found = i
+			if !last {
+				return i
+			}
+		}
+	}
+	return found
+}
+
+func normalizeChapterBoundary(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	for _, prefix := range []string{"chapter", "episode", "ch."} {
+		value = strings.TrimSpace(strings.TrimPrefix(value, prefix))
+	}
+	return strings.TrimSpace(strings.TrimPrefix(value, "ch"))
+}
+
 // ReaderProgress returns downloaded chapters and read progress for a title.
 func (r *Repository) ReaderProgress(ctx context.Context, titleID int64) (TitleReadProgress, error) {
 	title, err := r.GetTitle(ctx, titleID)
@@ -629,6 +692,70 @@ func (r *Repository) MarkChapterRead(ctx context.Context, chapterID int64) (Chap
 		return ChapterReadStatus{}, fmt.Errorf("commit chapter completion: %w", err)
 	}
 	return r.GetChapterReadStatus(ctx, chapterID)
+}
+
+// MarkChapterUnread clears read progress for a chapter.
+func (r *Repository) MarkChapterUnread(ctx context.Context, chapterID int64) (ChapterReadStatus, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("begin chapter unread: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_pages WHERE chapter_id = ?`, chapterID); err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("clear read pages: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_progress WHERE chapter_id = ?`, chapterID); err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("clear read progress: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return ChapterReadStatus{}, fmt.Errorf("commit chapter unread: %w", err)
+	}
+	return r.GetChapterReadStatus(ctx, chapterID)
+}
+
+// MarkChapterRangeRead marks downloaded chapters in an inclusive label/number range read.
+func (r *Repository) MarkChapterRangeRead(ctx context.Context, titleID int64, from, to string) (int, error) {
+	chapters, err := r.ListChapters(ctx, titleID)
+	if err != nil {
+		return 0, err
+	}
+	selected, err := selectChapterRange(chapters, from, to)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, ch := range selected {
+		if !ch.Downloaded {
+			continue
+		}
+		if _, err := r.MarkChapterRead(ctx, ch.ID); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
+}
+
+// MarkChapterRangeUnread clears read progress in an inclusive label/number range.
+func (r *Repository) MarkChapterRangeUnread(ctx context.Context, titleID int64, from, to string) (int, error) {
+	chapters, err := r.ListChapters(ctx, titleID)
+	if err != nil {
+		return 0, err
+	}
+	selected, err := selectChapterRange(chapters, from, to)
+	if err != nil {
+		return 0, err
+	}
+	for _, ch := range selected {
+		if _, err := r.MarkChapterUnread(ctx, ch.ID); err != nil {
+			return 0, err
+		}
+	}
+	return len(selected), nil
 }
 
 // GetChapterReadStatus returns read progress for one chapter.

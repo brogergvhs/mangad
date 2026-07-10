@@ -208,6 +208,9 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
+	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/read", u.chapterRead(true))
+	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/unread", u.chapterRead(false))
+	mux.HandleFunc("POST /ui/library/{id}/chapters/range", u.chapterRangeRead)
 	mux.HandleFunc("POST /ui/library/{id}/link", u.linkSource)
 	mux.HandleFunc("POST /ui/library/{id}/link-source", u.linkSourceByID)
 	mux.HandleFunc("POST /ui/library/{id}/verify-source", u.srcVerifyURL)
@@ -588,7 +591,61 @@ func (u *webUI) chaptersTable(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
-	title, err := u.svc.GetTitle(r.Context(), id)
+	u.writeChaptersTable(w, r, id)
+}
+
+func (u *webUI) chapterRead(read bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		titleID, err := pathID(r)
+		if err != nil {
+			u.fail(w, err)
+			return
+		}
+		chapterID, err := parseInt64Path(r, "chapterID")
+		if err != nil {
+			u.fail(w, err)
+			return
+		}
+		if read {
+			_, err = u.svc.MarkChapterRead(r.Context(), chapterID)
+		} else {
+			_, err = u.svc.MarkChapterUnread(r.Context(), chapterID)
+		}
+		if err != nil {
+			u.fail(w, err)
+			return
+		}
+		u.writeChaptersTable(w, r, titleID)
+	}
+}
+
+func (u *webUI) chapterRangeRead(w http.ResponseWriter, r *http.Request) {
+	titleID, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		u.fail(w, err)
+		return
+	}
+	switch r.FormValue("action") {
+	case "read":
+		_, err = u.svc.MarkChapterRangeRead(r.Context(), titleID, r.FormValue("from"), r.FormValue("to"))
+	case "unread":
+		_, err = u.svc.MarkChapterRangeUnread(r.Context(), titleID, r.FormValue("from"), r.FormValue("to"))
+	default:
+		err = fmt.Errorf("unknown read action")
+	}
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.writeChaptersTable(w, r, titleID)
+}
+
+func (u *webUI) writeChaptersTable(w http.ResponseWriter, r *http.Request, titleID int64) {
+	title, err := u.svc.GetTitle(r.Context(), titleID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -615,6 +672,7 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 			{Label: "Pages"},
 			{Label: "Size"},
 			{Label: "Source"},
+			{Label: "Read"},
 		},
 	}
 	for _, c := range rows {
@@ -633,6 +691,7 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 				text(pages),
 				text(size),
 				text(chapterSource(c.URL)),
+				u.renderToHTML("chapterReadAction", c),
 			},
 		})
 	}

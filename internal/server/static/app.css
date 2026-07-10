@@ -89,6 +89,13 @@ h2 {
   align-items: center;
   gap: 12px;
 }
+.read-range {
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.read-range input {
+  width: 90px;
+}
 .spread {
   justify-content: space-between;
 }

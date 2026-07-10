@@ -296,6 +296,35 @@ func TestRepositoryReadProgress(t *testing.T) {
 	if progress.ReadChapters != 1 || progress.NextChapterID != ch2.ID || progress.NextPage != 1 {
 		t.Fatalf("progress after complete = %+v, want next chapter 2 page 1", progress)
 	}
+
+	status, err = repo.MarkChapterUnread(ctx, ch1.ID)
+	if err != nil {
+		t.Fatalf("MarkChapterUnread() error = %v", err)
+	}
+	if status.Completed || status.ReadPages != 0 || status.FirstUnreadPage != 1 {
+		t.Fatalf("unread status = %+v, want unread at page 1", status)
+	}
+	count, err := repo.MarkChapterRangeRead(ctx, title.ID, "1", "2")
+	if err != nil {
+		t.Fatalf("MarkChapterRangeRead() error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("MarkChapterRangeRead() count = %d, want 2", count)
+	}
+	progress, err = repo.ReaderProgress(ctx, title.ID)
+	if err != nil {
+		t.Fatalf("ReaderProgress(after range read) error = %v", err)
+	}
+	if progress.ReadChapters != 2 || progress.NextChapterID != 0 {
+		t.Fatalf("progress after range read = %+v, want all read", progress)
+	}
+	count, err = repo.MarkChapterRangeUnread(ctx, title.ID, "Ch. 1", "Episode 2")
+	if err != nil {
+		t.Fatalf("MarkChapterRangeUnread() error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("MarkChapterRangeUnread() count = %d, want 2", count)
+	}
 }
 
 func TestUnlinkSourcePrunesUndownloadedChapters(t *testing.T) {

@@ -158,6 +158,15 @@ func TestAPIReaderProgress(t *testing.T) {
 	if !status.Completed || status.FirstUnreadPage != 0 {
 		t.Fatalf("complete status = %+v, want complete", status)
 	}
+	requestJSON(t, api, http.MethodPost, "/api/reader/chapters/"+strconv.FormatInt(chapter.ID, 10)+"/unread", nil, http.StatusOK, &status)
+	if status.Completed || status.ReadPages != 0 || status.FirstUnreadPage != 1 {
+		t.Fatalf("unread status = %+v, want first page unread", status)
+	}
+	var rangeResult map[string]int
+	requestJSON(t, api, http.MethodPost, "/api/reader/titles/"+strconv.FormatInt(title.ID, 10)+"/read-range", map[string]any{"from": "1", "to": "1", "read": true}, http.StatusOK, &rangeResult)
+	if rangeResult["chapters"] != 1 {
+		t.Fatalf("read range result = %+v, want 1", rangeResult)
+	}
 }
 
 func writeReaderTestCBZ(t *testing.T, path string) {
