@@ -74,6 +74,7 @@
   </label>
   <label class="small">Sort
     <select name="sort">
+      <option value="added" {{if eq .Controls.Sort "added"}}selected{{end}}>Last added</option>
       <option value="title" {{if eq .Controls.Sort "title"}}selected{{end}}>Title</option>
       <option value="missing" {{if eq .Controls.Sort "missing"}}selected{{end}}>Missing chapters</option>
       <option value="chapters" {{if eq .Controls.Sort "chapters"}}selected{{end}}>Total chapters</option>

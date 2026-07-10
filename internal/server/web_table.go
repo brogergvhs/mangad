@@ -184,6 +184,8 @@ func sortTitles(ts []library.Title, key, dir string) {
 		less = func(a, b library.Title) bool { return a.SizeBytes < b.SizeBytes }
 	case "updated":
 		less = func(a, b library.Title) bool { return a.UpdatedAt.Before(b.UpdatedAt) }
+	case "added":
+		less = func(a, b library.Title) bool { return a.CreatedAt.Before(b.CreatedAt) }
 	case "status":
 		less = func(a, b library.Title) bool { return a.ReleaseStatus < b.ReleaseStatus }
 	default:

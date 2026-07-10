@@ -282,14 +282,12 @@ func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableData {
-	page, key, dir := tableParams(values, libraryPerPage)
-	if key == "" {
-		key = "title"
-	}
+	page, _, _ := tableParams(values, libraryPerPage)
+	controls := libraryControlsFrom(values)
 	titles, _ := u.svc.ListTitles(ctx)
 	allCount := len(titles)
-	titles = filterTitles(titles, libraryControlsFrom(values))
-	sortTitles(titles, key, dir)
+	titles = filterTitles(titles, controls)
+	sortTitles(titles, controls.Sort, controls.Dir)
 	pageTitles, total := paginate(titles, page, libraryPerPage)
 	js := u.jobs(ctx)
 	empty := "Nothing in your library yet — add manga from Search or Import a collection."
@@ -299,7 +297,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 
 	t := tableData{
 		ID: "library-table", BaseURL: "/ui/library/table",
-		Page: page, PerPage: libraryPerPage, Total: total, Sort: key, Dir: dir,
+		Page: page, PerPage: libraryPerPage, Total: total, Sort: controls.Sort, Dir: controls.Dir,
 		Params: libraryTableParams(values),
 		Empty:  empty,
 		Columns: []tableColumn{
@@ -356,7 +354,10 @@ func libraryControlsFrom(values url.Values) libraryControls {
 		c.Progress = "all"
 	}
 	if c.Sort == "" {
-		c.Sort = "title"
+		c.Sort = "added"
+		if c.Dir == "" {
+			c.Dir = "desc" // newest additions first by default
+		}
 	}
 	if c.Dir != "desc" {
 		c.Dir = "asc"
