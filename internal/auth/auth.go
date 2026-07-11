@@ -8,20 +8,28 @@ import (
 
 // Permission identifiers. Roles carry a set of these.
 const (
-	PermLibraryView    = "library.view"
-	PermReaderUse      = "reader.use"
-	PermLibraryManage  = "library.manage"
-	PermSourcesManage  = "sources.manage"
-	PermJobsManage     = "jobs.manage"
-	PermSettingsManage = "settings.manage"
-	PermUsersManage    = "users.manage"
+	PermLibraryView        = "library.view"        // library, title pages, chapter lists
+	PermStatsView          = "stats.view"          // dashboard statistics
+	PermServicesView       = "services.view"       // dashboard services health
+	PermJobsView           = "jobs.view"           // dashboard jobs list
+	PermReaderUse          = "reader.use"          // reader + own read marking
+	PermLibraryAdd         = "library.add"         // search page + adding titles
+	PermLibraryManage      = "library.manage"      // title mutations (remove, refresh, download, linking…)
+	PermImportUse          = "import.use"          // import page + importing folders
+	PermSourcesManage      = "sources.manage"      // sources administration
+	PermJobsManage         = "jobs.manage"         // cancelling jobs
+	PermSettingsAppearance = "settings.appearance" // own theme settings
+	PermSettingsManage     = "settings.manage"     // global settings sections
+	PermUsersManage        = "users.manage"        // users & roles administration
 )
 
 // Permissions lists every known permission (stable order, for UIs).
 func Permissions() []string {
 	return []string{
-		PermLibraryView, PermReaderUse, PermLibraryManage,
-		PermSourcesManage, PermJobsManage, PermSettingsManage, PermUsersManage,
+		PermLibraryView, PermStatsView, PermServicesView, PermJobsView,
+		PermReaderUse, PermLibraryAdd, PermLibraryManage, PermImportUse,
+		PermSourcesManage, PermJobsManage,
+		PermSettingsAppearance, PermSettingsManage, PermUsersManage,
 	}
 }
 
@@ -67,8 +75,13 @@ type Role struct {
 func builtinRoles() []Role {
 	return []Role{
 		{Name: "admin", Origin: OriginBuiltin, Perms: Permissions()},
-		{Name: "member", Origin: OriginBuiltin, Perms: []string{PermLibraryView, PermReaderUse, PermLibraryManage}},
-		{Name: "viewer", Origin: OriginBuiltin, Perms: []string{PermLibraryView, PermReaderUse}},
+		{Name: "member", Origin: OriginBuiltin, Perms: []string{
+			PermLibraryView, PermStatsView, PermJobsView, PermReaderUse,
+			PermLibraryAdd, PermLibraryManage, PermImportUse, PermSettingsAppearance,
+		}},
+		{Name: "viewer", Origin: OriginBuiltin, Perms: []string{
+			PermLibraryView, PermStatsView, PermReaderUse, PermSettingsAppearance,
+		}},
 	}
 }
 

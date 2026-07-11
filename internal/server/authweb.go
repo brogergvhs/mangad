@@ -47,18 +47,26 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 func requiredPerm(r *http.Request) string {
 	p := r.URL.Path
 	switch {
-	case p == "/logout":
-		return "" // any signed-in user
+	case p == "/logout" || p == "/":
+		return "" // any signed-in user (dashboard sections gate individually)
 	case strings.HasPrefix(p, "/reader/") || strings.HasPrefix(p, "/api/reader/"):
 		return auth.PermReaderUse
 	case p == "/users" || strings.HasPrefix(p, "/ui/users"):
 		return auth.PermUsersManage
 	case p == "/settings" || p == "/ui/settings" || p == "/api/settings":
-		return auth.PermSettingsManage
+		return "" // section-level checks in the handlers (appearance vs global)
 	case p == "/sources" || strings.HasPrefix(p, "/ui/sources"):
 		return auth.PermSourcesManage
+	case p == "/ui/health":
+		return auth.PermServicesView
 	case strings.HasPrefix(p, "/ui/jobs/") && r.Method != http.MethodGet:
 		return auth.PermJobsManage
+	case strings.HasPrefix(p, "/ui/jobs/"):
+		return auth.PermJobsView
+	case p == "/search" || p == "/ui/search" || p == "/ui/library/add":
+		return auth.PermLibraryAdd
+	case p == "/import" || strings.HasPrefix(p, "/ui/import"):
+		return auth.PermImportUse
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
 		return auth.PermLibraryView
 	case strings.Contains(p, "/chapters/"): // read/unread marking, bulk range
