@@ -117,7 +117,6 @@ func TestAPIReaderProgress(t *testing.T) {
 		func(context.Context, string) (service.SourceVerifyResult, error) {
 			return service.SourceVerifyResult{}, nil
 		},
-		"",
 	)
 
 	var progress library.TitleReadProgress
@@ -197,22 +196,42 @@ func writeReaderTestCBZ(t *testing.T, path string) {
 	}
 }
 
-func TestAPIKey(t *testing.T) {
-	api, closeDB := testAPIWithKey(t, "secret")
+func TestSessionAuth(t *testing.T) {
+	t.Setenv("MANGAD_ADMIN_USER", "boss")
+	t.Setenv("MANGAD_ADMIN_PASSWORD", "secret123")
+	api, closeDB := testAPI(t)
 	defer closeDB()
 
 	rec := httptest.NewRecorder()
 	api.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", rec.Code)
+		t.Fatalf("unauthenticated status = %d, want 401", rec.Code)
+	}
+
+	form := strings.NewReader("username=boss&password=secret123")
+	login := httptest.NewRequest(http.MethodPost, "/login", form)
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	api.ServeHTTP(rec, login)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("login status = %d, want 303; body=%s", rec.Code, rec.Body.String())
+	}
+	var session *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "mangad_session" {
+			session = c
+		}
+	}
+	if session == nil {
+		t.Fatal("no session cookie issued")
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
-	req.Header.Set("X-API-Key", "secret")
+	req.AddCookie(session)
 	rec = httptest.NewRecorder()
 	api.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("session status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -265,10 +284,7 @@ func TestAPISourcesLocal(t *testing.T) {
 }
 
 func testAPI(t *testing.T) (http.Handler, func()) {
-	return testAPIWithKey(t, "")
-}
 
-func testAPIWithKey(t *testing.T, apiKey string) (http.Handler, func()) {
 	t.Helper()
 	svc, closeDB, err := service.OpenJobs(context.Background(), filepath.Join(t.TempDir(), "mangad.db"))
 	if err != nil {
@@ -280,7 +296,6 @@ func testAPIWithKey(t *testing.T, apiKey string) (http.Handler, func()) {
 		func(context.Context, string) (service.SourceVerifyResult, error) {
 			return service.SourceVerifyResult{}, nil
 		},
-		apiKey,
 	), closeDB
 }
 

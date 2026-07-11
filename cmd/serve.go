@@ -24,7 +24,6 @@ var (
 	flagServeScanEvery     time.Duration
 	flagServeDownloadEvery time.Duration
 	flagServeRunEvery      time.Duration
-	flagServeAPIKey        string
 )
 
 var serveCmd = &cobra.Command{
@@ -36,7 +35,6 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().StringVar(&flagServeDB, "db", "", "path to MangaD SQLite database")
 	serveCmd.Flags().StringVar(&flagServeAddr, "addr", "127.0.0.1:8080", "HTTP API listen address")
-	serveCmd.Flags().StringVar(&flagServeAPIKey, "api-key", os.Getenv("MANGAD_API_KEY"), "optional API key required as X-API-Key or Bearer token")
 	serveCmd.Flags().DurationVar(&flagServeRefreshEvery, "refresh-every", 0, "refresh schedule, e.g. 1h; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeScanEvery, "scan-every", 0, "download file scan schedule, e.g. 30m; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeDownloadEvery, "download-every", 0, "missing download schedule, e.g. 10m; 0 disables")
@@ -85,7 +83,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			}
 			return svc.VerifySource(ctx, cfg, logSvc, sourceID)
 		},
-		flagServeAPIKey,
 	)}
 	httpErr := make(chan error, 1)
 	go func() {

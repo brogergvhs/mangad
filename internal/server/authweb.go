@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/http"
 	"os"
 	"strings"
@@ -18,17 +17,15 @@ func userFrom(ctx context.Context) *auth.User { return auth.FromContext(ctx) }
 // authEnabled reports whether username/password auth is active.
 func authEnabled() bool { return os.Getenv("MANGAD_ADMIN_PASSWORD") != "" }
 
-// requireUser resolves the request's user and stores it in the context.
-// - session cookie: normal browser flow
-// - legacy API key (header/bearer): authenticates as the env admin
-// - auth disabled: everything runs as the env admin (single-user mode)
-func requireUser(next http.Handler, svc *service.JobService, apiKey string) http.Handler {
+// requireUser resolves the request's user and stores it in the context:
+// session cookie when auth is enabled, the env admin otherwise.
+func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" {
 			next.ServeHTTP(w, r)
 			return
 		}
-		user := resolveUser(r, svc, apiKey)
+		user := resolveUser(r, svc)
 		if user == nil {
 			if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -71,16 +68,10 @@ func requiredPerm(r *http.Request) string {
 	}
 }
 
-func resolveUser(r *http.Request, svc *service.JobService, apiKey string) *auth.User {
+func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 	ctx := r.Context()
 	if !authEnabled() {
-		if apiKey != "" && !apiKeyAuthorized(r, apiKey) {
-			return nil
-		}
-		admin, _ := svc.Auth().GetUser(ctx, auth.EnvAdminID)
-		return admin
-	}
-	if apiKey != "" && apiKeyAuthorized(r, apiKey) {
+		// Single-user mode: everything acts as the env admin.
 		admin, _ := svc.Auth().GetUser(ctx, auth.EnvAdminID)
 		return admin
 	}
@@ -90,14 +81,6 @@ func resolveUser(r *http.Request, svc *service.JobService, apiKey string) *auth.
 		}
 	}
 	return nil
-}
-
-func apiKeyAuthorized(r *http.Request, key string) bool {
-	token := r.Header.Get("X-API-Key")
-	if token == "" {
-		token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	}
-	return token != "" && subtle.ConstantTimeCompare([]byte(token), []byte(key)) == 1
 }
 
 const loginPage = `<!doctype html><html lang="en" data-theme="mocha"><meta charset="utf-8">

@@ -8,13 +8,17 @@ services:
       - --db
       - /data/mangad.db
     ports:
-      # The API has no auth by default; keep it bound to the host's loopback
-      # or set MANGAD_API_KEY before exposing it to the network.
+      # Without MANGAD_ADMIN_PASSWORD the app runs in single-user mode with
+      # no login; keep it bound to the host's loopback, or set the admin
+      # credentials below before exposing it to the network.
       - "127.0.0.1:8080:8080"
     environment:
       XDG_CONFIG_HOME: /config
       MANGAD_DOWNLOAD_DIR: /downloads
-      # MANGAD_API_KEY: change-me
+      # The environment admin: sign-in is enabled when the password is set.
+      # This account is immutable in-app and manages further users/roles.
+      # MANGAD_ADMIN_USER: admin
+      # MANGAD_ADMIN_PASSWORD: change-me
       MANGAD_BROWSER_DOWNLOADER_ENABLED: "true"
       MANGAD_BROWSER_DOWNLOADER_ENDPOINT: http://browser-worker:8192
       MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS: "180"

@@ -29,7 +29,6 @@ func New(
 	svc *service.JobService,
 	runJobs func(context.Context) (service.RunSummary, error),
 	verifySource func(context.Context, string) (service.SourceVerifyResult, error),
-	apiKey string,
 ) http.Handler {
 	mux := http.NewServeMux()
 	registerUI(mux, svc, runJobs)
@@ -531,7 +530,7 @@ func New(
 		writeJSON(w, status, map[string]any{"ok": ok, "error": errorString(err)})
 	})
 	registerAuthRoutes(mux, svc)
-	handler := requireUser(csrfGuard(limitBody(mux)), svc, strings.TrimSpace(apiKey))
+	handler := requireUser(csrfGuard(limitBody(mux)), svc)
 	return gzipMiddleware(handler)
 }
 
