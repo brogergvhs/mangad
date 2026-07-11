@@ -38,7 +38,7 @@ func (c *AniListClient) Search(ctx context.Context, query string, limit int) ([]
 	if err := c.do(ctx, `
 		query ($search: String, $perPage: Int) {
 			Page(page: 1, perPage: $perPage) {
-				media(search: $search, type: MANGA) {
+				media(search: $search, type: MANGA, format: MANGA) {
 					id title { romaji english native } description(asHtml: false)
 					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
 				}
