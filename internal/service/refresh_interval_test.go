@@ -1,6 +1,10 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
+	"github.com/brogergvhs/mangad/internal/jobs"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -47,5 +51,38 @@ func TestGlobalJobsSkipUnlinkedTitles(t *testing.T) {
 		if got := globalTitleJobApplies("download_missing", title, now); got != tc.want {
 			t.Errorf("download applies(%q) = %v, want %v", tc.url, got, tc.want)
 		}
+	}
+}
+
+func TestLinkAutoDownloadOnlyOnFirstSource(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeDB()
+
+	fresh := library.Title{ID: 11, SourceURL: "https://example.test/fresh", DiscoveredCount: 0}
+	existing := library.Title{ID: 12, SourceURL: "https://example.test/existing", DiscoveredCount: 40}
+	if err := svc.enqueueRefreshForTitle(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.enqueueRefreshForTitle(ctx, existing); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := svc.List(ctx)
+	got := map[int64]bool{}
+	for _, j := range all {
+		var p JobPayload
+		if json.Unmarshal([]byte(j.Payload), &p) == nil && j.Type == jobs.TypeRefreshTitle {
+			got[p.TitleID] = p.DownloadAfterRefresh
+		}
+	}
+	if !got[11] {
+		t.Fatalf("first source link should download after refresh; payloads=%v", got)
+	}
+	if v, ok := got[12]; !ok || v {
+		t.Fatalf("re-link with existing chapters must refresh without auto-download; payloads=%v", got)
 	}
 }

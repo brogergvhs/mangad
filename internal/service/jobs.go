@@ -886,7 +886,10 @@ func (s *JobService) enqueueRefreshForTitle(ctx context.Context, title library.T
 	if !strings.HasPrefix(strings.TrimSpace(title.SourceURL), "http") {
 		return nil
 	}
-	if _, err := s.enqueue(ctx, jobs.TypeRefreshTitle, JobPayload{TitleID: title.ID, DownloadAfterRefresh: true}, time.Now()); err != nil {
+	// Linking always refreshes the chapter list
+	// first source of a title (nothing discovered yet) also kicks off the missing download
+	payload := JobPayload{TitleID: title.ID, DownloadAfterRefresh: title.DiscoveredCount == 0}
+	if _, err := s.enqueue(ctx, jobs.TypeRefreshTitle, payload, time.Now()); err != nil {
 		return fmt.Errorf("queue chapter refresh: %w", err)
 	}
 	return nil
