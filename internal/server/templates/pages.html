@@ -39,7 +39,7 @@
   <input name="q" class="input join-item w-full" placeholder="Search AniList…" autofocus required>
   <button class="btn btn-primary join-item">Search</button>
 </form>
-<div id="search-spin" class="htmx-indicator flex justify-center py-4"><span class="loading loading-spinner"></span></div>
+<div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
 <div id="search-results"></div>
 {{end}}
 
@@ -86,27 +86,27 @@
 {{end}}
 
 {{define "title"}}
-<div class="flex items-start justify-between gap-3 mb-4">
-  <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
-  <div class="flex items-center gap-1 shrink-0">
-    {{template "monitorToggle" .Title}}
-    <details class="dropdown dropdown-end">
-      <summary class="btn btn-sm btn-ghost btn-square" aria-label="Actions">{{template "iconDots"}}</summary>
-      <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-56 p-2 shadow-lg border border-base-300">
-        {{if and (linked .Title.SourceURL) (or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0))}}
-        <li><button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>{{template "iconDownload"}}Download missing{{if gt .Title.FailedCount 0}} · {{.Title.FailedCount}} failed{{end}}</button></li>{{end}}
-        {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
-        <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
-        {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
-        <li><button class="text-error" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">{{template "iconTrash"}}Remove title</button></li>
-      </ul>
-    </details>
-  </div>
-</div>
-
 <div class="flex gap-5 mb-4 max-lg:flex-col">
-  <figure class="shrink-0 max-lg:self-center"><img class="max-w-40 rounded-lg bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
+  <figure class="shrink-0 max-lg:self-center"><img class="rounded-lg bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
   <div class="flex min-w-0 flex-1 flex-col gap-3">
+    <div class="flex items-start justify-between gap-3">
+      <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
+      <div class="flex items-center gap-1 shrink-0">
+        {{template "monitorToggle" .Title}}
+        <details class="dropdown dropdown-end">
+          <summary class="btn btn-sm btn-ghost btn-square" aria-label="Actions">{{template "iconDots"}}</summary>
+          <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-56 p-2 shadow-lg border border-base-300">
+            {{if and (linked .Title.SourceURL) (or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0))}}
+            <li><button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>{{template "iconDownload"}}Download missing{{if gt .Title.FailedCount 0}} · {{.Title.FailedCount}} failed{{end}}</button></li>{{end}}
+            {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
+            <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
+            {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+            <li><button class="text-error" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">{{template "iconTrash"}}Remove title</button></li>
+          </ul>
+        </details>
+      </div>
+    </div>
+
     <!-- <div class="text-sm text-base-content/60"> -->
     <!--   {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a> -->
     <!--   {{else if imported .Title.SourceURL}}Imported from disk · no source linked -->
@@ -151,8 +151,8 @@
           <a class="block truncate text-xs text-base-content/50 link-hover" href="{{.URL}}" target="_blank" rel="noreferrer noopener" title="{{.URL}}">{{.URL}}</a>
         </div>
         <div class="flex shrink-0 gap-1">
-          {{if not .Active}}<button class="btn btn-ghost btn-xs" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
-          <button class="btn btn-ghost btn-xs text-error" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
+          {{if not .Active}}<button class="btn btn-ghost btn-sm" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
+          <button class="btn btn-outline btn-sm text-error" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
         </div>
       </div>
       {{end}}
@@ -160,28 +160,35 @@
     {{end}}
 
     <div class="flex items-center justify-between gap-2 flex-wrap">
-      <button class="btn btn-sm btn-outline" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
+      <button class="btn btn-sm px-5 py-2.5 btn-outline" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
     </div>
     {{template "matches" .Sources}}
 
     {{if or .SingleSources .LinkSources}}
-    <details>
-      <summary class="btn btn-sm btn-outline list-none">Link manually</summary>
-      <div class="mt-3 grid gap-4 rounded-lg bg-base-200 p-3 sm:grid-cols-2">
+    <details class="group">
+      <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">
+        Link manually
+        <span class="text-xs text-base-content/50 transition-transform group-open:rotate-90">&#10095;</span>
+      </summary>
+      <div class="mt-2 grid gap-4">
         {{if .SingleSources}}
         <form hx-post="/ui/library/{{.Title.ID}}/link-source" hx-swap="none" class="grid gap-2">
           <span class="text-xs text-base-content/60">Single-manga source</span>
-          <select name="source_id" class="select select-sm w-full">{{range .SingleSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
-          <button class="btn btn-sm">Use this source</button>
+          <div class="flex flex-wrap items-center gap-2">
+            <select name="source_id" class="select select-sm min-w-40 flex-1">{{range .SingleSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+            <button class="btn btn-sm btn-outline">Use this source</button>
+          </div>
         </form>
         {{end}}
         {{if .LinkSources}}
         <form hx-post="/ui/library/{{.Title.ID}}/verify-source" hx-target="#verify-{{.Title.ID}}" hx-indicator="#verify-spin" class="grid gap-2">
-          <span class="text-xs text-base-content/60">Paste a specific manga page URL</span>
-          <select name="source_id" class="select select-sm w-full">{{range .LinkSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
-          <input name="url" class="input input-sm w-full" placeholder="https://source/manga/…" required>
-          <button class="btn btn-sm">Check &amp; link</button>
-          <span id="verify-spin" class="htmx-indicator loading loading-spinner loading-sm"></span>
+          <span class="text-xs text-base-content/60">Paste a specific manga page URL — it is checked before linking</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <select name="source_id" class="select select-sm shrink-0">{{range .LinkSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+            <input name="url" class="input input-sm min-w-40 flex-1" placeholder="https://source/manga/…" required>
+            <button class="btn btn-sm btn-outline">Check &amp; link</button>
+            <span id="verify-spin" class="htmx-indicator loading loading-sm"></span>
+          </div>
         </form>
         {{end}}
       </div>

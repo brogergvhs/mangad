@@ -846,14 +846,13 @@
   transform: rotate(90deg);
 }
 
-/* htmx loading indicator */
+/* htmx loading indicator: fully hidden unless a request is in flight */
 .htmx-indicator {
-  opacity: 0;
-  transition: opacity 0.2s;
+  display: none !important;
 }
 .htmx-request .htmx-indicator,
 .htmx-request.htmx-indicator {
-  opacity: 1;
+  display: inline-block !important;
 }
 
 /* verification step pipeline */
