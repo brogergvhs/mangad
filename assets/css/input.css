@@ -83,6 +83,13 @@
   .btn-xs.btn-square {
     padding: 0.2rem;
   }
+  .btn-outline {
+    background: transparent;
+    border-color: var(--color-line);
+  }
+  .btn-outline:hover {
+    background: var(--color-neutral);
+  }
   .btn-ghost {
     background: transparent;
     border-color: transparent;

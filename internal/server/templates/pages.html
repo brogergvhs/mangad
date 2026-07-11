@@ -1,4 +1,5 @@
 {{define "dashboard"}}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Stats</h2>
 <div class="stats bg-base-100 w-full mb-6">
   <div class="stat"><div class="stat-title">Tracked titles</div><div class="stat-value text-3xl">{{len .Titles}}</div></div>
   <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.TotalChaps}}</div><div class="stat-desc">{{missingTotal .Titles}} missing</div></div>
@@ -104,7 +105,7 @@
 </div>
 
 <div class="flex gap-5 mb-4 max-lg:flex-col">
-  <figure class="shrink-0 max-lg:self-center"><img class="h-40 w-28 rounded-lg object-cover bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
+  <figure class="shrink-0 max-lg:self-center"><img class="max-w-40 rounded-lg bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
   <div class="flex min-w-0 flex-1 flex-col gap-3">
     <!-- <div class="text-sm text-base-content/60"> -->
     <!--   {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a> -->
@@ -159,15 +160,14 @@
     {{end}}
 
     <div class="flex items-center justify-between gap-2 flex-wrap">
-      <span class="text-sm font-medium">Find another source</span>
-      <button class="btn btn-sm btn-ghost" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
+      <button class="btn btn-sm btn-outline" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
     </div>
     {{template "matches" .Sources}}
 
     {{if or .SingleSources .LinkSources}}
-    <details class="dropdown">
-      <summary class="btn btn-sm btn-ghost">Link manually</summary>
-      <div class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-80 max-w-[90vw] shadow-lg p-3 space-y-3">
+    <details>
+      <summary class="btn btn-sm btn-outline list-none">Link manually</summary>
+      <div class="mt-3 grid gap-4 rounded-lg bg-base-200 p-3 sm:grid-cols-2">
         {{if .SingleSources}}
         <form hx-post="/ui/library/{{.Title.ID}}/link-source" hx-swap="none" class="grid gap-2">
           <span class="text-xs text-base-content/60">Single-manga source</span>
@@ -196,7 +196,7 @@
   <div class="flex sm:items-center gap-2 max-sm:flex-col">
     {{if gt .Title.CompletedCount 0}}<a class="btn btn-sm px-5 py-2.5 btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
     <details class="dropdown dropdown-end max-sm:w-full">
-      <summary class="btn btn-sm px-5 py-2.5 btn-ghost max-sm:w-full">Bulk mark</summary>
+      <summary class="btn btn-sm px-5 py-2.5 btn-outline max-sm:w-full">Bulk mark</summary>
       <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
         <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
         <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
