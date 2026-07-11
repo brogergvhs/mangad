@@ -61,8 +61,8 @@
 
 {{define "jobCell"}}
 <div class="min-w-0">
-  <span class="text-sm font-medium">{{jobLabel .Type}}</span>{{if .Children}} <span class="badge badge-ghost badge-sm">{{.Children}} titles{{if .ActiveChildren}} · {{.ActiveChildren}} active{{end}}</span>{{end}}
-  <div class="text-xs text-base-content/50">{{if gt .Attempts 0}}{{.Attempts}} attempt{{if gt .Attempts 1}}s{{end}} · {{end}}{{since .UpdatedAt}}</div>
+  <span class="text-sm font-medium">{{jobLabel .Type}}</span>
+  <div class="text-xs text-base-content/50">{{if gt .Attempts 0}}{{.Attempts}} attempt{{if gt .Attempts 1}}s{{end}} · {{end}}{{since .UpdatedAt}}{{if .Children}} · {{.Children}} titles{{if .ActiveChildren}} · {{.ActiveChildren}} active{{end}}{{end}}</div>
 </div>
 {{end}}
 
