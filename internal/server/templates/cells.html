@@ -101,3 +101,22 @@
   {{end}}
 </div>
 {{end}}
+
+{{define "jobGroupLabel"}}
+{{jobLabel .Type}}{{if .Children}} <span class="badge badge-ghost badge-sm">{{.Children}} titles{{if .ActiveChildren}} · {{.ActiveChildren}} active{{end}}</span>{{end}}
+{{end}}
+
+{{define "jobChildren"}}
+<div class="divide-y divide-line/25">
+  {{range .}}
+  <div class="flex items-center gap-3 py-1.5">
+    <div class="min-w-0 flex-1">
+      <span class="text-sm">{{jobLabel .Type}} <span class="text-xs text-base-content/50">#{{.ID}} · {{.Payload}}</span></span>
+      {{if .LastError}}<div class="truncate text-xs text-error" title="{{.LastError}}">{{.LastError}}</div>{{end}}
+    </div>
+    {{template "jobStatusBadge" .}}
+    {{if eq .Status "queued"}}{{template "jobCancel" .}}{{else if eq .Status "running"}}{{template "jobCancel" .}}{{else if eq .Status "failed"}}{{template "jobCancel" .}}{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}

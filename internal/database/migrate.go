@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 	run_after TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	attempts INTEGER NOT NULL DEFAULT 0,
 	last_error TEXT NOT NULL DEFAULT '',
+	parent_id INTEGER,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -232,6 +233,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	for _, col := range []struct{ table, name, def string }{
+		{"jobs", "parent_id", "INTEGER"},
 		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "volumes", "INTEGER"},

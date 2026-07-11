@@ -537,8 +537,23 @@ func (u *webUI) jobCancel(w http.ResponseWriter, r *http.Request) {
 func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 	page, key, dir := tableParams(r.URL.Query(), jobsPerPage)
 	all, _ := u.svc.List(r.Context())
-	sortJobs(all, key, dir)
-	rows, total := paginate(all, page, jobsPerPage)
+
+	// Group sweep-spawned jobs under the global job that created them.
+	children := map[int64][]jobs.Job{}
+	seen := map[int64]bool{}
+	for _, j := range all {
+		seen[j.ID] = true
+	}
+	var top []jobs.Job
+	for _, j := range all {
+		if j.ParentID != 0 && seen[j.ParentID] {
+			children[j.ParentID] = append(children[j.ParentID], j)
+		} else {
+			top = append(top, j)
+		}
+	}
+	sortJobs(top, key, dir)
+	rows, total := paginate(top, page, jobsPerPage)
 
 	t := tableData{
 		ID: "jobs-table", BaseURL: "/ui/jobs/table",
@@ -553,20 +568,32 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	for _, j := range rows {
+		kids := children[j.ID]
+		activeKids := 0
+		for _, k := range kids {
+			if a, _ := jobState(k.Status); a {
+				activeKids++
+			}
+		}
 		cancel := template.HTML("")
-		if active, _ := jobState(j.Status); active {
+		if active, _ := jobState(j.Status); active || activeKids > 0 {
 			cancel = u.renderToHTML("jobCancel", j)
+		}
+		label := u.renderToHTML("jobGroupLabel", jobGroupView{Job: j, Children: len(kids), ActiveChildren: activeKids})
+		detail := u.renderToHTML("jobDetail", j)
+		if len(kids) > 0 {
+			detail = u.renderToHTML("jobChildren", kids)
 		}
 		t.Rows = append(t.Rows, tableRow{
 			ID: strconv.FormatInt(j.ID, 10),
 			Cells: []template.HTML{
-				text(jobLabel(j.Type)),
+				label,
 				u.renderToHTML("jobStatusBadge", j),
 				text(strconv.Itoa(j.Attempts)),
 				text(since(j.UpdatedAt)),
 				cancel,
 			},
-			Detail: u.renderToHTML("jobDetail", j),
+			Detail: detail,
 		})
 	}
 	u.frag(w, "table", t)
@@ -694,6 +721,13 @@ func (u *webUI) writeChaptersTable(w http.ResponseWriter, r *http.Request, title
 		return
 	}
 	u.frag(w, "chaptersList", u.buildChaptersTable(r.Context(), title, r.URL.Query()))
+}
+
+// jobGroupView labels a global job with its spawned-children counts.
+type jobGroupView struct {
+	jobs.Job
+	Children       int
+	ActiveChildren int
 }
 
 // chaptersView drives the custom chapters list (reuses tableData paging).
@@ -1497,6 +1531,7 @@ func pathID(r *http.Request) (int64, error) {
 func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
 		"assetVer":   func() string { return u.assetVer },
+		"jobLabel":   jobLabel,
 		"mangaTitle": mangaTitle,
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },

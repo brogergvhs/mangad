@@ -283,3 +283,41 @@ func TestCancelQueuedAndRunning(t *testing.T) {
 		t.Fatalf("running status = %q, want cancelled", got.Status)
 	}
 }
+
+func TestCancelChildrenCascade(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+
+	parent, _ := repo.Enqueue(ctx, TypeDownloadMissing, `{}`, time.Now().Add(-time.Minute))
+	c1, _ := repo.EnqueueChild(ctx, TypeDownloadMissing, `{"title_id":1}`, time.Now().Add(time.Hour), parent.ID)
+	c2, _ := repo.EnqueueChild(ctx, TypeDownloadMissing, `{"title_id":2}`, time.Now().Add(-time.Minute), parent.ID)
+	if c1.ParentID != parent.ID || c2.ParentID != parent.ID {
+		t.Fatalf("children parent = %d/%d, want %d", c1.ParentID, c2.ParentID, parent.ID)
+	}
+	// claim c2 so it's running (parent is claimed first as it's oldest due)
+	if _, _, err := repo.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repo.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	running, err := repo.CancelChildren(ctx, parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(running) != 1 || running[0] != c2.ID {
+		t.Fatalf("running children = %v, want [%d]", running, c2.ID)
+	}
+	if got, _ := repo.Get(ctx, c1.ID); got.Status != "cancelled" {
+		t.Fatalf("queued child status = %q, want cancelled", got.Status)
+	}
+}

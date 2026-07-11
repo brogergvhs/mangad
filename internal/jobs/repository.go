@@ -31,6 +31,11 @@ func NewRepository(db *sql.DB) *Repository {
 // Enqueue creates a queued job. An identical pending job is reused instead
 // of duplicated; its run_after moves forward when an earlier one is asked.
 func (r *Repository) Enqueue(ctx context.Context, typ string, payload string, runAfter time.Time) (Job, error) {
+	return r.EnqueueChild(ctx, typ, payload, runAfter, 0)
+}
+
+// EnqueueChild enqueues a job linked to the global job that spawned it.
+func (r *Repository) EnqueueChild(ctx context.Context, typ string, payload string, runAfter time.Time, parentID int64) (Job, error) {
 	if runAfter.IsZero() {
 		runAfter = time.Now()
 	}
@@ -57,10 +62,10 @@ func (r *Repository) Enqueue(ctx context.Context, typ string, payload string, ru
 	}
 
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO jobs(type, status, payload_json, run_after)
-		VALUES (?, 'queued', ?, ?)
+		INSERT INTO jobs(type, status, payload_json, run_after, parent_id)
+		VALUES (?, 'queued', ?, ?, NULLIF(?, 0))
 		RETURNING id
-	`, typ, payload, database.FormatTime(runAfter))
+	`, typ, payload, database.FormatTime(runAfter), parentID)
 
 	if err := row.Scan(&id); err != nil {
 		return Job{}, fmt.Errorf("enqueue job: %w", err)
@@ -197,6 +202,32 @@ func (r *Repository) Cancel(ctx context.Context, id int64) (bool, error) {
 	return n > 0, err
 }
 
+// CancelChildren cancels all not-yet-running children of a global job and
+// returns the IDs of children that are currently running (the caller aborts
+// those via their contexts).
+func (r *Repository) CancelChildren(ctx context.Context, parentID int64) ([]int64, error) {
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE jobs SET status = 'cancelled', last_error = 'cancelled by user', updated_at = CURRENT_TIMESTAMP
+		WHERE parent_id = ? AND status IN ('queued', 'failed')
+	`, parentID); err != nil {
+		return nil, fmt.Errorf("cancel children of %d: %w", parentID, err)
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM jobs WHERE parent_id = ? AND status = 'running'`, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("list running children of %d: %w", parentID, err)
+	}
+	defer rows.Close()
+	var running []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		running = append(running, id)
+	}
+	return running, rows.Err()
+}
+
 func (r *Repository) mark(ctx context.Context, id int64, status, msg string) error {
 	return r.markWithRunAfter(ctx, id, status, msg, time.Time{})
 }
@@ -243,7 +274,7 @@ func jobBackoff(attempts int) time.Duration {
 
 func jobSelect() string {
 	return `
-		SELECT id, type, status, payload_json, run_after, attempts, last_error, created_at, updated_at
+		SELECT id, type, status, payload_json, run_after, attempts, last_error, COALESCE(parent_id, 0), created_at, updated_at
 		FROM jobs
 	`
 }
@@ -251,7 +282,7 @@ func jobSelect() string {
 func scanJob(row database.Scanner) (Job, error) {
 	var job Job
 	var runAfter, createdAt, updatedAt string
-	if err := row.Scan(&job.ID, &job.Type, &job.Status, &job.Payload, &runAfter, &job.Attempts, &job.LastError, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&job.ID, &job.Type, &job.Status, &job.Payload, &runAfter, &job.Attempts, &job.LastError, &job.ParentID, &createdAt, &updatedAt); err != nil {
 		return Job{}, err
 	}
 

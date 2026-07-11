@@ -20,6 +20,7 @@ type Job struct {
 	RunAfter  time.Time
 	Attempts  int
 	LastError string
+	ParentID  int64 // 0 = top-level; otherwise the global job that spawned it
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

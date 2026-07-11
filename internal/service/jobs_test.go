@@ -156,7 +156,7 @@ func TestGlobalDownloadMissingExpandsToMissingMonitoredTitles(t *testing.T) {
 	off := addJobTitle(t, ctx, svc, "https://example.test/off", false, 1, 0)
 	pending := addJobTitle(t, ctx, svc, "pending:demo", true, 0, 0)
 
-	if err := svc.expandTitleJob(ctx, jobs.TypeDownloadMissing); err != nil {
+	if err := svc.expandTitleJob(ctx, jobs.TypeDownloadMissing, 0); err != nil {
 		t.Fatalf("expandTitleJob() error = %v", err)
 	}
 	assertTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, want.ID)
@@ -184,7 +184,7 @@ func TestGlobalJobExpansionQueuesTitleJobsWhileGlobalIsRunning(t *testing.T) {
 		t.Fatalf("mark global running: %v", err)
 	}
 
-	if err := svc.expandTitleJob(ctx, jobs.TypeDownloadMissing); err != nil {
+	if err := svc.expandTitleJob(ctx, jobs.TypeDownloadMissing, 0); err != nil {
 		t.Fatalf("expandTitleJob() error = %v", err)
 	}
 	assertTitleJob(t, ctx, svc, jobs.TypeDownloadMissing, title.ID)

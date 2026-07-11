@@ -822,6 +822,18 @@ func (s *JobService) enqueueExact(ctx context.Context, typ string, payload JobPa
 	return s.enqueueJob(ctx, typ, payload, runAfter, false)
 }
 
+// enqueueChild enqueues a per-title job spawned by a global job.
+func (s *JobService) enqueueChild(ctx context.Context, typ string, payload JobPayload, runAfter time.Time, parentID int64) (jobs.Job, error) {
+	if err := validateJob(typ, payload); err != nil {
+		return jobs.Job{}, err
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return jobs.Job{}, fmt.Errorf("encode job payload: %w", err)
+	}
+	return s.jobs.EnqueueChild(ctx, typ, string(data), runAfter, parentID)
+}
+
 func (s *JobService) enqueueJob(ctx context.Context, typ string, payload JobPayload, runAfter time.Time, useCover bool) (jobs.Job, error) {
 	if err := validateJob(typ, payload); err != nil {
 		return jobs.Job{}, err
@@ -880,10 +892,18 @@ func (s *JobService) coveringJob(ctx context.Context, typ string, payload JobPay
 func (s *JobService) CancelJob(ctx context.Context, id int64) error {
 	if v, ok := s.running.Load(id); ok {
 		v.(context.CancelCauseFunc)(errJobCancelled)
-		return nil
-	}
-	if _, err := s.jobs.Cancel(ctx, id); err != nil {
+	} else if _, err := s.jobs.Cancel(ctx, id); err != nil {
 		return err
+	}
+	// Cancelling a global job also cancels everything it spawned.
+	runningChildren, err := s.jobs.CancelChildren(ctx, id)
+	if err != nil {
+		return err
+	}
+	for _, child := range runningChildren {
+		if v, ok := s.running.Load(child); ok {
+			v.(context.CancelCauseFunc)(errJobCancelled)
+		}
 	}
 	return nil
 }
@@ -1049,13 +1069,13 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 			}
 			return nil
 		}
-		return s.expandTitleJob(ctx, jobs.TypeRefreshTitle)
+		return s.expandTitleJob(ctx, jobs.TypeRefreshTitle, job.ID)
 	case jobs.TypeScanDownloads:
 		if payload.TitleID > 0 {
 			_, err := s.lib.ScanDownloads(ctx, payload.TitleID)
 			return err
 		}
-		return s.expandTitleJob(ctx, jobs.TypeScanDownloads)
+		return s.expandTitleJob(ctx, jobs.TypeScanDownloads, job.ID)
 	case jobs.TypeDownloadMissing:
 		if payload.TitleID > 0 {
 			if payload.ResetFailed {
@@ -1077,7 +1097,7 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 			}
 			return nil
 		}
-		return s.expandTitleJob(ctx, jobs.TypeDownloadMissing)
+		return s.expandTitleJob(ctx, jobs.TypeDownloadMissing, job.ID)
 	case jobs.TypeVerifySource:
 		_, err := s.VerifySource(ctx, cfg, logSvc, payload.SourceID)
 		return err
@@ -1089,7 +1109,7 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 	}
 }
 
-func (s *JobService) expandTitleJob(ctx context.Context, typ string) error {
+func (s *JobService) expandTitleJob(ctx context.Context, typ string, parentID int64) error {
 	titles, err := s.lib.ListTitles(ctx)
 	if err != nil {
 		return err
@@ -1100,7 +1120,7 @@ func (s *JobService) expandTitleJob(ctx context.Context, typ string) error {
 		if !globalTitleJobApplies(typ, title, now) {
 			continue
 		}
-		_, err := s.enqueueExact(ctx, typ, JobPayload{TitleID: title.ID}, time.Now())
+		_, err := s.enqueueChild(ctx, typ, JobPayload{TitleID: title.ID}, time.Now(), parentID)
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
