@@ -1,5 +1,5 @@
 {{define "table"}}
-<div id="{{.ID}}" class="table-box" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:replace"{{end}}>
+<div id="{{.ID}}" class="table-box" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:drop"{{end}}>
   <div class="rounded-xl overflow-hidden">
   <table class="table">
     <tbody>

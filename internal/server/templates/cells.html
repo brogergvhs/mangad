@@ -127,7 +127,7 @@
     <a href="/library/{{.ID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>
     <div class="absolute right-1 top-1 rounded-lg bg-base-300/70">{{template "monitorToggle" .}}</div>
   </div>
-  <a href="/library/{{.ID}}" class="mt-1.5 block min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.DisplayTitle}}</a>
+  <a href="/library/{{.ID}}" class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.DisplayTitle}}</a>
   <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
     <span class="truncate">{{.CompletedCount}}/{{.DiscoveredCount}}</span>
     <span class="shrink-0">{{if gt .MissingCount 0}}{{.MissingCount}} missing · {{end}}{{humanBytes .SizeBytes}}</span>
@@ -140,7 +140,7 @@
 {{end}}
 
 {{define "libraryResults"}}
-<div id="{{.ID}}" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:replace"{{end}}>
+<div id="{{.ID}}" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:drop"{{end}}>
   {{if not .Rows}}
   <p class="text-base-content/60 py-3">{{.Empty}}</p>
   {{else}}
@@ -160,7 +160,7 @@
   </div>
   {{end}}
   {{if ne .View "table"}}
-  <div class="{{if eq .View "auto"}}md:hidden{{end}} grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+  <div class="{{if eq .View "auto"}}md:hidden{{end}} grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
     {{range .Cards}}{{template "libraryCard" .}}{{end}}
   </div>
   {{end}}

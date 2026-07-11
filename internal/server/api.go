@@ -3,6 +3,7 @@ package server
 
 import (
 	"archive/zip"
+	"compress/gzip"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -535,7 +536,39 @@ func New(
 		registerLogin(mux, key)
 		handler = requireAPIKey(handler, key)
 	}
-	return handler
+	return gzipMiddleware(handler)
+}
+
+// gzipMiddleware compresses textual responses (HTML fragments, CSS, JS,
+// JSON). Reader page images are already compressed and are passed through.
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") ||
+			strings.HasPrefix(r.URL.Path, "/api/reader/chapters/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		gz := gzip.NewWriter(w)
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		gw := &gzipResponseWriter{ResponseWriter: w, gz: gz}
+		defer func() { _ = gz.Close() }()
+		next.ServeHTTP(gw, r)
+	})
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) {
+	return g.gz.Write(b)
+}
+
+func (g *gzipResponseWriter) WriteHeader(code int) {
+	g.Header().Del("Content-Length") // length changes under compression
+	g.ResponseWriter.WriteHeader(code)
 }
 
 // limitBody caps request bodies; every handler decodes small JSON payloads.

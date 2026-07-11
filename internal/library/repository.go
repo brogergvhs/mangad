@@ -92,7 +92,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 
 // GetTitle returns a tracked title by ID.
 func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ? GROUP BY t.id`, id)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ?`, id)
 
 	title, err := scanTitle(row)
 	if err != nil {
@@ -107,7 +107,7 @@ func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
 
 // ListTitles returns all tracked titles with chapter counts.
 func (r *Repository) ListTitles(ctx context.Context) ([]Title, error) {
-	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` GROUP BY t.id ORDER BY t.display_title COLLATE NOCASE, t.id`)
+	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` ORDER BY t.display_title COLLATE NOCASE, t.id`)
 	if err != nil {
 		return nil, fmt.Errorf("list titles: %w", err)
 	}
@@ -897,7 +897,7 @@ func (r *Repository) TitlesByProvider(ctx context.Context, provider string) (map
 
 // FindByCatalog returns the tracked title for a catalog manga, if any.
 func (r *Repository) FindByCatalog(ctx context.Context, catalogID int64) (Title, bool, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? GROUP BY t.id LIMIT 1`, catalogID)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? LIMIT 1`, catalogID)
 	title, err := scanTitle(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Title{}, false, nil
@@ -1194,6 +1194,9 @@ func chapterSelectQuery() string {
 }
 
 func (r *Repository) titleSelectQuery() string {
+	// Per-title aggregates are grouped once in a subquery (downloads and
+	// read-progress are 1:1 per chapter, so no DISTINCT is needed) — far
+	// cheaper than aggregating over the fanned-out join on large libraries.
 	// missing_count must agree with ListMissingChapters (what a download job
 	// will actually act on); chapters that failed past the attempt cap are
 	// reported separately as failed_count.
@@ -1208,22 +1211,34 @@ func (r *Repository) titleSelectQuery() string {
 			t.monitored,
 			t.refresh_interval,
 			t.last_refreshed_at,
-			COUNT(DISTINCT c.id) AS discovered_count,
-			COUNT(DISTINCT CASE WHEN d.status = 'completed' THEN d.id END) AS completed_count,
-			COUNT(DISTINCT CASE WHEN d.id IS NULL
-				OR (d.status != 'completed' AND NOT (d.status = 'failed' AND d.attempts >= %d)) THEN c.id END) AS missing_count,
-			COUNT(DISTINCT CASE WHEN d.status = 'failed' AND d.attempts >= %d THEN c.id END) AS failed_count,
-			COUNT(DISTINCT CASE WHEN rp.completed = 1 THEN c.id END) AS read_count,
-			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.bytes END), 0) AS size_bytes,
-			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.pages END), 0) AS pages,
+			COALESCE(agg.discovered, 0) AS discovered_count,
+			COALESCE(agg.completed, 0) AS completed_count,
+			COALESCE(agg.missing, 0) AS missing_count,
+			COALESCE(agg.failed, 0) AS failed_count,
+			COALESCE(agg.read, 0) AS read_count,
+			COALESCE(agg.bytes, 0) AS size_bytes,
+			COALESCE(agg.pages, 0) AS pages,
 			t.created_at,
 			t.updated_at,
 			COALESCE(m.cover_image, ''),
 			COALESCE(m.status, '')
 		FROM titles t
-		LEFT JOIN chapters c ON c.title_id = t.id
-		LEFT JOIN downloads d ON d.chapter_id = c.id
-		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+		LEFT JOIN (
+			SELECT
+				c.title_id,
+				COUNT(*) AS discovered,
+				COUNT(CASE WHEN d.status = 'completed' THEN 1 END) AS completed,
+				COUNT(CASE WHEN d.id IS NULL
+					OR (d.status != 'completed' AND NOT (d.status = 'failed' AND d.attempts >= %d)) THEN 1 END) AS missing,
+				COUNT(CASE WHEN d.status = 'failed' AND d.attempts >= %d THEN 1 END) AS failed,
+				COUNT(CASE WHEN rp.completed = 1 THEN 1 END) AS read,
+				SUM(CASE WHEN d.status = 'completed' THEN d.bytes ELSE 0 END) AS bytes,
+				SUM(CASE WHEN d.status = 'completed' THEN d.pages ELSE 0 END) AS pages
+			FROM chapters c
+			LEFT JOIN downloads d ON d.chapter_id = c.id
+			LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+			GROUP BY c.title_id
+		) agg ON agg.title_id = t.id
 		LEFT JOIN catalog_manga m ON m.id = t.catalog_manga_id
 	`, r.MaxDownloadAttempts, r.MaxDownloadAttempts)
 }

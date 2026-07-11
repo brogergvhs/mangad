@@ -315,9 +315,9 @@
       </details>
       <div id="source-test"></div>
       <div class="modal-action">
-        <button type="button" class="btn btn-ghost" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run <span id="test-spin" class="htmx-indicator loading loading-spinner loading-xs"></span></button>
-        <button type="button" class="btn btn-primary" hx-post="/ui/sources/custom">Save source</button>
+        <button type="button" class="btn btn-outline mr-auto" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run <span id="test-spin" class="htmx-indicator loading loading-xs"></span></button>
         <button type="button" class="btn btn-ghost" onclick="source_add_modal.close()">Cancel</button>
+        <button type="button" class="btn btn-primary" hx-post="/ui/sources/custom">Save source</button>
       </div>
     </form>
   </div>
