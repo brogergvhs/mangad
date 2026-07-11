@@ -65,8 +65,8 @@
 
 {{define "jobActions"}}
 <div class="flex items-center justify-end gap-2">
-  {{template "jobStatusIcon" .Job}}
   {{if .CanCancel}}{{template "jobCancel" .Job}}{{end}}
+  {{template "jobStatusIcon" .Job}}
 </div>
 {{end}}
 
@@ -126,8 +126,8 @@
       <span class="text-sm">{{jobLabel .Type}} <span class="text-xs text-base-content/50">#{{.ID}} · {{.Payload}}</span></span>
       {{if .LastError}}<div class="truncate text-xs text-error" title="{{.LastError}}">{{.LastError}}</div>{{end}}
     </div>
-    {{template "jobStatusIcon" .}}
     {{if eq .Status "queued"}}{{template "jobCancel" .}}{{else if eq .Status "running"}}{{template "jobCancel" .}}{{else if eq .Status "failed"}}{{template "jobCancel" .}}{{end}}
+    {{template "jobStatusIcon" .}}
   </div>
   {{end}}
 </div>

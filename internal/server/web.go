@@ -583,13 +583,32 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, j := range rows {
 		kids := children[j.ID]
-		activeKids := 0
+		activeKids, deadKids, cancelledKids := 0, 0, 0
 		for _, k := range kids {
 			if a, _ := jobState(k.Status); a {
 				activeKids++
 			}
+			switch k.Status {
+			case "dead":
+				deadKids++
+			case "cancelled":
+				cancelledKids++
+			}
 		}
 		selfActive, _ := jobState(j.Status)
+		// A group is only "done" once every child finished successfully; the
+		// status icon rolls up the children's worst outcome.
+		display := j
+		if len(kids) > 0 {
+			switch {
+			case selfActive || activeKids > 0:
+				display.Status = "running"
+			case deadKids > 0:
+				display.Status = "dead"
+			case cancelledKids > 0:
+				display.Status = "cancelled"
+			}
+		}
 		detail := u.renderToHTML("jobDetail", j)
 		if len(kids) > 0 {
 			detail = u.renderToHTML("jobChildren", kids)
@@ -598,7 +617,7 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 			ID: strconv.FormatInt(j.ID, 10),
 			Cells: []template.HTML{
 				u.renderToHTML("jobCell", jobGroupView{Job: j, Children: len(kids), ActiveChildren: activeKids}),
-				u.renderToHTML("jobActions", jobActionsView{Job: j, CanCancel: selfActive || activeKids > 0}),
+				u.renderToHTML("jobActions", jobActionsView{Job: display, CanCancel: selfActive || activeKids > 0}),
 			},
 			Detail: detail,
 		})
@@ -815,9 +834,19 @@ func (u *webUI) sourceView(ctx context.Context, title library.Title, linked map[
 		return titleSourceView(title, true, false, "", nil)
 	}
 	matches, _ := u.svc.ListMatches(ctx, cid)
+	// Only offer sources that are currently usable: stored candidates from
+	// sources that were disabled or deleted since must not be linkable.
+	usable := map[string]bool{}
+	if all, err := u.svc.ListSources(ctx); err == nil {
+		for _, src := range all {
+			if src.Enabled {
+				usable[src.ID] = true
+			}
+		}
+	}
 	kept := matches[:0]
 	for _, m := range matches {
-		if !linked[m.SourceID] {
+		if !linked[m.SourceID] && usable[m.SourceID] {
 			kept = append(kept, m)
 		}
 	}
