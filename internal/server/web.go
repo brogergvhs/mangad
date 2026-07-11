@@ -1734,8 +1734,10 @@ func pathID(r *http.Request) (int64, error) {
 
 func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
-		"assetVer": func() string { return u.assetVer },
-		"jobLabel": jobLabel,
+		"assetVer":  func() string { return u.assetVer },
+		"jobLabel":  jobLabel,
+		"permLabel": func(p string) string { l, _ := permMeta(p); return l },
+		"permDesc":  func(p string) string { _, d := permMeta(p); return d },
 		"has": func(list []string, v string) bool {
 			for _, s := range list {
 				if s == v {

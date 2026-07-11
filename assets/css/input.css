@@ -458,6 +458,9 @@
     position: relative;
     display: inline-block;
   }
+  .dropdown[open] {
+    z-index: 35; /* lift the open menu above later siblings/sections */
+  }
   .dropdown > summary {
     list-style: none;
   }

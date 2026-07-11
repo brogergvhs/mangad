@@ -8,6 +8,41 @@ import (
 	"github.com/brogergvhs/mangad/internal/auth"
 )
 
+// permMeta gives each permission a human name and a description shown when
+// composing roles.
+func permMeta(perm string) (label, desc string) {
+	switch perm {
+	case auth.PermLibraryView:
+		return "View library", "Browse the library, manga pages and chapter lists."
+	case auth.PermStatsView:
+		return "View statistics", "See the statistics cards on the dashboard."
+	case auth.PermServicesView:
+		return "View services health", "See whether FlareSolverr and the browser downloader are reachable."
+	case auth.PermJobsView:
+		return "View jobs", "See the background jobs list on the dashboard."
+	case auth.PermJobsManage:
+		return "Manage jobs", "Cancel queued or running background jobs."
+	case auth.PermReaderUse:
+		return "Read manga", "Open the reader and keep their own reading progress."
+	case auth.PermLibraryAdd:
+		return "Add manga", "Search AniList and add new titles to the library."
+	case auth.PermLibraryManage:
+		return "Manage library", "Refresh chapters, download, link sources, monitor and remove titles."
+	case auth.PermImportUse:
+		return "Import from disk", "See untracked download folders and import them."
+	case auth.PermSourcesManage:
+		return "Manage sources", "Add, edit, verify, disable or delete scraper sources."
+	case auth.PermSettingsAppearance:
+		return "Personal appearance", "Pick their own theme and custom colors."
+	case auth.PermSettingsManage:
+		return "Manage settings", "Change global scheduling, job and service settings."
+	case auth.PermUsersManage:
+		return "Manage users", "Create users and roles and assign permissions."
+	default:
+		return perm, ""
+	}
+}
+
 type usersView struct {
 	Users []auth.User
 	Roles []auth.Role

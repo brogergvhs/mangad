@@ -413,56 +413,69 @@
 
 {{define "usersContent"}}
 <div id="users-content" class="grid gap-4">
-  <div class="flex items-center justify-between gap-2">
-    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Users</h2>
-    <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">+ Add user</button>
-  </div>
-  <div class="rounded-xl overflow-hidden divide-y divide-line/25">
-    {{range .Users}}
-    <div class="flex items-center gap-3 px-3 py-2">
-      <div class="min-w-0 flex-1">
-        <span class="text-sm font-medium">{{.Username}}</span>
-        <span class="badge badge-ghost badge-sm">{{.RoleName}}</span>
-        {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; cannot be edited or deleted">env</span>{{end}}
+  <div class="card bg-base-100 card-body p-4 gap-2">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Users</h2>
+      <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">+ Add user</button>
+    </div>
+    <div class="divide-y divide-line/25">
+      {{range .Users}}
+      <div class="flex items-center gap-3 py-2">
+        <div class="min-w-0 flex-1">
+          <span class="text-sm font-medium">{{.Username}}</span>
+          <span class="badge badge-ghost badge-sm">{{.RoleName}}</span>
+          {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; cannot be edited or deleted">env</span>{{end}}
+        </div>
+        {{if not .IsEnvAdmin}}
+        <details class="dropdown dropdown-end">
+          <summary class="btn btn-sm btn-ghost btn-square" aria-label="User actions">{{template "iconDots"}}</summary>
+          <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+            <li><button hx-get="/ui/users/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
+            <li><button class="text-error" hx-post="/ui/users/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this user? Their reading progress is kept but orphaned.">{{template "iconTrash"}}Delete</button></li>
+          </ul>
+        </details>
+        {{end}}
       </div>
-      {{if not .IsEnvAdmin}}
-      <details class="dropdown dropdown-end">
-        <summary class="btn btn-sm btn-ghost btn-square" aria-label="User actions">{{template "iconDots"}}</summary>
-        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
-          <li><button hx-get="/ui/users/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
-          <li><button class="text-error" hx-post="/ui/users/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this user? Their reading progress is kept but orphaned.">{{template "iconTrash"}}Delete</button></li>
-        </ul>
-      </details>
       {{end}}
     </div>
-    {{end}}
   </div>
 
-  <div class="flex items-center justify-between gap-2 mt-2">
-    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Roles</h2>
-    <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">+ Add role</button>
-  </div>
-  <div class="rounded-xl overflow-hidden divide-y divide-line/25">
-    {{range .Roles}}
-    <div class="flex items-start gap-3 px-3 py-2">
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium">{{.Name}}</span>
-          {{if eq .Origin "builtin"}}<span class="badge badge-ghost badge-sm">built-in</span>{{end}}
+  <div class="card bg-base-100 card-body p-4 gap-2">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Roles</h2>
+      <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">+ Add role</button>
+    </div>
+    <div class="divide-y divide-line/25">
+      {{range .Roles}}
+      <div>
+        <div class="row-toggle flex items-center gap-3 py-2 hover:bg-base-200/50" data-target="role-perms-{{.ID}}">
+          <span class="caret text-base-content/50">{{template "iconChevron"}}</span>
+          <div class="min-w-0 flex-1">
+            <span class="text-sm font-medium">{{.Name}}</span>
+            {{if eq .Origin "builtin"}}<span class="badge badge-ghost badge-sm">built-in</span>{{end}}
+            <span class="badge badge-outline badge-sm">{{len .Perms}} permissions</span>
+          </div>
+          {{if ne .Origin "builtin"}}
+          <details class="dropdown dropdown-end">
+            <summary class="btn btn-sm btn-ghost btn-square" aria-label="Role actions">{{template "iconDots"}}</summary>
+            <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+              <li><button hx-get="/ui/users/roles/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
+              <li><button class="text-error" hx-post="/ui/users/roles/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this role?">{{template "iconTrash"}}Delete</button></li>
+            </ul>
+          </details>
+          {{end}}
         </div>
-        <div class="mt-1 flex flex-wrap gap-1.5">{{range .Perms}}<span class="badge badge-outline badge-sm">{{.}}</span>{{end}}</div>
+        <div id="role-perms-{{.ID}}" class="grid gap-2 rounded-lg bg-base-200/40 px-4 py-3 mb-2" hidden>
+          {{range .Perms}}
+          <div>
+            <span class="text-sm font-medium">{{permLabel .}}</span>
+            <div class="text-xs text-base-content/50">{{permDesc .}}</div>
+          </div>
+          {{else}}<p class="text-sm text-base-content/60">No permissions.</p>{{end}}
+        </div>
       </div>
-      {{if ne .Origin "builtin"}}
-      <details class="dropdown dropdown-end">
-        <summary class="btn btn-sm btn-ghost btn-square" aria-label="Role actions">{{template "iconDots"}}</summary>
-        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
-          <li><button hx-get="/ui/users/roles/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
-          <li><button class="text-error" hx-post="/ui/users/roles/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this role?">{{template "iconTrash"}}Delete</button></li>
-        </ul>
-      </details>
       {{end}}
     </div>
-    {{end}}
   </div>
 </div>
 
@@ -484,13 +497,19 @@
 </dialog>
 
 <dialog id="role_add_modal" class="modal">
-  <div class="modal-box">
+  <div class="modal-box max-w-xl">
     <h3 class="text-lg font-bold mb-3">Add role</h3>
     <form class="grid gap-3" hx-post="/ui/users/roles" hx-swap="none">
       <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" required></label>
       <div class="fieldset"><span class="fieldset-legend">Permissions</span>
-        <div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
-          {{range .Perms}}<label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="perm" value="{{.}}"> {{.}}</label>{{end}}
+        <div class="grid max-h-72 gap-1 overflow-y-auto sm:grid-cols-2">
+          {{range .Perms}}
+          <label class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
+            <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}">
+            <span><span class="text-sm font-medium">{{permLabel .}}</span>
+            <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
+          </label>
+          {{end}}
         </div>
       </div>
       <div class="modal-action">
@@ -538,8 +557,14 @@
       <input type="hidden" name="id" value="{{.Role.ID}}">
       <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" value="{{.Role.Name}}" required></label>
       <div class="fieldset"><span class="fieldset-legend">Permissions</span>
-        <div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
-          {{$role := .Role}}{{range .Perms}}<label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="perm" value="{{.}}" {{if has $role.Perms .}}checked{{end}}> {{.}}</label>{{end}}
+        <div class="grid max-h-72 gap-1 overflow-y-auto sm:grid-cols-2">
+          {{$role := .Role}}{{range .Perms}}
+          <label class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
+            <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}" {{if has $role.Perms .}}checked{{end}}>
+            <span><span class="text-sm font-medium">{{permLabel .}}</span>
+            <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
+          </label>
+          {{end}}
         </div>
       </div>
       <div class="modal-action">
