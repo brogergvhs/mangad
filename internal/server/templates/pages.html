@@ -90,6 +90,7 @@
       <option value="table" {{if eq .Controls.View "table"}}selected{{end}}>Table</option>
       <option value="cards" {{if eq .Controls.View "cards"}}selected{{end}}>Cards</option>
     </select></label>
+  </div>
 </form>
 <div id="library-results">{{template "libraryResults" .Table}}</div>
 {{end}}
