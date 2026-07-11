@@ -1,0 +1,15 @@
+id: mangadistrict
+name: MangaDistrict
+domains:
+  - mangadistrict.com
+base_url: https://mangadistrict.com/
+sample_manga_url: https://mangadistrict.com/series/princess-ninja-scroll-tenka-muso/
+search_url: https://mangadistrict.com/?s={query}&post_type=wp-manga
+scraper: madara
+allowed_extensions:
+  - png
+min_chapters: 10
+requires_browser_solver: false
+requires_browser_downloader: false
+enabled: true
+version: "2026-07-11"
