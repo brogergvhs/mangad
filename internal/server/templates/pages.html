@@ -9,13 +9,12 @@
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
 {{template "servicesHealth" .Health}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Recent jobs</h2>
-<div class="card bg-base-100"><div class="card-body p-2 sm:p-4"><div hx-get="/ui/jobs/table" hx-trigger="load"></div></div></div>
+<div hx-get="/ui/jobs/table" hx-trigger="load"></div>
 {{end}}
 
 {{define "servicesHealth"}}
-<div id="services-health" class="overflow-x-auto card bg-base-100" hx-get="/ui/health" hx-trigger="every {{.Interval}}" hx-swap="outerHTML">
-  <table class="table table-sm">
-    <thead><tr><th>Service</th><th>Status</th><th>Endpoint</th></tr></thead>
+<div id="services-health" class="overflow-x-auto rounded-xl" hx-get="/ui/health" hx-trigger="every {{.Interval}}" hx-swap="outerHTML">
+  <table class="table">
     <tbody>
     {{range .Services}}
     <tr>
@@ -82,7 +81,7 @@
       <option value="desc" {{if eq .Controls.Dir "desc"}}selected{{end}}>Descending</option>
     </select></label>
 </form>
-<div id="library-results" class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "table" .Table}}</div></div>
+<div id="library-results">{{template "table" .Table}}</div>
 {{end}}
 
 {{define "title"}}
@@ -168,7 +167,7 @@
     <details class="group">
       <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium select-none">
         Link manually
-        <span class="text-xs text-base-content/50 transition-transform group-open:rotate-90">&#10095;</span>
+        <span class="text-base-content/50 transition-transform group-open:rotate-90">{{template "iconChevron"}}</span>
       </summary>
       <div class="mt-2 grid gap-4">
         {{if .SingleSources}}
@@ -275,7 +274,7 @@
   <button class="btn btn-sm btn-ghost" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
   <button class="btn btn-sm btn-primary" onclick="source_add_modal.showModal()">+ Add source</button>
 </div>
-<div class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "sourcesTable" .}}</div></div>
+{{template "sourcesTable" .}}
 
 <dialog id="source_add_modal" class="modal">
   <div class="modal-box max-w-xl">
