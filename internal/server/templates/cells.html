@@ -93,9 +93,9 @@
   <div class="mt-3 flex max-sm:flex-col max-sm:gap-2 sm:items-center sm:justify-between">
     <span class="text-sm text-base-content/60 max-sm:text-center">{{.RangeStart}}–{{.RangeEnd}} of {{.Total}}</span>
     <div class="join max-sm:w-full">
-      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#chapters-table" hx-swap="outerHTML">‹</button>
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#chapters-table" hx-swap="outerHTML" hx-sync="#chapters-table:replace">‹</button>
       <button class="btn btn-sm join-item pointer-events-none max-sm:flex-1">{{.Page}} / {{.TotalPages}}</button>
-      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#chapters-table" hx-swap="outerHTML">›</button>
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#chapters-table" hx-swap="outerHTML" hx-sync="#chapters-table:replace">›</button>
     </div>
   </div>
   {{end}}
@@ -122,21 +122,25 @@
 {{end}}
 
 {{define "libraryCard"}}
-<a href="/library/{{.ID}}" class="block min-w-0">
-  <div class="aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
-    <img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy">
+<div class="min-w-0">
+  <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
+    <a href="/library/{{.ID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>
+    <div class="absolute right-1 top-1 rounded-lg bg-base-300/70">{{template "monitorToggle" .}}</div>
   </div>
-  <div class="mt-1.5 line-clamp-2 text-sm font-medium leading-tight">{{.DisplayTitle}}</div>
-  <div class="mt-0.5 text-xs text-base-content/50">{{.CompletedCount}}/{{.DiscoveredCount}}{{if gt .MissingCount 0}} · {{.MissingCount}} missing{{end}}</div>
+  <a href="/library/{{.ID}}" class="mt-1.5 block min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.DisplayTitle}}</a>
+  <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
+    <span class="truncate">{{.CompletedCount}}/{{.DiscoveredCount}}</span>
+    <span class="shrink-0">{{if gt .MissingCount 0}}{{.MissingCount}} missing · {{end}}{{humanBytes .SizeBytes}}</span>
+  </div>
   <div class="relative mt-1 h-1 w-full overflow-hidden rounded-full bg-base-300">
     <div class="absolute inset-y-0 left-0 bg-primary" style="width: {{pct .CompletedCount .DiscoveredCount}}%"></div>
     <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .ReadCount .DiscoveredCount}}%"></div>
   </div>
-</a>
+</div>
 {{end}}
 
 {{define "libraryResults"}}
-<div id="{{.ID}}" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:2s" hx-swap="outerHTML"{{end}}>
+<div id="{{.ID}}" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:replace"{{end}}>
   {{if not .Rows}}
   <p class="text-base-content/60 py-3">{{.Empty}}</p>
   {{else}}
@@ -165,9 +169,9 @@
   <div class="mt-3 flex max-sm:flex-col max-sm:gap-2 sm:items-center sm:justify-between">
     <span class="text-sm text-base-content/60 max-sm:text-center">{{.RangeStart}}–{{.RangeEnd}} of {{.Total}}</span>
     <div class="join max-sm:w-full">
-      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#{{.ID}}" hx-swap="outerHTML">‹</button>
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#{{.ID}}" hx-swap="outerHTML" hx-sync="#{{.ID}}:replace">‹</button>
       <button class="btn btn-sm join-item pointer-events-none max-sm:flex-1">{{.Page}} / {{.TotalPages}}</button>
-      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#{{.ID}}" hx-swap="outerHTML">›</button>
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#{{.ID}}" hx-swap="outerHTML" hx-sync="#{{.ID}}:replace">›</button>
     </div>
   </div>
   {{end}}

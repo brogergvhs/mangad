@@ -43,9 +43,13 @@
 {{end}}
 
 {{define "library"}}
-<form class="card bg-base-100 card-body p-4 mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change, keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML">
-  <label class="fieldset sm:col-span-2 lg:col-span-1"><span class="fieldset-legend">Search</span>
-    <input name="q" class="input input-sm w-full" value="{{.Controls.Q}}" placeholder="Title…" hx-trigger="keyup changed delay:300ms"></label>
+<form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change from:select, keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
+  <input type="checkbox" id="lib-filters" class="peer sr-only">
+  <div class="flex items-center gap-2">
+    <input name="q" class="input input-sm w-full" value="{{.Controls.Q}}" placeholder="Search library…" hx-trigger="keyup changed delay:300ms">
+    <label for="lib-filters" class="btn btn-sm btn-outline shrink-0">Filters {{template "iconChevron"}}</label>
+  </div>
+  <div class="hidden peer-checked:grid grid-cols-2 gap-3 lg:grid-cols-4">
   <label class="fieldset"><span class="fieldset-legend">Monitor</span>
     <select name="monitor" class="select select-sm w-full">
       <option value="all" {{if eq .Controls.Monitor "all"}}selected{{end}}>All</option>
