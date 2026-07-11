@@ -41,7 +41,9 @@ document.addEventListener("htmx:confirm", function (e) {
 });
 
 // Collapsible table rows: a .row-toggle reveals the detail row it points at.
-// Clicks on interactive elements inside the row are ignored.
+// Clicks on interactive elements inside the row are ignored. Open rows are
+// remembered so frequent table refreshes (polling) don't collapse them.
+var openDetails = new Set();
 document.addEventListener("click", function (e) {
   if (e.target.closest("button, a, input, select, textarea, form, label, details, summary")) return;
   var toggle = e.target.closest(".row-toggle");
@@ -49,7 +51,21 @@ document.addEventListener("click", function (e) {
   var target = document.getElementById(toggle.dataset.target);
   if (!target) return;
   target.hidden = !target.hidden;
-  toggle.classList.toggle("open");
+  toggle.classList.toggle("open", !target.hidden);
+  if (target.hidden) {
+    openDetails.delete(target.id);
+  } else {
+    openDetails.add(target.id);
+  }
+});
+document.body.addEventListener("htmx:afterSwap", function () {
+  openDetails.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.hidden = false;
+    var toggle = document.querySelector('[data-target="' + id + '"]');
+    if (toggle) toggle.classList.add("open");
+  });
 });
 
 (function () {

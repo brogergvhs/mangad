@@ -1,7 +1,10 @@
 {{define "cellCover"}}<img class="h-14 w-10 rounded object-cover bg-base-300" src="{{.}}" alt="" loading="lazy">{{end}}
 
 {{define "cellTitle"}}
-<a class="link link-hover font-medium" href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a>
+<div class="flex items-center gap-1">
+  <a class="link link-hover font-medium" href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a>
+  {{template "monitorToggle" .Title}}
+</div>
 <div class="text-xs text-base-content/50">{{humanBytes .Title.SizeBytes}}{{if gt .Title.MissingCount 0}} · {{.Title.MissingCount}} missing{{end}}</div>
 {{end}}
 
@@ -13,7 +16,7 @@
     {{if .AverageScore}}<span class="badge badge-warning badge-soft badge-sm">★ {{.AverageScore}}%</span>{{end}}
     {{if .Year}}<span class="badge badge-ghost badge-sm">{{.Year}}</span>{{end}}
   </div>
-  {{if .Description}}<p class="text-sm text-base-content/70 leading-relaxed max-w-prose">{{.Description}}</p>{{end}}
+  {{if .Description}}<p class="text-sm text-base-content/70 leading-relaxed">{{.Description}}</p>{{end}}
   <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-base-content/50">
     {{if .Authors}}<span>By {{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</span>{{end}}
     {{if .Chapters}}<span>{{.Chapters}} chapters (AniList)</span>{{end}}

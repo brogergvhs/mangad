@@ -414,7 +414,6 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 			{Label: ""},
 			{Label: "Title"},
 			{Label: "Chapters"},
-			{Label: "Monitor"},
 		},
 	}
 	t.Cards = pageTitles
@@ -436,7 +435,6 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 				u.renderToHTML("cellCover", tl.CoverImage),
 				u.renderToHTML("cellTitle", view),
 				u.renderToHTML("progressBar", tl),
-				u.renderToHTML("monitorToggle", tl),
 			},
 			Detail: detail,
 		})
