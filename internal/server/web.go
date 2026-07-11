@@ -61,6 +61,7 @@ type dashData struct {
 	TotalBytes int64
 	TotalPages int64
 	TotalChaps int64
+	User       *auth.User
 }
 type libraryView struct {
 	Controls libraryControls
@@ -280,6 +281,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /users", u.usersPage)
 	mux.HandleFunc("GET /ui/users", u.usersFrag)
 	mux.HandleFunc("POST /ui/users", u.userCreate)
+	mux.HandleFunc("GET /ui/users/{id}/edit", u.userEditModal)
+	mux.HandleFunc("GET /ui/users/roles/{id}/edit", u.roleEditModal)
 	mux.HandleFunc("POST /ui/users/{id}", u.userUpdate)
 	mux.HandleFunc("POST /ui/users/{id}/delete", u.userDelete)
 	mux.HandleFunc("POST /ui/users/roles", u.roleSave)
@@ -304,7 +307,10 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 // theme returns the active UI theme and, for the custom theme, a CSS block of
 // its color variables (values are hex-validated on save, so safe to embed).
 func (u *webUI) theme(ctx context.Context) (string, template.CSS) {
-	stored := u.svc.AllSettings(ctx) // one query for theme + custom colors
+	stored := u.svc.AllSettings(ctx) // global fallback (pre-multi-user values)
+	for k, v := range u.svc.UserSettings(ctx, auth.UserID(ctx)) {
+		stored[k] = v // personal appearance wins
+	}
 	theme := stored[service.SettingUITheme]
 	if theme == "" {
 		theme = service.SettingDefault(service.SettingUITheme)
@@ -355,7 +361,7 @@ func (u *webUI) fail(w http.ResponseWriter, err error) {
 func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
 	srcs, _ := u.svc.ListSources(r.Context())
-	data := dashData{Titles: titles, Sources: srcs} // services health post-loads via /ui/health
+	data := dashData{Titles: titles, Sources: srcs, User: userFrom(r.Context())} // services health post-loads via /ui/health
 	for _, t := range titles {
 		data.TotalBytes += t.SizeBytes
 		data.TotalPages += t.Pages
@@ -1470,13 +1476,29 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	themeBefore, _ := u.theme(r.Context())
+	user := userFrom(r.Context())
 	for _, key := range service.SettingKeys() {
+		if !r.Form.Has(key) {
+			continue // section not shown to this user; leave untouched
+		}
+		appearance := strings.HasPrefix(key, "ui.")
+		if appearance && !user.Can(auth.PermSettingsAppearance) {
+			continue
+		}
+		if !appearance && !user.Can(auth.PermSettingsManage) {
+			continue
+		}
 		value := strings.TrimSpace(r.FormValue(key))
 		// Leaving a field at its default clears any override so env/config wins
 		// (avoids the pre-filled default clobbering e.g. a solver endpoint set
 		// via environment).
 		if value == "" || value == service.SettingDefault(key) {
-			if err := u.svc.ClearSetting(r.Context(), key); err != nil {
+			if appearance {
+				if err := u.svc.SetUserSetting(r.Context(), user.ID, key, ""); err != nil {
+					u.fail(w, err)
+					return
+				}
+			} else if err := u.svc.ClearSetting(r.Context(), key); err != nil {
 				u.fail(w, err)
 				return
 			}
@@ -1485,6 +1507,13 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 		if err := service.ValidateSetting(key, value); err != nil {
 			u.fail(w, err)
 			return
+		}
+		if appearance {
+			if err := u.svc.SetUserSetting(r.Context(), user.ID, key, value); err != nil {
+				u.fail(w, err)
+				return
+			}
+			continue
 		}
 		if err := u.svc.SetSetting(r.Context(), key, value); err != nil {
 			u.fail(w, err)
@@ -1504,6 +1533,9 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 func (u *webUI) settings(ctx context.Context) settingsView {
 	cfg, _, _ := u.svc.RuntimeConfig(ctx) // effective config (env + settings merged)
 	stored := u.svc.AllSettings(ctx)
+	for k, v := range u.svc.UserSettings(ctx, auth.UserID(ctx)) {
+		stored[k] = v // appearance keys are personal
+	}
 	field := func(key string) settingField {
 		label, desc := settingMeta(key)
 		value, ok := stored[key]
@@ -1535,21 +1567,28 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 	for _, t := range service.CustomColorTokens() {
 		colorKeys = append(colorKeys, service.CustomColorKey(t))
 	}
-	return settingsView{Groups: []settingGroup{
-		{Title: "Appearance", Fields: append(fields(service.SettingUITheme), fields(colorKeys...)...)},
-		{Title: "Scheduling", Fields: fields(
-			service.SettingServeRefreshEvery, service.SettingServeScanEvery,
-			service.SettingServeDownloadEvery, service.SettingServeRunEvery)},
-		{Title: "Jobs & downloads", Fields: fields(
-			service.SettingJobsMaxAttempts, service.SettingJobsTimeout,
-			service.SettingJobsWorkers, service.SettingDownloadsMaxAttempts)},
-		{Title: "Services", Fields: fields(
-			service.SettingBrowserSolverEnabled, service.SettingBrowserSolverProvider,
-			service.SettingBrowserSolverEndpoint, service.SettingBrowserSolverTimeoutSeconds,
-			service.SettingBrowserDownloaderEnabled, service.SettingBrowserDownloaderEndpoint,
-			service.SettingBrowserDownloaderTimeoutSeconds, service.SettingServicesHealthInterval)},
-		{Title: "Sources", Fields: fields(service.SettingSourceRegistryURL)},
-	}}
+	user := userFrom(ctx)
+	var groups []settingGroup
+	if user.Can(auth.PermSettingsAppearance) {
+		groups = append(groups, settingGroup{Title: "Appearance", Fields: append(fields(service.SettingUITheme), fields(colorKeys...)...)})
+	}
+	if user.Can(auth.PermSettingsManage) {
+		groups = append(groups,
+			settingGroup{Title: "Scheduling", Fields: fields(
+				service.SettingServeRefreshEvery, service.SettingServeScanEvery,
+				service.SettingServeDownloadEvery, service.SettingServeRunEvery)},
+			settingGroup{Title: "Jobs & downloads", Fields: fields(
+				service.SettingJobsMaxAttempts, service.SettingJobsTimeout,
+				service.SettingJobsWorkers, service.SettingDownloadsMaxAttempts)},
+			settingGroup{Title: "Services", Fields: fields(
+				service.SettingBrowserSolverEnabled, service.SettingBrowserSolverProvider,
+				service.SettingBrowserSolverEndpoint, service.SettingBrowserSolverTimeoutSeconds,
+				service.SettingBrowserDownloaderEnabled, service.SettingBrowserDownloaderEndpoint,
+				service.SettingBrowserDownloaderTimeoutSeconds, service.SettingServicesHealthInterval)},
+			settingGroup{Title: "Sources", Fields: fields(service.SettingSourceRegistryURL)},
+		)
+	}
+	return settingsView{Groups: groups}
 }
 
 // effectiveSetting returns the in-effect value for env-backed settings so the

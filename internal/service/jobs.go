@@ -375,6 +375,37 @@ func (s *JobService) Setting(ctx context.Context, key, fallback string) string {
 // Auth exposes the user/role/session service.
 func (s *JobService) Auth() *auth.Service { return s.auth }
 
+// UserSettings returns a user's personal settings (e.g. appearance).
+func (s *JobService) UserSettings(ctx context.Context, userID int64) map[string]string {
+	out := map[string]string{}
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM user_settings WHERE user_id = ?`, userID)
+	if err != nil {
+		log.Printf("read user settings: %v", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k, v string
+		if rows.Scan(&k, &v) == nil {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// SetUserSetting stores a personal setting; empty value clears it.
+func (s *JobService) SetUserSetting(ctx context.Context, userID int64, key, value string) error {
+	if value == "" {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM user_settings WHERE user_id = ? AND key = ?`, userID, key)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)
+		ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
+	`, userID, key, value)
+	return err
+}
+
 // AllSettings returns every stored setting in one query.
 func (s *JobService) AllSettings(ctx context.Context) map[string]string {
 	out := map[string]string{}

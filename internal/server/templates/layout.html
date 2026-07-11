@@ -26,14 +26,14 @@
       <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Manga<span class="text-primary">D</span></a>
       <ul class="menu w-full grow px-4">
         <li><a href="/" class="{{if eq .Nav "dashboard"}}menu-active{{end}}">{{template "iconHome"}}Dashboard</a></li>
-        <li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>
+        {{if .User.Can "library.add"}}<li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>{{end}}
         <li><a href="/library" class="{{if eq .Nav "library"}}menu-active{{end}}">{{template "iconLibrary"}}Library</a></li>
-        <li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>
+        {{if .User.Can "import.use"}}<li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>{{end}}
         {{if .User.Can "sources.manage"}}<li><a href="/sources" class="{{if eq .Nav "sources"}}menu-active{{end}}">{{template "iconSources"}}Sources</a></li>{{end}}
         {{if .User.Can "users.manage"}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users</a></li>{{end}}
       </ul>
       <ul class="menu w-full px-4 pb-4">
-        {{if .User.Can "settings.manage"}}<li><a href="/settings" class="{{if eq .Nav "settings"}}menu-active{{end}}">{{template "iconSettings"}}Settings</a></li>{{end}}
+        {{if or (.User.Can "settings.appearance") (.User.Can "settings.manage")}}<li><a href="/settings" class="{{if eq .Nav "settings"}}menu-active{{end}}">{{template "iconSettings"}}Settings</a></li>{{end}}
         {{if .User}}<li><button hx-post="/logout" hx-swap="none" title="Sign out">{{template "iconLogout"}}<span class="truncate">{{.User.Username}}</span></button></li>{{end}}
       </ul>
     </div>

@@ -1,4 +1,5 @@
 {{define "dashboard"}}
+{{if .User.Can "stats.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Stats</h2>
 <div class="stats bg-base-100 w-full mb-6">
   <div class="stat"><div class="stat-title">Tracked titles</div><div class="stat-value text-3xl">{{len .Titles}}</div></div>
@@ -6,12 +7,17 @@
   <div class="stat"><div class="stat-title">Library size</div><div class="stat-value text-3xl">{{humanBytes .TotalBytes}}</div><div class="stat-desc">{{.TotalPages}} pages</div></div>
   <div class="stat"><div class="stat-title">Sources healthy</div><div class="stat-value text-3xl">{{healthyCount .Sources}}<span class="text-base-content/40">/{{len .Sources}}</span></div></div>
 </div>
+{{end}}
+{{if .User.Can "services.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
 <div id="services-health" hx-get="/ui/health" hx-trigger="load" hx-swap="outerHTML">
   <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Checking services…</div>
 </div>
+{{end}}
+{{if .User.Can "jobs.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Recent jobs</h2>
 <div hx-get="/ui/jobs/table" hx-trigger="load"></div>
+{{end}}
 {{end}}
 
 {{define "servicesHealth"}}
@@ -407,77 +413,141 @@
 
 {{define "usersContent"}}
 <div id="users-content" class="grid gap-4">
-  <div class="card bg-base-100 card-body p-4 gap-0">
-    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Users</h2>
-    <div class="divide-y divide-line/25">
-      {{range .Users}}
-      <div class="flex items-center gap-3 py-2">
-        <div class="min-w-0 flex-1">
-          <span class="text-sm font-medium">{{.Username}}</span>
-          {{if .IsEnvAdmin}}<span class="badge badge-ghost badge-sm" title="Provisioned from the environment; cannot be edited or deleted">env admin</span>{{end}}
-        </div>
-        {{if .IsEnvAdmin}}
-        <span class="badge badge-soft badge-sm">{{.RoleName}}</span>
-        {{else}}
-        <form class="flex items-center gap-2" hx-post="/ui/users/{{.ID}}" hx-target="#users-content" hx-swap="outerHTML">
-          <select name="role_id" class="select select-sm">
-            {{$rid := .RoleID}}{{range $.Roles}}<option value="{{.ID}}" {{if eq .ID $rid}}selected{{end}}>{{.Name}}</option>{{end}}
-          </select>
-          <input class="input input-sm w-32" type="password" name="password" placeholder="New password" autocomplete="new-password">
-          <button class="btn btn-sm btn-outline">Save</button>
-        </form>
-        <button class="btn btn-sm btn-outline text-error" hx-post="/ui/users/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this user? Their reading progress is kept but orphaned.">{{template "iconTrash"}}</button>
-        {{end}}
+  <div class="flex items-center justify-between gap-2">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Users</h2>
+    <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">+ Add user</button>
+  </div>
+  <div class="rounded-xl overflow-hidden divide-y divide-line/25">
+    {{range .Users}}
+    <div class="flex items-center gap-3 px-3 py-2">
+      <div class="min-w-0 flex-1">
+        <span class="text-sm font-medium">{{.Username}}</span>
+        <span class="badge badge-ghost badge-sm">{{.RoleName}}</span>
+        {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; cannot be edited or deleted">env</span>{{end}}
       </div>
+      {{if not .IsEnvAdmin}}
+      <details class="dropdown dropdown-end">
+        <summary class="btn btn-sm btn-ghost btn-square" aria-label="User actions">{{template "iconDots"}}</summary>
+        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+          <li><button hx-get="/ui/users/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
+          <li><button class="text-error" hx-post="/ui/users/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this user? Their reading progress is kept but orphaned.">{{template "iconTrash"}}Delete</button></li>
+        </ul>
+      </details>
       {{end}}
     </div>
-    <form class="mt-3 flex flex-wrap items-center gap-2" hx-post="/ui/users" hx-target="#users-content" hx-swap="outerHTML">
-      <input class="input input-sm min-w-32 flex-1" name="username" placeholder="Username" required>
-      <input class="input input-sm min-w-32 flex-1" type="password" name="password" placeholder="Password" required autocomplete="new-password">
-      <select name="role_id" class="select select-sm">{{range .Roles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
-      <button class="btn btn-sm btn-primary">Add user</button>
-    </form>
+    {{end}}
   </div>
 
-  <div class="card bg-base-100 card-body p-4 gap-0">
-    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Roles</h2>
-    <div class="divide-y divide-line/25">
-      {{range .Roles}}
-      <div class="py-2">
-        {{if eq .Origin "builtin"}}
+  <div class="flex items-center justify-between gap-2 mt-2">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Roles</h2>
+    <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">+ Add role</button>
+  </div>
+  <div class="rounded-xl overflow-hidden divide-y divide-line/25">
+    {{range .Roles}}
+    <div class="flex items-start gap-3 px-3 py-2">
+      <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium">{{.Name}}</span>
-          <span class="badge badge-ghost badge-sm">built-in</span>
+          {{if eq .Origin "builtin"}}<span class="badge badge-ghost badge-sm">built-in</span>{{end}}
         </div>
         <div class="mt-1 flex flex-wrap gap-1.5">{{range .Perms}}<span class="badge badge-outline badge-sm">{{.}}</span>{{end}}</div>
-        {{else}}
-        <form class="grid gap-2" hx-post="/ui/users/roles" hx-target="#users-content" hx-swap="outerHTML">
-          <input type="hidden" name="id" value="{{.ID}}">
-          <div class="flex items-center gap-2">
-            <input class="input input-sm w-40" name="name" value="{{.Name}}">
-            <button class="btn btn-sm btn-outline">Save</button>
-            <button type="button" class="btn btn-sm btn-outline text-error" hx-post="/ui/users/roles/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this role?">{{template "iconTrash"}}</button>
-          </div>
-          <div class="flex flex-wrap gap-x-4 gap-y-1">
-            {{$role := .}}{{range $.Perms}}
-            <label class="label cursor-pointer gap-1.5 text-sm"><input type="checkbox" class="checkbox checkbox-sm" name="perm" value="{{.}}" {{if has $role.Perms .}}checked{{end}}> {{.}}</label>
-            {{end}}
-          </div>
-        </form>
-        {{end}}
       </div>
+      {{if ne .Origin "builtin"}}
+      <details class="dropdown dropdown-end">
+        <summary class="btn btn-sm btn-ghost btn-square" aria-label="Role actions">{{template "iconDots"}}</summary>
+        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+          <li><button hx-get="/ui/users/roles/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
+          <li><button class="text-error" hx-post="/ui/users/roles/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this role?">{{template "iconTrash"}}Delete</button></li>
+        </ul>
+      </details>
       {{end}}
     </div>
-    <details class="mt-3">
-      <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">New role<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
-      <form class="mt-2 grid gap-2" hx-post="/ui/users/roles" hx-target="#users-content" hx-swap="outerHTML">
-        <input class="input input-sm w-40" name="name" placeholder="Role name" required>
-        <div class="flex flex-wrap gap-x-4 gap-y-1">
-          {{range .Perms}}<label class="label cursor-pointer gap-1.5 text-sm"><input type="checkbox" class="checkbox checkbox-sm" name="perm" value="{{.}}"> {{.}}</label>{{end}}
-        </div>
-        <button class="btn btn-sm btn-primary justify-self-start">Create role</button>
-      </form>
-    </details>
+    {{end}}
   </div>
 </div>
+
+<dialog id="user_add_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Add user</h3>
+    <form class="grid gap-3" hx-post="/ui/users" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Username</span><input class="input w-full" name="username" required autocomplete="off"></label>
+      <label class="fieldset"><span class="fieldset-legend">Password</span><input class="input w-full" type="password" name="password" required autocomplete="new-password"></label>
+      <label class="fieldset"><span class="fieldset-legend">Role</span>
+        <select name="role_id" class="select w-full">{{range .Roles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="user_add_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Create user</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="role_add_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Add role</h3>
+    <form class="grid gap-3" hx-post="/ui/users/roles" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" required></label>
+      <div class="fieldset"><span class="fieldset-legend">Permissions</span>
+        <div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
+          {{range .Perms}}<label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="perm" value="{{.}}"> {{.}}</label>{{end}}
+        </div>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="role_add_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Create role</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+
+{{define "userEditModal"}}
+<dialog class="modal modal-open" id="user-edit-modal">
+  <div class="modal-box">
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-bold">Edit {{.User.Username}}</h3>
+      <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="document.getElementById('user-edit-modal').remove()">✕</button>
+    </div>
+    <form class="mt-3 grid gap-3" hx-post="/ui/users/{{.User.ID}}" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Role</span>
+        <select name="role_id" class="select w-full">
+          {{$rid := .User.RoleID}}{{range .Roles}}<option value="{{.ID}}" {{if eq .ID $rid}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select></label>
+      <label class="fieldset"><span class="fieldset-legend">New password</span>
+        <input class="input w-full" type="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-edit-modal').remove()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <div class="modal-backdrop" onclick="document.getElementById('user-edit-modal').remove()"></div>
+</dialog>
+{{end}}
+
+{{define "roleEditModal"}}
+<dialog class="modal modal-open" id="role-edit-modal">
+  <div class="modal-box">
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-bold">Edit role {{.Role.Name}}</h3>
+      <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="document.getElementById('role-edit-modal').remove()">✕</button>
+    </div>
+    <form class="mt-3 grid gap-3" hx-post="/ui/users/roles" hx-swap="none">
+      <input type="hidden" name="id" value="{{.Role.ID}}">
+      <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" value="{{.Role.Name}}" required></label>
+      <div class="fieldset"><span class="fieldset-legend">Permissions</span>
+        <div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
+          {{$role := .Role}}{{range .Perms}}<label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="perm" value="{{.}}" {{if has $role.Perms .}}checked{{end}}> {{.}}</label>{{end}}
+        </div>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('role-edit-modal').remove()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <div class="modal-backdrop" onclick="document.getElementById('role-edit-modal').remove()"></div>
+</dialog>
 {{end}}
