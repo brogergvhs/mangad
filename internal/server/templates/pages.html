@@ -112,7 +112,8 @@
     <div class="flex items-start justify-between gap-3">
       <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
       <div class="flex items-center gap-1 shrink-0">
-        {{template "monitorToggle" .Title}}
+        {{if .User.Can "library.manage"}}{{template "monitorToggle" .Title}}{{else}}{{template "monitorBadge" .Title}}{{end}}
+        {{if .User.Can "library.manage"}}
         <details class="dropdown dropdown-end">
           <summary class="btn btn-sm btn-ghost btn-square" aria-label="Actions">{{template "iconDots"}}</summary>
           <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-56 p-2 shadow-lg border border-base-300">
@@ -124,6 +125,7 @@
             <li><button class="text-error" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">{{template "iconTrash"}}Remove title</button></li>
           </ul>
         </details>
+        {{end}}
       </div>
     </div>
 
@@ -158,6 +160,7 @@
 </dialog>
 {{end}}
 
+{{if .User.Can "library.manage"}}
 <div class="collapse collapse-arrow bg-base-100 mt-4">
   <input type="checkbox" {{if not .LinkedSources}}checked{{end}}>
   <div class="collapse-title font-semibold">Sources{{if .LinkedSources}} <span class="badge badge-sm badge-ghost">{{len .LinkedSources}} linked</span>{{end}}</div>
@@ -217,6 +220,8 @@
     {{end}}
   </div>
 </div>
+
+{{end}}
 
 <div class="flex sm:items-center justify-between gap-2 mt-6 mb-3 max-sm:flex-col">
   <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.ChaptersTable.Total}} Chapters</h2>
@@ -502,13 +507,20 @@
     <form class="grid gap-3" hx-post="/ui/users/roles" hx-swap="none">
       <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" required></label>
       <div class="fieldset"><span class="fieldset-legend">Permissions</span>
-        <div class="grid max-h-72 gap-1 overflow-y-auto sm:grid-cols-2">
-          {{range .Perms}}
-          <label class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
-            <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}">
-            <span><span class="text-sm font-medium">{{permLabel .}}</span>
-            <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
-          </label>
+        <div class="grid max-h-80 gap-3 overflow-y-auto">
+          {{range .Groups}}
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">{{.Title}}</div>
+            <div class="mt-1 grid gap-1 sm:grid-cols-2">
+              {{range .Perms}}
+              <label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
+                <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}">
+                <span><span class="text-sm font-medium">{{permLabel .}}</span>
+                <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
+              </label>
+              {{end}}
+            </div>
+          </div>
           {{end}}
         </div>
       </div>
@@ -557,13 +569,20 @@
       <input type="hidden" name="id" value="{{.Role.ID}}">
       <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" value="{{.Role.Name}}" required></label>
       <div class="fieldset"><span class="fieldset-legend">Permissions</span>
-        <div class="grid max-h-72 gap-1 overflow-y-auto sm:grid-cols-2">
-          {{$role := .Role}}{{range .Perms}}
-          <label class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
-            <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}" {{if has $role.Perms .}}checked{{end}}>
-            <span><span class="text-sm font-medium">{{permLabel .}}</span>
-            <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
-          </label>
+        <div class="grid max-h-80 gap-3 overflow-y-auto">
+          {{$role := .Role}}{{range .Groups}}
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">{{.Title}}</div>
+            <div class="mt-1 grid gap-1 sm:grid-cols-2">
+              {{range .Perms}}
+              <label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
+                <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}" {{if has $role.Perms .}}checked{{end}}>
+                <span><span class="text-sm font-medium">{{permLabel .}}</span>
+                <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
+              </label>
+              {{end}}
+            </div>
+          </div>
           {{end}}
         </div>
       </div>

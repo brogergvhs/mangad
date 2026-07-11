@@ -43,16 +43,32 @@ func permMeta(perm string) (label, desc string) {
 	}
 }
 
-type usersView struct {
-	Users []auth.User
-	Roles []auth.Role
+// permGroup clusters related permissions for the role editors.
+type permGroup struct {
+	Title string
 	Perms []string
+}
+
+func permGroups() []permGroup {
+	return []permGroup{
+		{Title: "Dashboard", Perms: []string{auth.PermStatsView, auth.PermServicesView, auth.PermJobsView}},
+		{Title: "Library", Perms: []string{auth.PermLibraryView, auth.PermLibraryAdd, auth.PermLibraryManage, auth.PermImportUse}},
+		{Title: "Reading", Perms: []string{auth.PermReaderUse}},
+		{Title: "Personal", Perms: []string{auth.PermSettingsAppearance}},
+		{Title: "Administration", Perms: []string{auth.PermJobsManage, auth.PermSourcesManage, auth.PermSettingsManage, auth.PermUsersManage}},
+	}
+}
+
+type usersView struct {
+	Users  []auth.User
+	Roles  []auth.Role
+	Groups []permGroup
 }
 
 func (u *webUI) usersData(r *http.Request) usersView {
 	users, _ := u.svc.Auth().ListUsers(r.Context())
 	roles, _ := u.svc.Auth().ListRoles(r.Context())
-	return usersView{Users: users, Roles: roles, Perms: auth.Permissions()}
+	return usersView{Users: users, Roles: roles, Groups: permGroups()}
 }
 
 func (u *webUI) usersPage(w http.ResponseWriter, r *http.Request) {
@@ -84,8 +100,8 @@ func (u *webUI) userEditModal(w http.ResponseWriter, r *http.Request) {
 }
 
 type roleEditView struct {
-	Role  auth.Role
-	Perms []string
+	Role   auth.Role
+	Groups []permGroup
 }
 
 func (u *webUI) roleEditModal(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +113,7 @@ func (u *webUI) roleEditModal(w http.ResponseWriter, r *http.Request) {
 	roles, _ := u.svc.Auth().ListRoles(r.Context())
 	for _, role := range roles {
 		if role.ID == id {
-			u.frag(w, "roleEditModal", roleEditView{Role: role, Perms: auth.Permissions()})
+			u.frag(w, "roleEditModal", roleEditView{Role: role, Groups: permGroups()})
 			return
 		}
 	}

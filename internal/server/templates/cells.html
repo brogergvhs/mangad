@@ -3,7 +3,7 @@
 {{define "cellTitle"}}
 <div class="flex items-center gap-1">
   <a class="link link-hover font-medium" href="/library/{{.Title.ID}}">{{.Title.DisplayTitle}}</a>
-  {{template "monitorToggle" .Title}}
+  {{if .User.Can "library.manage"}}{{template "monitorToggle" .Title}}{{else}}{{template "monitorBadge" .Title}}{{end}}
 </div>
 <div class="text-xs text-base-content/50">{{humanBytes .Title.SizeBytes}}{{if gt .Title.MissingCount 0}} · {{.Title.MissingCount}} missing{{end}}</div>
 {{end}}
@@ -139,17 +139,17 @@
 {{define "libraryCard"}}
 <div class="min-w-0">
   <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
-    <a href="/library/{{.ID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>
-    <div class="absolute right-1 top-1 rounded-lg bg-base-300/70">{{template "monitorToggle" .}}</div>
+    <a href="/library/{{.Title.ID}}"><img class="h-full w-full object-cover" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a>
+    {{if .CanManage}}<div class="absolute right-1 top-1 rounded-lg bg-base-300/70">{{template "monitorToggle" .Title}}</div>{{end}}
   </div>
-  <a href="/library/{{.ID}}" class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.DisplayTitle}}</a>
+  <a href="/library/{{.Title.ID}}" class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Title.DisplayTitle}}</a>
   <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
-    <span class="truncate">{{.CompletedCount}}/{{.DiscoveredCount}}</span>
-    <span class="shrink-0">{{if gt .MissingCount 0}}{{.MissingCount}} missing · {{end}}{{humanBytes .SizeBytes}}</span>
+    <span class="truncate">{{.Title.CompletedCount}}/{{.Title.DiscoveredCount}}</span>
+    <span class="shrink-0">{{if gt .Title.MissingCount 0}}{{.Title.MissingCount}} missing · {{end}}{{humanBytes .Title.SizeBytes}}</span>
   </div>
   <div class="relative mt-1 h-1 w-full overflow-hidden rounded-full bg-base-300">
-    <div class="absolute inset-y-0 left-0 bg-primary" style="width: {{pct .CompletedCount .DiscoveredCount}}%"></div>
-    <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .ReadCount .DiscoveredCount}}%"></div>
+    <div class="absolute inset-y-0 left-0 bg-primary" style="width: {{pct .Title.CompletedCount .Title.DiscoveredCount}}%"></div>
+    <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .Title.ReadCount .Title.DiscoveredCount}}%"></div>
   </div>
 </div>
 {{end}}
@@ -176,7 +176,7 @@
   {{end}}
   {{if ne .View "table"}}
   <div class="{{if eq .View "auto"}}md:hidden{{end}} grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-    {{range .Cards}}{{template "libraryCard" .}}{{end}}
+    {{$cm := .CanManage}}{{range .Cards}}{{template "libraryCard" cardView . $cm}}{{end}}
   </div>
   {{end}}
   {{end}}

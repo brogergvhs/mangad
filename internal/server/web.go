@@ -94,6 +94,7 @@ type activityView struct {
 	Failed        bool
 	Error         string
 	ReadLabel     string
+	User          *auth.User
 }
 type sourceRowView struct {
 	Source sources.Source
@@ -402,8 +403,9 @@ func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
 // (responsive auto mode).
 type libraryResults struct {
 	tableData
-	Cards []library.Title
-	View  string
+	Cards     []library.Title
+	CanManage bool
+	View      string
 }
 
 func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
@@ -461,7 +463,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		empty = "No manga match the current search or filters."
 	}
 
-	t := libraryResults{View: controls.View}
+	t := libraryResults{View: controls.View, CanManage: auth.FromContext(ctx).Can(auth.PermLibraryManage)}
 	t.tableData = tableData{
 		ID: "library-table", BaseURL: "/ui/library/table",
 		Page: page, PerPage: libraryPerPage, Total: total, Sort: controls.Sort, Dir: controls.Dir,
@@ -486,7 +488,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		if len(running) > 0 {
 			t.Poll = true
 		}
-		view := activityView{Title: tl, Running: running, ActiveLabel: label, Failed: failed, Error: msg}
+		view := activityView{Title: tl, Running: running, ActiveLabel: label, Failed: failed, Error: msg, User: auth.FromContext(ctx)}
 		var detail template.HTML
 		if tl.CatalogMangaID != nil {
 			if m, ok := mangas[*tl.CatalogMangaID]; ok {
@@ -700,6 +702,7 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	view := u.titleActivity(r.Context(), id)
 	view.Title = title
+	view.User = userFrom(r.Context())
 	view.ReadLabel = "Read"
 	if progress, err := u.svc.ReaderProgress(r.Context(), id); err == nil && progress.NextChapterID != 0 && progress.ReadPages > 0 {
 		view.ReadLabel = "Continue reading"
@@ -1737,7 +1740,10 @@ func (u *webUI) funcs() template.FuncMap {
 		"assetVer":  func() string { return u.assetVer },
 		"jobLabel":  jobLabel,
 		"permLabel": func(p string) string { l, _ := permMeta(p); return l },
-		"permDesc":  func(p string) string { _, d := permMeta(p); return d },
+		"cardView": func(t library.Title, canManage bool) map[string]any {
+			return map[string]any{"Title": t, "CanManage": canManage}
+		},
+		"permDesc": func(p string) string { _, d := permMeta(p); return d },
 		"has": func(list []string, v string) bool {
 			for _, s := range list {
 				if s == v {
