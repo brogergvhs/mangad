@@ -916,6 +916,37 @@
   }
 }
 
+/* Rounded hover lists: the list's first/last rows round their hover
+   background — no overflow clipping, so row dropdowns still escape. */
+.list-rounded > :first-child > .row-toggle,
+.list-rounded > :first-child.row-toggle {
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+.list-rounded > :last-child > .row-toggle,
+.list-rounded > :last-child.row-toggle {
+  border-radius: 0 0 0.75rem 0.75rem;
+}
+.list-rounded > :only-child > .row-toggle,
+.list-rounded > :only-child.row-toggle {
+  border-radius: 0.75rem;
+}
+/* table variant (sources): hover paints per-cell so the corner cells can clip it */
+table.table-rounded tr.row-toggle:hover > td {
+  background: var(--color-base-100);
+}
+table.table-rounded tbody:first-of-type tr.row-toggle > td:first-child {
+  border-top-left-radius: 0.75rem;
+}
+table.table-rounded tbody:first-of-type tr.row-toggle > td:last-child {
+  border-top-right-radius: 0.75rem;
+}
+table.table-rounded tbody:last-of-type tr.row-toggle > td:first-child {
+  border-bottom-left-radius: 0.75rem;
+}
+table.table-rounded tbody:last-of-type tr.row-toggle > td:last-child {
+  border-bottom-right-radius: 0.75rem;
+}
+
 /* collapsible table detail rows (JS-driven) */
 .row-toggle {
   cursor: pointer;

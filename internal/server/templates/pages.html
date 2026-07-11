@@ -469,7 +469,7 @@
       <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Roles</h2>
       <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">+ Add role</button>
     </div>
-    <div class="divide-y divide-line/25">
+    <div class="list-rounded divide-y divide-line/25">
       {{range .Roles}}
       <div>
         <div class="row-toggle flex items-center gap-3 py-2 hover:bg-base-200/50" data-target="role-perms-{{.ID}}">

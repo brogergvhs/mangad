@@ -1506,16 +1506,27 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		value := strings.TrimSpace(r.FormValue(key))
-		// Leaving a field at its default clears any override so env/config wins
-		// (avoids the pre-filled default clobbering e.g. a solver endpoint set
-		// via environment).
-		if value == "" || value == service.SettingDefault(key) {
-			if appearance {
-				if err := u.svc.SetUserSetting(r.Context(), user.ID, key, ""); err != nil {
+		// Personal appearance values are always stored explicitly: "equals the
+		// built-in default" must not clear them, or a differing pre-multi-user
+		// global value (e.g. an old ui.theme) silently takes over again.
+		if appearance {
+			if value != "" {
+				if err := service.ValidateSetting(key, value); err != nil {
 					u.fail(w, err)
 					return
 				}
-			} else if err := u.svc.ClearSetting(r.Context(), key); err != nil {
+			}
+			if err := u.svc.SetUserSetting(r.Context(), user.ID, key, value); err != nil {
+				u.fail(w, err)
+				return
+			}
+			continue
+		}
+		// Leaving a global field at its default clears any override so
+		// env/config wins (avoids the pre-filled default clobbering e.g. a
+		// solver endpoint set via environment).
+		if value == "" || value == service.SettingDefault(key) {
+			if err := u.svc.ClearSetting(r.Context(), key); err != nil {
 				u.fail(w, err)
 				return
 			}
@@ -1524,13 +1535,6 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 		if err := service.ValidateSetting(key, value); err != nil {
 			u.fail(w, err)
 			return
-		}
-		if appearance {
-			if err := u.svc.SetUserSetting(r.Context(), user.ID, key, value); err != nil {
-				u.fail(w, err)
-				return
-			}
-			continue
 		}
 		if err := u.svc.SetSetting(r.Context(), key, value); err != nil {
 			u.fail(w, err)
