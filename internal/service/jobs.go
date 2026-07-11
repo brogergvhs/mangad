@@ -869,6 +869,8 @@ func (s *JobService) SetSourceMethods(ctx context.Context, sourceID, chapterFetc
 	if err := s.src.SetFetchMethods(ctx, sourceID, chapterFetch, imageFetch); err != nil {
 		return err
 	}
+	// Re-check chapters with the new methods; duplicates from a paired
+	// ImportLocalSource call are absorbed by enqueue dedup.
 	return s.enqueueRefreshForSource(ctx, sourceID)
 }
 
@@ -1013,6 +1015,11 @@ func (s *JobService) coveringJob(ctx context.Context, typ string, payload JobPay
 		}
 	}
 	return jobs.Job{}, false, nil
+}
+
+// GetJob returns one job by id.
+func (s *JobService) GetJob(ctx context.Context, id int64) (jobs.Job, error) {
+	return s.jobs.Get(ctx, id)
 }
 
 // CancelJob aborts a job: a running job's context is cancelled; a queued or

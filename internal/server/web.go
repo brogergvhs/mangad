@@ -621,11 +621,23 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 	page, key, dir := tableParams(r.URL.Query(), jobsPerPage)
 	all, _ := u.svc.List(r.Context())
 
-	// Group sweep-spawned jobs under the global job that created them.
+	// Group sweep-spawned jobs under the global job that created them. A big
+	// sweep can push its own parent row outside the list window — fetch any
+	// missing parents so their children never render ungrouped.
 	children := map[int64][]jobs.Job{}
 	seen := map[int64]bool{}
 	for _, j := range all {
 		seen[j.ID] = true
+	}
+	for _, j := range all {
+		if j.ParentID != 0 && !seen[j.ParentID] {
+			if parent, err := u.svc.GetJob(r.Context(), j.ParentID); err == nil {
+				all = append(all, parent)
+				seen[parent.ID] = true
+			} else {
+				seen[j.ParentID] = false // truly gone: child stays top-level
+			}
+		}
 	}
 	var top []jobs.Job
 	for _, j := range all {
