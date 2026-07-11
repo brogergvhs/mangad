@@ -1,4 +1,4 @@
-{{define "cellCover"}}<img class="h-14 w-10 rounded object-cover bg-base-300" src="{{.}}" alt="" loading="lazy">{{end}}
+{{define "cellCover"}}<img id="row-cover-{{.ID}}" hx-preserve class="h-14 w-10 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">{{end}}
 
 {{define "cellTitle"}}
 <div class="flex items-center gap-1">
@@ -139,7 +139,7 @@
 {{define "libraryCard"}}
 <div class="min-w-0">
   <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
-    <a href="/library/{{.Title.ID}}"><img class="h-full w-full object-cover" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a>
+    <a href="/library/{{.Title.ID}}"><img id="card-cover-{{.Title.ID}}" hx-preserve class="h-full w-full object-cover" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a>
     {{if .CanManage}}<div class="absolute right-1 top-1 rounded-lg bg-base-300/70">{{template "monitorToggle" .Title}}</div>{{end}}
   </div>
   <a href="/library/{{.Title.ID}}" class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Title.DisplayTitle}}</a>

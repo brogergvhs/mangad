@@ -500,7 +500,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		t.Rows = append(t.Rows, tableRow{
 			ID: strconv.FormatInt(tl.ID, 10),
 			Cells: []template.HTML{
-				u.renderToHTML("cellCover", tl.CoverImage),
+				u.renderToHTML("cellCover", tl),
 				u.renderToHTML("cellTitle", view),
 				u.renderToHTML("progressBar", tl),
 			},
