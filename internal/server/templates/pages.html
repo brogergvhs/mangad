@@ -18,16 +18,18 @@
     <tbody>
     {{range .Services}}
     <tr>
-      <td class="whitespace-nowrap">{{.Name}}</td>
-      <td class="whitespace-nowrap">
+      <td class="min-w-0">
+        <span class="font-medium">{{.Name}}</span>
+        <div class="truncate max-w-60 text-xs text-base-content/50">{{orDash .Endpoint}}</div>
+      </td>
+      <td class="align-middle whitespace-nowrap">
         {{if not .Enabled}}<span class="badge badge-ghost badge-sm">disabled</span>
         {{else if .Healthy}}<span class="badge badge-success badge-soft badge-sm">healthy</span>
         {{else}}<span class="badge badge-error badge-soft badge-sm">unreachable</span>{{end}}
         {{if .Error}}<div class="text-xs text-base-content/50 max-w-md break-all">{{.Error}}</div>{{end}}
       </td>
-      <td class="text-sm text-base-content/60">{{orDash .Endpoint}}</td>
     </tr>
-    {{else}}<tr><td colspan="3" class="text-base-content/60">No services configured.</td></tr>{{end}}
+    {{else}}<tr><td colspan="2" class="text-base-content/60">No services configured.</td></tr>{{end}}
     </tbody>
   </table>
 </div>
