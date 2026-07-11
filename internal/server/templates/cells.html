@@ -24,7 +24,8 @@
 {{end}}
 
 {{define "chapterName"}}
-{{if .Downloaded}}<a class="link link-hover font-semibold" href="/reader/{{.TitleID}}?chapter={{.ID}}">{{.Label}}</a>{{else}}<span class="font-semibold">{{.Label}}</span>{{end}} <span class="text-xs text-base-content/50">{{.Title}}</span>
+{{if .Downloaded}}<a class="link link-hover font-semibold" href="/reader/{{.TitleID}}?chapter={{.ID}}">{{.Label}} <span class="text-xs text-base-content/50">{{.Title}}</span></a>
+{{else}}<span class="font-semibold">{{.Label}}</span>{{end}} 
 {{end}}
 
 {{define "chapterStatus"}}

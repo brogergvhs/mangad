@@ -1,5 +1,5 @@
 {{define "dashboard"}}
-<div class="stats stats-vertical sm:stats-horizontal bg-base-100 w-full mb-6 max-sm:w-full">
+<div class="stats bg-base-100 w-full mb-6">
   <div class="stat"><div class="stat-title">Tracked titles</div><div class="stat-value text-3xl">{{len .Titles}}</div></div>
   <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.TotalChaps}}</div><div class="stat-desc">{{missingTotal .Titles}} missing</div></div>
   <div class="stat"><div class="stat-title">Library size</div><div class="stat-value text-3xl">{{humanBytes .TotalBytes}}</div><div class="stat-desc">{{.TotalPages}} pages</div></div>
@@ -103,14 +103,14 @@
   </div>
 </div>
 
-<div class="card card-side bg-base-100 mb-4 max-sm:card-sm">
+<div class="card card-side bg-base-100 mb-4">
   <figure class="shrink-0 p-4"><img class="h-40 w-28 rounded-lg object-cover bg-base-300 max-sm:h-28 max-sm:w-20" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
   <div class="card-body gap-3">
-    <div class="text-sm text-base-content/60">
-      {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a>
-      {{else if imported .Title.SourceURL}}Imported from disk · no source linked
-      {{else}}No source linked{{end}}
-    </div>
+    <!-- <div class="text-sm text-base-content/60"> -->
+    <!--   {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a> -->
+    <!--   {{else if imported .Title.SourceURL}}Imported from disk · no source linked -->
+    <!--   {{else}}No source linked{{end}} -->
+    <!-- </div> -->
     {{template "progressBar" .Title}}
     {{template "mangaDetail" .Manga}}
   </div>
