@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="en" data-theme="mocha">
+<html lang="en" data-theme="{{.Theme}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} · MangaD</title>
   <link rel="stylesheet" href="/static/app.css?v={{assetVer}}">
+  {{if .ThemeCSS}}<style>{{.ThemeCSS}}</style>{{end}}
   <script src="/static/htmx.min.js?v={{assetVer}}"></script>
   <script src="/static/app.js?v={{assetVer}}" defer></script>
 </head>

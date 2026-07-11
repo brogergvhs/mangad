@@ -40,6 +40,8 @@ type webUI struct {
 
 type pageData struct {
 	Title, Nav string
+	Theme      string
+	ThemeCSS   template.CSS // custom-theme variable overrides
 	Content    template.HTML
 }
 type readerView struct {
@@ -128,15 +130,26 @@ func titleSourceView(title library.Title, active, failed bool, msg string, match
 }
 
 type settingsView struct {
+	Groups []settingGroup
+}
+type settingGroup struct {
+	Title  string
 	Fields []settingField
 }
 type settingField struct {
 	Key, Label, Desc, Value string
+	Kind                    string // "", "select", "color"
+	Options                 []string
 }
 
 // settingMeta maps a technical setting key to a human label and description.
 func settingMeta(key string) (label, desc string) {
+	if token, ok := strings.CutPrefix(key, "ui.custom."); ok {
+		return token, ""
+	}
 	switch key {
+	case service.SettingUITheme:
+		return "Theme", "Interface color theme. Pick custom to use the colors below."
 	case service.SettingServeRefreshEvery:
 		return "Check for new chapters", "How often each tracked manga's source is checked for newly released chapters (e.g. 1h, 30m)."
 	case service.SettingServeScanEvery:
@@ -273,13 +286,35 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), Content: template.HTML(buf.String())}); err != nil {
+	theme, css := u.theme(r.Context())
+	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), Theme: theme, ThemeCSS: css, Content: template.HTML(buf.String())}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func (u *webUI) readerLayout(w http.ResponseWriter, title string, data readerView) {
-	if err := u.tmpl.ExecuteTemplate(w, "reader_layout.html", pageData{Title: title, Content: u.renderToHTML("reader", data)}); err != nil {
+// theme returns the active UI theme and, for the custom theme, a CSS block of
+// its color variables (values are hex-validated on save, so safe to embed).
+func (u *webUI) theme(ctx context.Context) (string, template.CSS) {
+	theme := u.svc.Setting(ctx, service.SettingUITheme, service.SettingDefault(service.SettingUITheme))
+	if theme != "custom" {
+		return theme, ""
+	}
+	var b strings.Builder
+	b.WriteString(`[data-theme="custom"]{`)
+	for _, token := range service.CustomColorTokens() {
+		key := service.CustomColorKey(token)
+		value := u.svc.Setting(ctx, key, service.SettingDefault(key))
+		if service.ValidateSetting(key, value) == nil {
+			fmt.Fprintf(&b, "--color-%s:%s;", token, value)
+		}
+	}
+	b.WriteString("}")
+	return theme, template.CSS(b.String())
+}
+
+func (u *webUI) readerLayout(w http.ResponseWriter, r *http.Request, title string, data readerView) {
+	theme, css := u.theme(r.Context())
+	if err := u.tmpl.ExecuteTemplate(w, "reader_layout.html", pageData{Title: title, Theme: theme, ThemeCSS: css, Content: u.renderToHTML("reader", data)}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -375,7 +410,7 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 	if raw, err := json.Marshal(data.Manifest); err == nil {
 		data.ManifestJSON = template.JS(raw)
 	}
-	u.readerLayout(w, progress.DisplayTitle, data)
+	u.readerLayout(w, r, progress.DisplayTitle, data)
 }
 
 func initialReaderPosition(manifest readerManifestResponse) string {
@@ -1409,6 +1444,7 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	themeBefore, _ := u.theme(r.Context())
 	for _, key := range service.SettingKeys() {
 		value := strings.TrimSpace(r.FormValue(key))
 		// Leaving a field at its default clears any override so env/config wins
@@ -1430,6 +1466,11 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Appearance changes need a reload to re-render with the new theme.
+	if themeAfter, _ := u.theme(r.Context()); themeAfter != themeBefore || r.FormValue(service.SettingUITheme) == "custom" {
+		w.Header().Set("HX-Refresh", "true")
+		return
+	}
 	u.frag(w, "toast", toastView{OK: true, Msg: "Saved ✓"})
 }
 
@@ -1437,9 +1478,7 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) settings(ctx context.Context) settingsView {
 	cfg, _, _ := u.svc.RuntimeConfig(ctx) // effective config (env + settings merged)
-	keys := service.SettingKeys()
-	fields := make([]settingField, 0, len(keys))
-	for _, key := range keys {
+	field := func(key string) settingField {
 		label, desc := settingMeta(key)
 		value := u.svc.Setting(ctx, key, service.SettingDefault(key))
 		if cfg != nil {
@@ -1447,9 +1486,41 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 				value = eff // show what's actually in effect (e.g. env-set endpoint)
 			}
 		}
-		fields = append(fields, settingField{Key: key, Label: label, Desc: desc, Value: value})
+		f := settingField{Key: key, Label: label, Desc: desc, Value: value}
+		switch {
+		case key == service.SettingUITheme:
+			f.Kind, f.Options = "select", service.UIThemes()
+		case strings.HasPrefix(key, "ui.custom."):
+			f.Kind = "color"
+		}
+		return f
 	}
-	return settingsView{Fields: fields}
+	fields := func(keys ...string) []settingField {
+		out := make([]settingField, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, field(k))
+		}
+		return out
+	}
+	colorKeys := make([]string, 0, len(service.CustomColorTokens()))
+	for _, t := range service.CustomColorTokens() {
+		colorKeys = append(colorKeys, service.CustomColorKey(t))
+	}
+	return settingsView{Groups: []settingGroup{
+		{Title: "Appearance", Fields: append(fields(service.SettingUITheme), fields(colorKeys...)...)},
+		{Title: "Scheduling", Fields: fields(
+			service.SettingServeRefreshEvery, service.SettingServeScanEvery,
+			service.SettingServeDownloadEvery, service.SettingServeRunEvery)},
+		{Title: "Jobs & downloads", Fields: fields(
+			service.SettingJobsMaxAttempts, service.SettingJobsTimeout,
+			service.SettingJobsWorkers, service.SettingDownloadsMaxAttempts)},
+		{Title: "Services", Fields: fields(
+			service.SettingBrowserSolverEnabled, service.SettingBrowserSolverProvider,
+			service.SettingBrowserSolverEndpoint, service.SettingBrowserSolverTimeoutSeconds,
+			service.SettingBrowserDownloaderEnabled, service.SettingBrowserDownloaderEndpoint,
+			service.SettingBrowserDownloaderTimeoutSeconds, service.SettingServicesHealthInterval)},
+		{Title: "Sources", Fields: fields(service.SettingSourceRegistryURL)},
+	}}
 }
 
 // effectiveSetting returns the in-effect value for env-backed settings so the

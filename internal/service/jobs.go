@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,6 +80,10 @@ const (
 
 	SettingServicesHealthInterval = "services.health_interval"
 
+	SettingUITheme        = "ui.theme"
+	uiCustomColorPrefix   = "ui.custom."
+	SettingDefaultUITheme = "mocha"
+
 	defaultJobTimeout = 10 * time.Minute
 	defaultJobWorkers = 4
 )
@@ -118,10 +123,42 @@ func SettingDefault(key string) string {
 		return "4"
 	case SettingServicesHealthInterval:
 		return "60s"
+	case SettingUITheme:
+		return SettingDefaultUITheme
 	default:
+		if c, ok := strings.CutPrefix(key, uiCustomColorPrefix); ok {
+			return mochaColors[c]
+		}
 		return ""
 	}
 }
+
+// UIThemes lists the selectable interface themes.
+func UIThemes() []string {
+	return []string{"mocha", "latte", "dracula", "nord", "custom"}
+}
+
+// CustomColorTokens lists the theme color variables a custom theme fills.
+func CustomColorTokens() []string {
+	return []string{
+		"base-100", "base-200", "base-300", "base-content",
+		"primary", "primary-content", "secondary", "neutral",
+		"line", "muted", "info", "success", "warning", "error",
+	}
+}
+
+// CustomColorKey maps a color token to its setting key.
+func CustomColorKey(token string) string { return uiCustomColorPrefix + token }
+
+// mochaColors seeds the custom-theme editor with the default palette.
+var mochaColors = map[string]string{
+	"base-100": "#1e1e2e", "base-200": "#181825", "base-300": "#11111b", "base-content": "#cdd6f4",
+	"primary": "#cba6f7", "primary-content": "#11111b", "secondary": "#89b4fa", "neutral": "#313244",
+	"line": "#45475a", "muted": "#a6adc8", "info": "#89dceb", "success": "#a6e3a1",
+	"warning": "#f9e2af", "error": "#f38ba8",
+}
+
+var hexColorRe = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 
 // SettingKeys returns settings exposed through the API.
 func SettingKeys() []string {
@@ -143,6 +180,11 @@ func SettingKeys() []string {
 		SettingJobsWorkers,
 		SettingDownloadsMaxAttempts,
 		SettingServicesHealthInterval,
+		SettingUITheme,
+		CustomColorKey("base-100"), CustomColorKey("base-200"), CustomColorKey("base-300"), CustomColorKey("base-content"),
+		CustomColorKey("primary"), CustomColorKey("primary-content"), CustomColorKey("secondary"), CustomColorKey("neutral"),
+		CustomColorKey("line"), CustomColorKey("muted"), CustomColorKey("info"), CustomColorKey("success"),
+		CustomColorKey("warning"), CustomColorKey("error"),
 	}
 }
 
@@ -152,7 +194,20 @@ func ValidateSetting(key, value string) error {
 		return fmt.Errorf("unknown setting %q", key)
 	}
 
+	if strings.HasPrefix(key, uiCustomColorPrefix) {
+		if !hexColorRe.MatchString(value) {
+			return fmt.Errorf("invalid color for %s: use #rrggbb", key)
+		}
+		return nil
+	}
 	switch key {
+	case SettingUITheme:
+		for _, t := range UIThemes() {
+			if value == t {
+				return nil
+			}
+		}
+		return fmt.Errorf("unknown theme %q", value)
 	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery, SettingServicesHealthInterval:
 		return validateDurationSetting(key, value)
 	case SettingBrowserSolverEnabled, SettingBrowserDownloaderEnabled:

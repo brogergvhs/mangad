@@ -342,18 +342,52 @@
 {{end}}
 
 {{define "settings"}}
-<form class="gap-0" hx-put="/ui/settings" hx-target="#settings-msg">
-  {{range .Fields}}
-  <div class="flex items-center justify-between gap-4 py-3 border-b border-base-200 last:border-0 max-sm:flex-col max-sm:gap-1">
-    <div class="min-w-0">
-      <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
-      {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
+<form class="grid gap-4" hx-put="/ui/settings" hx-target="#settings-msg">
+  {{range .Groups}}
+  {{if eq .Title "Appearance"}}
+  <div class="card bg-base-100 card-body p-4 gap-0">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">{{.Title}}</h2>
+    {{range .Fields}}{{if eq .Kind "select"}}
+    <div class="flex items-start justify-between gap-4 py-3 max-sm:flex-col max-sm:gap-1">
+      <div class="min-w-0">
+        <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
+        {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
+      </div>
+      <select class="select select-sm w-40 max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}">
+        {{$v := .Value}}{{range .Options}}<option value="{{.}}" {{if eq . $v}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
     </div>
-    <input class="input max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}">
+    {{end}}{{end}}
+    <details class="mt-2">
+      <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Custom theme colors<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+      <div class="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+        {{range .Fields}}{{if eq .Kind "color"}}
+        <label class="flex items-center justify-between gap-2 text-sm">
+          <span class="text-base-content/70">{{.Label}}</span>
+          <input type="color" class="h-8 w-12 cursor-pointer rounded border border-line bg-base-300" name="{{.Key}}" value="{{.Value}}">
+        </label>
+        {{end}}{{end}}
+      </div>
+      <p class="mt-2 text-xs text-base-content/50">Applied when the theme is set to custom.</p>
+    </details>
+  </div>
+  {{else}}
+  <div class="card bg-base-100 card-body p-4 gap-0">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">{{.Title}}</h2>
+    {{range .Fields}}
+    <div class="flex items-start justify-between gap-4 py-3 border-b border-base-200 last:border-0 max-sm:flex-col max-sm:gap-1">
+      <div class="min-w-0">
+        <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
+        {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
+      </div>
+      <input class="input input-sm w-40 max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}">
+    </div>
+    {{end}}
   </div>
   {{end}}
-  <div class="flex items-center gap-3 pt-4">
-    <button class="w-full btn btn-primary">Save settings</button>
+  {{end}}
+  <div class="flex items-center gap-3">
+    <button class="btn btn-primary btn-sm">Save settings</button>
     <span id="settings-msg"></span>
   </div>
 </form>
