@@ -353,7 +353,7 @@
         <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
         {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
       </div>
-      <select class="select select-sm w-40 max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}">
+      <select class="select select-sm max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}">
         {{$v := .Value}}{{range .Options}}<option value="{{.}}" {{if eq . $v}}selected{{end}}>{{.}}</option>{{end}}
       </select>
     </div>
@@ -380,14 +380,14 @@
         <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
         {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
       </div>
-      <input class="input input-sm w-40 max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}">
+      <input class="input input-sm max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}">
     </div>
     {{end}}
   </div>
   {{end}}
   {{end}}
   <div class="flex items-center gap-3">
-    <button class="btn btn-primary btn-sm">Save settings</button>
+    <button class="w-full btn btn-primary btn-sm">Save settings</button>
     <span id="settings-msg"></span>
   </div>
 </form>

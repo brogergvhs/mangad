@@ -295,7 +295,11 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 // theme returns the active UI theme and, for the custom theme, a CSS block of
 // its color variables (values are hex-validated on save, so safe to embed).
 func (u *webUI) theme(ctx context.Context) (string, template.CSS) {
-	theme := u.svc.Setting(ctx, service.SettingUITheme, service.SettingDefault(service.SettingUITheme))
+	stored := u.svc.AllSettings(ctx) // one query for theme + custom colors
+	theme := stored[service.SettingUITheme]
+	if theme == "" {
+		theme = service.SettingDefault(service.SettingUITheme)
+	}
 	if theme != "custom" {
 		return theme, ""
 	}
@@ -303,7 +307,10 @@ func (u *webUI) theme(ctx context.Context) (string, template.CSS) {
 	b.WriteString(`[data-theme="custom"]{`)
 	for _, token := range service.CustomColorTokens() {
 		key := service.CustomColorKey(token)
-		value := u.svc.Setting(ctx, key, service.SettingDefault(key))
+		value, ok := stored[key]
+		if !ok {
+			value = service.SettingDefault(key)
+		}
 		if service.ValidateSetting(key, value) == nil {
 			fmt.Fprintf(&b, "--color-%s:%s;", token, value)
 		}
@@ -1478,9 +1485,13 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) settings(ctx context.Context) settingsView {
 	cfg, _, _ := u.svc.RuntimeConfig(ctx) // effective config (env + settings merged)
+	stored := u.svc.AllSettings(ctx)
 	field := func(key string) settingField {
 		label, desc := settingMeta(key)
-		value := u.svc.Setting(ctx, key, service.SettingDefault(key))
+		value, ok := stored[key]
+		if !ok {
+			value = service.SettingDefault(key)
+		}
 		if cfg != nil {
 			if eff, ok := effectiveSetting(cfg, key); ok {
 				value = eff // show what's actually in effect (e.g. env-set endpoint)

@@ -364,6 +364,24 @@ func (s *JobService) Setting(ctx context.Context, key, fallback string) string {
 	return value
 }
 
+// AllSettings returns every stored setting in one query.
+func (s *JobService) AllSettings(ctx context.Context) map[string]string {
+	out := map[string]string{}
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM settings`)
+	if err != nil {
+		log.Printf("read settings: %v", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k, v string
+		if rows.Scan(&k, &v) == nil {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // SetSetting stores an app setting.
 func (s *JobService) SetSetting(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx, `
