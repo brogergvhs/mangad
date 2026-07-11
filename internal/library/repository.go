@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brogergvhs/mangad/internal/auth"
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/database"
 )
@@ -92,7 +93,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 
 // GetTitle returns a tracked title by ID.
 func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ?`, id)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ?`, auth.UserID(ctx), id)
 
 	title, err := scanTitle(row)
 	if err != nil {
@@ -107,7 +108,7 @@ func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
 
 // ListTitles returns all tracked titles with chapter counts.
 func (r *Repository) ListTitles(ctx context.Context) ([]Title, error) {
-	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` ORDER BY t.display_title COLLATE NOCASE, t.id`)
+	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` ORDER BY t.display_title COLLATE NOCASE, t.id`, auth.UserID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list titles: %w", err)
 	}
@@ -485,10 +486,10 @@ func (r *Repository) ListChapters(ctx context.Context, titleID int64) ([]Chapter
 			COALESCE(d.completed_at, '')
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
-		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
 		WHERE c.title_id = ?
 		ORDER BY c.number_main, c.suffix_type, c.suffix_num, c.label
-	`, titleID)
+	`, auth.UserID(ctx), titleID)
 	if err != nil {
 		return nil, fmt.Errorf("list chapters: %w", err)
 	}
@@ -672,9 +673,9 @@ func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, to
 	}
 
 	if _, err = tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO chapter_read_pages (chapter_id, page)
-		VALUES (?, ?)
-	`, chapterID, page); err != nil {
+		INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page)
+		VALUES (?, ?, ?)
+	`, auth.UserID(ctx), chapterID, page); err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("mark page read: %w", err)
 	}
 	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, false); err != nil {
@@ -709,9 +710,9 @@ func (r *Repository) markChapterRead(ctx context.Context, chapterID int64) (Chap
 		SELECT COALESCE(NULLIF(d.pages, 0), rp.total_pages, 0)
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
-		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
 		WHERE c.id = ?
-	`, chapterID).Scan(&totalPages); err != nil {
+	`, auth.UserID(ctx), chapterID).Scan(&totalPages); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ChapterReadStatus{}, fmt.Errorf("chapter %d not found", chapterID)
 		}
@@ -719,9 +720,9 @@ func (r *Repository) markChapterRead(ctx context.Context, chapterID int64) (Chap
 	}
 	for page := 1; page <= totalPages; page++ {
 		if _, err = tx.ExecContext(ctx, `
-			INSERT OR IGNORE INTO chapter_read_pages (chapter_id, page)
-			VALUES (?, ?)
-		`, chapterID, page); err != nil {
+			INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page)
+			VALUES (?, ?, ?)
+		`, auth.UserID(ctx), chapterID, page); err != nil {
 			return ChapterReadStatus{}, fmt.Errorf("mark chapter page %d read: %w", page, err)
 		}
 	}
@@ -751,10 +752,10 @@ func (r *Repository) markChapterUnread(ctx context.Context, chapterID int64) (Ch
 			_ = tx.Rollback()
 		}
 	}()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_pages WHERE chapter_id = ?`, chapterID); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_pages WHERE user_id = ? AND chapter_id = ?`, auth.UserID(ctx), chapterID); err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("clear read pages: %w", err)
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_progress WHERE chapter_id = ?`, chapterID); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_progress WHERE user_id = ? AND chapter_id = ?`, auth.UserID(ctx), chapterID); err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("clear read progress: %w", err)
 	}
 	if err = tx.Commit(); err != nil {
@@ -797,10 +798,10 @@ func (r *Repository) MarkChapterRangeRead(ctx context.Context, titleID int64, fr
 			if total > 0 {
 				// set-based page fill: one statement per chapter, not per page
 				if _, err = tx.ExecContext(ctx, `
-					INSERT OR IGNORE INTO chapter_read_pages (chapter_id, page)
+					INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page)
 					WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < ?)
-					SELECT ?, n FROM seq
-				`, total, ch.ID); err != nil {
+					SELECT ?, ?, n FROM seq
+				`, total, auth.UserID(ctx), ch.ID); err != nil {
 					return 0, fmt.Errorf("mark chapter %d pages read: %w", ch.ID, err)
 				}
 			}
@@ -846,10 +847,10 @@ func (r *Repository) MarkChapterRangeUnread(ctx context.Context, titleID int64, 
 				_ = tx.Rollback()
 			}
 		}()
-		if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_pages WHERE chapter_id IN `+in, ids...); err != nil {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_pages WHERE user_id = ? AND chapter_id IN `+in, append([]any{auth.UserID(ctx)}, ids...)...); err != nil {
 			return 0, fmt.Errorf("clear read pages: %w", err)
 		}
-		if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_progress WHERE chapter_id IN `+in, ids...); err != nil {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_progress WHERE user_id = ? AND chapter_id IN `+in, append([]any{auth.UserID(ctx)}, ids...)...); err != nil {
 			return 0, fmt.Errorf("clear read progress: %w", err)
 		}
 		if err = tx.Commit(); err != nil {
@@ -897,7 +898,7 @@ func (r *Repository) TitlesByProvider(ctx context.Context, provider string) (map
 
 // FindByCatalog returns the tracked title for a catalog manga, if any.
 func (r *Repository) FindByCatalog(ctx context.Context, catalogID int64) (Title, bool, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? LIMIT 1`, catalogID)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? LIMIT 1`, auth.UserID(ctx), catalogID)
 	title, err := scanTitle(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Title{}, false, nil
@@ -1040,8 +1041,8 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(MAX(page), 0)
 		FROM chapter_read_pages
-		WHERE chapter_id = ?
-	`, chapterID).Scan(&readPages, &lastPage); err != nil {
+		WHERE user_id = ? AND chapter_id = ?
+	`, auth.UserID(ctx), chapterID).Scan(&readPages, &lastPage); err != nil {
 		return fmt.Errorf("count read pages: %w", err)
 	}
 	completed := forceComplete || (totalPages > 0 && readPages >= totalPages)
@@ -1055,6 +1056,7 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO chapter_read_progress (
+			user_id,
 			chapter_id,
 			last_page,
 			read_pages,
@@ -1062,8 +1064,8 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 			completed,
 			last_read_at,
 			completed_at
-		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END)
-		ON CONFLICT(chapter_id) DO UPDATE SET
+		) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END)
+		ON CONFLICT(user_id, chapter_id) DO UPDATE SET
 			last_page = MAX(chapter_read_progress.last_page, excluded.last_page),
 			read_pages = excluded.read_pages,
 			total_pages = MAX(chapter_read_progress.total_pages, excluded.total_pages),
@@ -1073,7 +1075,7 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 				WHEN excluded.completed = 1 THEN COALESCE(chapter_read_progress.completed_at, CURRENT_TIMESTAMP)
 				ELSE chapter_read_progress.completed_at
 			END
-	`, chapterID, lastPage, readPages, totalPages, completedInt, completedInt); err != nil {
+	`, auth.UserID(ctx), chapterID, lastPage, readPages, totalPages, completedInt, completedInt); err != nil {
 		return fmt.Errorf("update read progress: %w", err)
 	}
 	return nil
@@ -1088,10 +1090,10 @@ func (r *Repository) listReadChapters(ctx context.Context, where string, args ..
 			COALESCE(rp.completed, 0), rp.last_read_at, rp.completed_at
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
-		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
 		`+where+`
 		ORDER BY c.number_main, c.suffix_type, c.suffix_num, c.label
-	`, args...)
+	`, append([]any{auth.UserID(ctx)}, args...)...)
 	if err != nil {
 		return nil, fmt.Errorf("list read chapters: %w", err)
 	}
@@ -1236,7 +1238,7 @@ func (r *Repository) titleSelectQuery() string {
 				SUM(CASE WHEN d.status = 'completed' THEN d.pages ELSE 0 END) AS pages
 			FROM chapters c
 			LEFT JOIN downloads d ON d.chapter_id = c.id
-			LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
+			LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
 			GROUP BY c.title_id
 		) agg ON agg.title_id = t.id
 		LEFT JOIN catalog_manga m ON m.id = t.catalog_manga_id
