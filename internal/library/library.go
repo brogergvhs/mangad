@@ -22,6 +22,7 @@ type Title struct {
 	DiscoveredCount int64
 	MissingCount    int64
 	FailedCount     int64 // chapters that gave up after the attempt cap
+	ReadCount       int64 // chapters fully read
 	CompletedCount  int64
 	SizeBytes       int64
 	Pages           int64

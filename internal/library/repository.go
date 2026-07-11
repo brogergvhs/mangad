@@ -1158,6 +1158,7 @@ func (r *Repository) titleSelectQuery() string {
 			COUNT(DISTINCT CASE WHEN d.id IS NULL
 				OR (d.status != 'completed' AND NOT (d.status = 'failed' AND d.attempts >= %d)) THEN c.id END) AS missing_count,
 			COUNT(DISTINCT CASE WHEN d.status = 'failed' AND d.attempts >= %d THEN c.id END) AS failed_count,
+			COUNT(DISTINCT CASE WHEN rp.completed = 1 THEN c.id END) AS read_count,
 			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.bytes END), 0) AS size_bytes,
 			COALESCE(SUM(CASE WHEN d.status = 'completed' THEN d.pages END), 0) AS pages,
 			t.created_at,
@@ -1167,6 +1168,7 @@ func (r *Repository) titleSelectQuery() string {
 		FROM titles t
 		LEFT JOIN chapters c ON c.title_id = t.id
 		LEFT JOIN downloads d ON d.chapter_id = c.id
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id
 		LEFT JOIN catalog_manga m ON m.id = t.catalog_manga_id
 	`, r.MaxDownloadAttempts, r.MaxDownloadAttempts)
 }
@@ -1193,6 +1195,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&title.CompletedCount,
 		&title.MissingCount,
 		&title.FailedCount,
+		&title.ReadCount,
 		&title.SizeBytes,
 		&title.Pages,
 		&createdAt,
