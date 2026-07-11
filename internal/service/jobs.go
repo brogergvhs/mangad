@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/brogergvhs/mangad/internal/auth"
 	"github.com/brogergvhs/mangad/internal/browserdownload"
 	"github.com/brogergvhs/mangad/internal/browserfetch"
 	"github.com/brogergvhs/mangad/internal/catalog"
@@ -38,6 +40,7 @@ type JobService struct {
 	want       *WantedService
 	running    sync.Map // job ID -> context.CancelCauseFunc for in-flight jobs
 	titleLocks sync.Map // title ID -> *sync.Mutex
+	auth       *auth.Service
 }
 
 // errJobCancelled aborts an in-flight job on explicit user cancellation.
@@ -284,6 +287,11 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 
 	svc := newJobService(db)
 	svc.dbPath = dbPath
+	svc.auth = auth.NewService(db)
+	if err := svc.auth.Bootstrap(ctx, os.Getenv("MANGAD_ADMIN_USER"), os.Getenv("MANGAD_ADMIN_PASSWORD")); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
 	if _, err := svc.lib.ReconcileStartedDownloads(ctx); err != nil {
 		_ = db.Close()
 		return nil, nil, err
@@ -363,6 +371,9 @@ func (s *JobService) Setting(ctx context.Context, key, fallback string) string {
 	}
 	return value
 }
+
+// Auth exposes the user/role/session service.
+func (s *JobService) Auth() *auth.Service { return s.auth }
 
 // AllSettings returns every stored setting in one query.
 func (s *JobService) AllSettings(ctx context.Context) map[string]string {
