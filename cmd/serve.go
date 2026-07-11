@@ -113,13 +113,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		}
 		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldRun != runEvery
 		if oldRefresh != refreshEvery {
-			nextRefresh = time.Now()
+			nextRefresh = time.Now().Add(refreshEvery)
 		}
 		if oldScan != scanEvery {
-			nextScan = time.Now()
+			nextScan = time.Now().Add(scanEvery)
 		}
 		if oldDownload != downloadEvery {
-			nextDownload = time.Now()
+			nextDownload = time.Now().Add(downloadEvery)
 		}
 		if changed {
 			fmt.Printf("Serving: refresh=%s scan=%s download=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, runEvery)
