@@ -90,7 +90,14 @@ func (r *Repository) Get(ctx context.Context, id int64) (Job, error) {
 
 // List returns recent jobs.
 func (r *Repository) List(ctx context.Context) ([]Job, error) {
-	rows, err := r.db.QueryContext(ctx, jobSelect()+` ORDER BY id DESC LIMIT 100`)
+	// The window covers recent history, but active jobs must never fall out
+	// of sight — a burst of newer rows (e.g. a sweep expanding into hundreds
+	// of children) must not hide a still-running job from the UI.
+	rows, err := r.db.QueryContext(ctx, jobSelect()+` WHERE id IN (
+			SELECT id FROM jobs WHERE status IN ('queued', 'running', 'failed')
+			UNION
+			SELECT id FROM (SELECT id FROM jobs ORDER BY id DESC LIMIT 100)
+		) ORDER BY id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}

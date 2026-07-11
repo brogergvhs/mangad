@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -320,4 +321,49 @@ func TestCancelChildrenCascade(t *testing.T) {
 	if got, _ := repo.Get(ctx, c1.ID); got.Status != "cancelled" {
 		t.Fatalf("queued child status = %q, want cancelled", got.Status)
 	}
+}
+
+func TestListNeverDropsActiveJobs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+
+	running, _ := repo.Enqueue(ctx, TypeDownloadMissing, `{"title_id":7}`, time.Now().Add(-time.Minute))
+	if _, _, err := repo.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// bury it under 150 newer terminal rows
+	for i := 0; i < 150; i++ {
+		j, err := repo.Enqueue(ctx, TypeRefreshTitle, fmt.Sprintf(`{"title_id":%d}`, 1000+i), time.Now().Add(-time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := repo.ClaimNext(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.MarkDone(ctx, j.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := repo.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range list {
+		if j.ID == running.ID {
+			if j.Status != "running" {
+				t.Fatalf("status = %q", j.Status)
+			}
+			return
+		}
+	}
+	t.Fatalf("running job %d missing from List (%d rows)", running.ID, len(list))
 }
