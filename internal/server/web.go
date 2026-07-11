@@ -61,7 +61,7 @@ type dashData struct {
 }
 type libraryView struct {
 	Controls libraryControls
-	Table    tableData
+	Table    libraryResults
 }
 type libraryControls struct {
 	Q        string
@@ -70,6 +70,7 @@ type libraryControls struct {
 	Progress string
 	Sort     string
 	Dir      string
+	View     string
 }
 type healthView struct {
 	Services []service.ServiceHealth
@@ -335,7 +336,15 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
-	u.frag(w, "table", u.buildLibraryTable(r.Context(), r.URL.Query()))
+	u.frag(w, "libraryResults", u.buildLibraryTable(r.Context(), r.URL.Query()))
+}
+
+// libraryResults renders the library as a table, a card grid, or both
+// (responsive auto mode).
+type libraryResults struct {
+	tableData
+	Cards []library.Title
+	View  string
 }
 
 func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
@@ -379,7 +388,7 @@ func initialReaderPosition(manifest readerManifestResponse) string {
 	return strconv.Itoa(manifest.ResumePage)
 }
 
-func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableData {
+func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) libraryResults {
 	page, _, _ := tableParams(values, libraryPerPage)
 	controls := libraryControlsFrom(values)
 	titles, _ := u.svc.ListTitles(ctx)
@@ -393,7 +402,8 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 		empty = "No manga match the current search or filters."
 	}
 
-	t := tableData{
+	t := libraryResults{View: controls.View}
+	t.tableData = tableData{
 		ID: "library-table", BaseURL: "/ui/library/table",
 		Page: page, PerPage: libraryPerPage, Total: total, Sort: controls.Sort, Dir: controls.Dir,
 		Params: libraryTableParams(values),
@@ -405,6 +415,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) tableD
 			{Label: "Monitor"},
 		},
 	}
+	t.Cards = pageTitles
 	for _, tl := range pageTitles {
 		running, label, failed, msg := titleActivityFrom(js, tl)
 		if len(running) > 0 {
@@ -439,6 +450,10 @@ func libraryControlsFrom(values url.Values) libraryControls {
 		Progress: values.Get("progress"),
 		Sort:     values.Get("sort"),
 		Dir:      values.Get("dir"),
+		View:     values.Get("view"),
+	}
+	if c.View != "table" && c.View != "cards" {
+		c.View = "auto"
 	}
 	if c.Monitor == "" {
 		c.Monitor = "all"
@@ -463,7 +478,7 @@ func libraryControlsFrom(values url.Values) libraryControls {
 
 func libraryTableParams(values url.Values) url.Values {
 	out := url.Values{}
-	for _, key := range []string{"q", "monitor", "source", "progress", "sort", "dir"} {
+	for _, key := range []string{"q", "monitor", "source", "progress", "sort", "dir", "view"} {
 		if value := strings.TrimSpace(values.Get(key)); value != "" {
 			out.Set(key, value)
 		}

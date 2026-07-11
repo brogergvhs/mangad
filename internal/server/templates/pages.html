@@ -80,8 +80,14 @@
       <option value="asc" {{if eq .Controls.Dir "asc"}}selected{{end}}>Ascending</option>
       <option value="desc" {{if eq .Controls.Dir "desc"}}selected{{end}}>Descending</option>
     </select></label>
+  <label class="fieldset"><span class="fieldset-legend">View</span>
+    <select name="view" class="select select-sm w-full">
+      <option value="auto" {{if eq .Controls.View "auto"}}selected{{end}}>Auto</option>
+      <option value="table" {{if eq .Controls.View "table"}}selected{{end}}>Table</option>
+      <option value="cards" {{if eq .Controls.View "cards"}}selected{{end}}>Cards</option>
+    </select></label>
 </form>
-<div id="library-results">{{template "table" .Table}}</div>
+<div id="library-results">{{template "libraryResults" .Table}}</div>
 {{end}}
 
 {{define "title"}}
