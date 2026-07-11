@@ -9,8 +9,7 @@ services:
       - /data/mangad.db
     ports:
       # Without MANGAD_ADMIN_PASSWORD the app runs in single-user mode with
-      # no login; keep it bound to the host's loopback, or set the admin
-      # credentials below before exposing it to the network.
+      # no login;
       - "127.0.0.1:8080:8080"
     environment:
       XDG_CONFIG_HOME: /config
