@@ -24,24 +24,20 @@
 {{end}}
 
 {{define "chapterName"}}
-{{if .Downloaded}}<a class="link link-hover font-semibold" href="/reader/{{.TitleID}}?chapter={{.ID}}">{{.Label}} <span class="text-xs text-base-content/50">{{.Title}}</span></a>
-{{else}}<span class="font-semibold">{{.Label}}</span>{{end}} 
-{{end}}
-
-{{define "chapterStatus"}}
-{{- if .Downloaded}}<span class="badge badge-success badge-soft badge-sm">downloaded</span>
-{{- else if .Failed}}<span class="badge badge-error badge-soft badge-sm" title="{{.Error}}">failed ({{.Attempts}} attempts)</span>
-{{- else}}<span class="badge badge-ghost badge-sm">missing</span>{{end -}}
+{{- $text := .Label}}{{if .Title}}{{$text = printf "%s: %s" .Label .Title}}{{end -}}
+{{if .Downloaded}}<a class="link link-hover font-medium" href="/reader/{{.TitleID}}?chapter={{.ID}}">{{$text}}</a>
+{{- else if .Failed}}<span class="font-medium" title="{{.Error}}">{{$text}}</span>
+{{- else}}<span class="font-medium">{{$text}}</span>{{end}}
 {{end}}
 
 {{define "chapterReadAction"}}
 {{if .Downloaded}}
   {{if or .Read (gt .ReadPages 0)}}
-  <button class="btn btn-ghost btn-xs btn-square text-success" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">
+  <button class="btn btn-ghost btn-xs btn-square text-success [&_svg]:size-3.5" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">
     {{template "iconEye"}}
   </button>
   {{else}}
-  <button class="btn btn-ghost btn-xs btn-square text-base-content/40" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">
+  <button class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">
     {{template "iconEyeOff"}}
   </button>
   {{end}}

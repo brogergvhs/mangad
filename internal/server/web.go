@@ -699,6 +699,7 @@ func (u *webUI) writeChaptersTable(w http.ResponseWriter, r *http.Request, title
 func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, values url.Values) tableData {
 	page, key, dir := tableParams(values, chaptersPerPage)
 	chs, _ := u.svc.TitleChapters(ctx, title.ID)
+	chs = filterChapters(chs, values.Get("q"))
 	sortChapters(chs, key, dir)
 	rows, total := paginate(chs, page, chaptersPerPage)
 
@@ -709,32 +710,32 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 	t := tableData{
 		ID: "chapters-table", BaseURL: fmt.Sprintf("/ui/library/%d/chapters", title.ID),
 		Page: page, PerPage: chaptersPerPage, Total: total, Sort: key, Dir: dir, Empty: empty,
+		Params: chapterTableParams(values),
 		Columns: []tableColumn{
 			{Label: "Chapter", SortKey: "number"},
-			{Label: "Status", SortKey: "status"},
-			{Label: "Pages"},
+			{Label: "Read", SortKey: "read"},
 			{Label: "Size"},
-			{Label: "Source"},
-			{Label: "Read"},
+			{Label: ""},
+			{Label: "Downloaded", SortKey: "downloaded", Class: "text-right"},
 		},
 	}
 	for _, c := range rows {
-		pages, size := "—", "—"
+		size, when := "—", "—"
 		if c.Downloaded {
-			pages, size = strconv.Itoa(c.Pages), util.Human(c.Bytes)
-			if c.Pages == 0 {
-				pages = "—"
+			size = util.Human(c.Bytes)
+			if c.DownloadedAt != nil {
+				when = c.DownloadedAt.Local().Format("02 Jan 2006")
 			}
 		}
 		t.Rows = append(t.Rows, tableRow{
-			ID: strconv.FormatInt(c.ID, 10),
+			ID:    strconv.FormatInt(c.ID, 10),
+			Class: chapterRowClass(c),
 			Cells: []template.HTML{
 				u.renderToHTML("chapterName", c),
-				u.renderToHTML("chapterStatus", c),
-				text(pages),
+				text(strconv.Itoa(chapterReadPercent(c)) + "%"),
 				text(size),
-				text(chapterSource(c.URL)),
 				u.renderToHTML("chapterReadAction", c),
+				template.HTML(`<span class="text-xs text-base-content/50 whitespace-nowrap float-right">` + template.HTMLEscapeString(when) + `</span>`),
 			},
 		})
 	}
@@ -1515,15 +1516,60 @@ func (u *webUI) funcs() template.FuncMap {
 	}
 }
 
-// chapterSource names where a chapter came from, derived from its URL.
-func chapterSource(rawURL string) string {
-	if strings.HasPrefix(rawURL, "local:") {
-		return "imported"
+// chapterReadPercent reports how much of a chapter has been read (0-100).
+func chapterReadPercent(c library.ChapterStatus) int {
+	if c.Read {
+		return 100
 	}
-	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
-		return strings.TrimPrefix(u.Host, "www.")
+	if c.ReadPages <= 0 {
+		return 0
 	}
-	return "—"
+	total := c.TotalPages
+	if total <= 0 {
+		total = c.Pages
+	}
+	if total <= 0 {
+		return 0
+	}
+	pct := c.ReadPages * 100 / total
+	if pct > 99 { // not marked complete: never claim 100%
+		pct = 99
+	}
+	return pct
+}
+
+// chapterRowClass tints a chapter row by download state.
+func chapterRowClass(c library.ChapterStatus) string {
+	switch {
+	case c.Downloaded:
+		return "bg-success/5"
+	case c.Failed:
+		return "bg-error/5"
+	default:
+		return "opacity-50"
+	}
+}
+
+func filterChapters(chs []library.ChapterStatus, q string) []library.ChapterStatus {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return chs
+	}
+	out := chs[:0]
+	for _, c := range chs {
+		if strings.Contains(strings.ToLower(c.Label), q) || strings.Contains(strings.ToLower(c.Title), q) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func chapterTableParams(values url.Values) url.Values {
+	out := url.Values{}
+	if q := strings.TrimSpace(values.Get("q")); q != "" {
+		out.Set("q", q)
+	}
+	return out
 }
 
 func mangaTitle(m catalog.Manga) string {

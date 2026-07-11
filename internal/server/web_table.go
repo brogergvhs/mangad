@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"time"
 	"strings"
 
 	"github.com/brogergvhs/mangad/internal/jobs"
@@ -22,6 +23,7 @@ type tableColumn struct {
 // tableRow is one data row plus optional collapsible detail content.
 type tableRow struct {
 	ID     string
+	Class  string // extra classes for the <tr> (e.g. state tint)
 	Cells  []template.HTML
 	Detail template.HTML
 }
@@ -209,8 +211,19 @@ func sortChapters(cs []library.ChapterStatus, key, dir string) {
 			}
 			return a.SuffixNum < b.SuffixNum
 		}
-	case "status":
-		less = func(a, b library.ChapterStatus) bool { return !a.Downloaded && b.Downloaded }
+	case "read":
+		less = func(a, b library.ChapterStatus) bool { return chapterReadPercent(a) < chapterReadPercent(b) }
+	case "downloaded":
+		less = func(a, b library.ChapterStatus) bool {
+			at, bt := time.Time{}, time.Time{}
+			if a.DownloadedAt != nil {
+				at = *a.DownloadedAt
+			}
+			if b.DownloadedAt != nil {
+				bt = *b.DownloadedAt
+			}
+			return at.Before(bt)
+		}
 	default:
 		return
 	}

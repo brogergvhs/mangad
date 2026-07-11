@@ -11,7 +11,7 @@
     </thead>
     <tbody>
     {{range .Rows}}
-    <tr {{if .Detail}}class="row-toggle hover:bg-base-100" data-target="det-{{$.ID}}-{{.ID}}"{{end}}>
+    <tr class="{{.Class}}{{if .Detail}} row-toggle hover:bg-base-100{{end}}" {{if .Detail}}data-target="det-{{$.ID}}-{{.ID}}"{{end}}>
       {{if $.HasDetails}}<td>{{if .Detail}}<span class="caret text-base-content/50">▸</span>{{end}}</td>{{end}}
       {{range .Cells}}<td>{{.}}</td>{{end}}
     </tr>

@@ -104,7 +104,7 @@
 </div>
 
 <div class="card card-side bg-base-100 mb-4">
-  <figure class="shrink-0 p-4"><img class="h-40 w-28 rounded-lg object-cover bg-base-300 max-sm:h-28 max-sm:w-20" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
+  <figure class="shrink-0 p-4"><img class="rounded-lg object-cover bg-base-300 max-sm:h-28 max-sm:w-20" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
   <div class="card-body gap-3">
     <!-- <div class="text-sm text-base-content/60"> -->
     <!--   {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a> -->
@@ -207,6 +207,9 @@
     </details>
   </div>
 </div>
+<input class="input input-sm w-full mb-2" name="q" placeholder="Filter chapters…"
+  hx-get="/ui/library/{{.Title.ID}}/chapters" hx-target="#chapters-table" hx-swap="outerHTML"
+  hx-trigger="keyup changed delay:300ms">
 <div class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "table" .ChaptersTable}}</div></div>
 {{end}}
 
