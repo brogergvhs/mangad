@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brogergvhs/mangad/internal/auth"
 	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/jobs"
@@ -40,6 +41,7 @@ type webUI struct {
 
 type pageData struct {
 	Title, Nav string
+	User       *auth.User
 	Theme      string
 	ThemeCSS   template.CSS // custom-theme variable overrides
 	Content    template.HTML
@@ -275,6 +277,13 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
 	mux.HandleFunc("GET /ui/health", u.health)
 	mux.HandleFunc("GET /ui/import/candidates", u.importCandidates)
+	mux.HandleFunc("GET /users", u.usersPage)
+	mux.HandleFunc("GET /ui/users", u.usersFrag)
+	mux.HandleFunc("POST /ui/users", u.userCreate)
+	mux.HandleFunc("POST /ui/users/{id}", u.userUpdate)
+	mux.HandleFunc("POST /ui/users/{id}/delete", u.userDelete)
+	mux.HandleFunc("POST /ui/users/roles", u.roleSave)
+	mux.HandleFunc("POST /ui/users/roles/{id}/delete", u.roleDelete)
 	mux.HandleFunc("PUT /ui/settings", u.settingsSave)
 }
 
@@ -287,7 +296,7 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 		return
 	}
 	theme, css := u.theme(r.Context())
-	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), Theme: theme, ThemeCSS: css, Content: template.HTML(buf.String())}); err != nil {
+	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), User: userFrom(r.Context()), Theme: theme, ThemeCSS: css, Content: template.HTML(buf.String())}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -1672,6 +1681,8 @@ func navFor(path string) string {
 		return "import"
 	case strings.HasPrefix(path, "/sources"):
 		return "sources"
+	case strings.HasPrefix(path, "/users"):
+		return "users"
 	case strings.HasPrefix(path, "/settings"):
 		return "settings"
 	}
@@ -1684,8 +1695,16 @@ func pathID(r *http.Request) (int64, error) {
 
 func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
-		"assetVer":   func() string { return u.assetVer },
-		"jobLabel":   jobLabel,
+		"assetVer": func() string { return u.assetVer },
+		"jobLabel": jobLabel,
+		"has": func(list []string, v string) bool {
+			for _, s := range list {
+				if s == v {
+					return true
+				}
+			}
+			return false
+		},
 		"mangaTitle": mangaTitle,
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
