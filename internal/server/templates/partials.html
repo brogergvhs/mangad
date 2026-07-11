@@ -81,8 +81,11 @@
 
 {{define "titleActivity"}}
 <div id="act-{{.Title.ID}}" {{if .Running}}hx-get="/ui/library/{{.Title.ID}}/activity" hx-trigger="load delay:1200ms" hx-swap="outerHTML"{{end}}>
-  {{if .ActiveLabel}}<div class="alert py-2"><span class="loading loading-spinner loading-sm"></span><span class="text-sm">{{.ActiveLabel}}…</span></div>
-  {{else if .Queued}}<div class="alert py-2 text-base-content/60">{{template "iconClock"}}<span class="text-sm">queued: {{range $i, $q := .Queued}}{{if $i}} · {{end}}{{$q}}{{end}}</span></div>
+  {{if or .ActiveLabel .Queued}}
+  <div class="alert py-2">
+    {{if .ActiveLabel}}<span class="loading loading-spinner loading-sm"></span><span class="text-sm">{{.ActiveLabel}}…</span>{{end}}
+    {{if .Queued}}{{if .ActiveLabel}}<span class="text-base-content/40">·</span>{{end}}<span class="text-base-content/60">{{template "iconClock"}}</span><span class="text-sm text-base-content/60">queued: {{range $i, $q := .Queued}}{{if $i}} · {{end}}{{$q}}{{end}}</span>{{end}}
+  </div>
   {{else if .Failed}}<div class="alert alert-error alert-soft py-2"><span class="text-sm">failed{{if .Error}} — {{.Error}}{{end}}</span></div>
   {{end}}
 </div>
