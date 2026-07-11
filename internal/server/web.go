@@ -1098,7 +1098,7 @@ func (u *webUI) libRemove(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
-	if _, err := u.svc.RemoveTitle(r.Context(), id); err != nil {
+	if _, err := u.svc.RemoveTitleFiles(r.Context(), id, r.FormValue("delete_files") == "on"); err != nil {
 		u.fail(w, err)
 		return
 	}

@@ -506,6 +506,24 @@ func configForTitle(cfg *config.Config, title library.Title) (*config.Config, er
 	return &next, nil
 }
 
+// TitleFilesDir resolves the folder holding a title's downloads, strictly
+// inside the download root (never the root itself).
+func (s *LibraryService) TitleFilesDir(cfg *config.Config, title library.Title) (string, error) {
+	titleCfg, err := configForTitle(cfg, title)
+	if err != nil {
+		return "", err
+	}
+	root, err := filepath.Abs(titleCfg.DownloadDir)
+	if err != nil {
+		return "", err
+	}
+	dir := titleCfg.Output
+	if dir == root || !strings.HasPrefix(dir, root+string(os.PathSeparator)) {
+		return "", fmt.Errorf("refusing to touch %q: not strictly inside the download root", dir)
+	}
+	return dir, nil
+}
+
 func titleOutputDir(title library.Title) string {
 	name := strings.TrimSpace(title.DisplayTitle)
 	if name == "" {

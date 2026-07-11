@@ -122,7 +122,7 @@
             {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
             <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
             {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
-            <li><button class="text-error" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">{{template "iconTrash"}}Remove title</button></li>
+            <li><button class="text-error" onclick="remove_title_modal.showModal()">{{template "iconTrash"}}Remove title</button></li>
           </ul>
         </details>
         {{end}}
@@ -140,6 +140,25 @@
 </div>
 
 {{template "titleActivity" .}}
+
+<dialog id="remove_title_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-1">Remove {{.Title.DisplayTitle}}?</h3>
+    <p class="text-sm text-base-content/60">Tracking, chapters and reading progress are removed from the library.</p>
+    <form class="mt-3 grid gap-3" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none">
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="delete_files">
+        <span><span class="text-sm font-medium">Also delete downloaded files from disk</span>
+        <span class="block text-xs text-base-content/50">Leave unchecked to keep the folder — it will show up on the Import page for re-importing later.</span></span>
+      </label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="remove_title_modal.close()">Cancel</button>
+        <button class="btn btn-error">Remove title</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 {{if linked .Title.SourceURL}}
 <dialog id="title_settings_modal" class="modal">

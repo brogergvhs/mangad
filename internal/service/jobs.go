@@ -588,15 +588,38 @@ func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Man
 
 // RemoveTitle removes a tracked title.
 func (s *JobService) RemoveTitle(ctx context.Context, id int64) (library.Title, error) {
+	return s.RemoveTitleFiles(ctx, id, false)
+}
+
+// RemoveTitleFiles removes a title and, when deleteFiles is set, its
+// downloaded folder on disk. Without deletion the folder reappears on the
+// Import page as an untracked candidate.
+func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles bool) (library.Title, error) {
 	title, err := s.lib.GetTitle(ctx, id)
 	if err != nil {
 		return library.Title{}, err
+	}
+	var filesDir string
+	if deleteFiles {
+		cfg, _, err := s.RuntimeConfig(ctx)
+		if err != nil {
+			return library.Title{}, err
+		}
+		// Resolve (and validate) before the rows disappear.
+		if filesDir, err = s.lib.TitleFilesDir(cfg, title); err != nil {
+			return library.Title{}, err
+		}
 	}
 	if err := s.cancelTitleJobs(ctx, id); err != nil {
 		return library.Title{}, err
 	}
 	if _, err := s.lib.RemoveTitle(ctx, id); err != nil {
 		return library.Title{}, err
+	}
+	if filesDir != "" {
+		if err := os.RemoveAll(filesDir); err != nil {
+			return title, fmt.Errorf("title removed, but deleting %s failed: %w", filesDir, err)
+		}
 	}
 	return title, nil
 }
