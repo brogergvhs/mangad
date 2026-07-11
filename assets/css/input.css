@@ -156,7 +156,9 @@
   .modal-action { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 
   /* ---- collapse ---- */
-  .collapse { border-radius: 0.75rem; overflow: hidden; }
+  /* visibility:visible guards against Tailwind's core `.collapse` utility
+     (visibility:collapse) which lives in the later utilities layer. */
+  .collapse { border-radius: 0.75rem; overflow: hidden; visibility: visible !important; }
   .collapse > input[type="checkbox"] { position: absolute; opacity: 0; pointer-events: none; }
   .collapse-title { display: block; padding: 0.9rem 1.25rem; cursor: pointer; position: relative; user-select: none; }
   div.collapse > .collapse-title { pointer-events: none; }
@@ -215,11 +217,14 @@
     transform: translateX(-100%); transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
   .drawer-toggle:checked ~ .drawer-side > *:not(.drawer-overlay) { transform: translateX(0); }
   @media (min-width: 1024px) {
-    .drawer-side { width: 16rem; visibility: visible; overflow: visible; position: sticky; top: 0; height: 100vh; float: left; }
+    /* DOM order is content-then-side; place them explicitly so the sidebar
+       takes the fixed left column and the content the flexible right one. */
+    .drawer { display: grid; grid-template-columns: 16rem minmax(0, 1fr); }
+    .drawer-side { grid-column: 1; grid-row: 1; position: sticky; top: 0; inset: auto;
+      height: 100vh; width: auto; visibility: visible; overflow: visible; }
+    .drawer-content { grid-column: 2; grid-row: 1; min-width: 0; }
     .drawer-side > .drawer-overlay { display: none; }
     .drawer-side > *:not(.drawer-overlay) { transform: none; }
-    .drawer { display: grid; grid-template-columns: 16rem 1fr; }
-    .drawer-side { position: sticky; inset: auto; float: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .drawer-side > *:not(.drawer-overlay) { transition: none; }
