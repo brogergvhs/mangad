@@ -40,10 +40,93 @@ func (c *AniListClient) Search(ctx context.Context, query string, limit int) ([]
 			Page(page: 1, perPage: $perPage) {
 				media(search: $search, type: MANGA, format: MANGA) {
 					id title { romaji english native } description(asHtml: false)
-					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
+					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
 				}
 			}
 		}`, map[string]any{"search": query, "perPage": limit}, &resp); err != nil {
+		return nil, err
+	}
+	return anilistMediaToManga(resp.Data.Page.Media)
+}
+
+// Related returns manga related to an AniList entry (relations first, then
+// community recommendations), deduped.
+func (c *AniListClient) Related(ctx context.Context, id int, limit int) ([]Manga, error) {
+	if limit <= 0 {
+		limit = 12
+	}
+	var resp struct {
+		Data struct {
+			Media struct {
+				Relations struct {
+					Edges []struct {
+						Node anilistMedia `json:"node"`
+					} `json:"edges"`
+				} `json:"relations"`
+				Recommendations struct {
+					Nodes []struct {
+						MediaRecommendation anilistMedia `json:"mediaRecommendation"`
+					} `json:"nodes"`
+				} `json:"recommendations"`
+			} `json:"Media"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, `
+		query ($id: Int) {
+			Media(id: $id, type: MANGA) {
+				relations { edges { node {
+					id type title { romaji english native } description(asHtml: false)
+					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name }
+				} } }
+				recommendations(perPage: 12, sort: RATING_DESC) { nodes { mediaRecommendation {
+					id type title { romaji english native } description(asHtml: false)
+					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name }
+				} } }
+			}
+		}`, map[string]any{"id": id}, &resp); err != nil {
+		return nil, err
+	}
+	var media []anilistMedia
+	for _, e := range resp.Data.Media.Relations.Edges {
+		media = append(media, e.Node)
+	}
+	for _, n := range resp.Data.Media.Recommendations.Nodes {
+		media = append(media, n.MediaRecommendation)
+	}
+	items, err := anilistMediaToManga(media)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	out := items[:0]
+	for _, m := range items {
+		if m.Format != "MANGA" || seen[m.ProviderID] {
+			continue
+		}
+		seen[m.ProviderID] = true
+		out = append(out, m)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// Trending returns currently trending manga.
+func (c *AniListClient) Trending(ctx context.Context, limit int) ([]Manga, error) {
+	if limit <= 0 {
+		limit = 12
+	}
+	var resp anilistSearchResponse
+	if err := c.do(ctx, `
+		query ($perPage: Int) {
+			Page(page: 1, perPage: $perPage) {
+				media(type: MANGA, format: MANGA, sort: TRENDING_DESC) {
+					id title { romaji english native } description(asHtml: false)
+					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
+				}
+			}
+		}`, map[string]any{"perPage": limit}, &resp); err != nil {
 		return nil, err
 	}
 	return anilistMediaToManga(resp.Data.Page.Media)
@@ -56,7 +139,7 @@ func (c *AniListClient) Get(ctx context.Context, id int) (Manga, error) {
 		query ($id: Int) {
 			Media(id: $id, type: MANGA) {
 				id title { romaji english native } description(asHtml: false)
-				coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
+				coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
 			}
 		}`, map[string]any{"id": id}, &resp); err != nil {
 		return Manga{}, err
@@ -148,7 +231,11 @@ type anilistMedia struct {
 	Synonyms     []string `json:"synonyms"`
 	Genres       []string `json:"genres"`
 	AverageScore *int     `json:"averageScore"`
-	StartDate    struct {
+	IsAdult      bool     `json:"isAdult"`
+	Tags         []struct {
+		Name string `json:"name"`
+	} `json:"tags"`
+	StartDate struct {
 		Year *int `json:"year"`
 	} `json:"startDate"`
 	Staff struct {
@@ -190,6 +277,8 @@ func anilistMediaToManga(media []anilistMedia) ([]Manga, error) {
 			Authors:      anilistAuthors(item),
 			Year:         intOrZero(item.StartDate.Year),
 			AverageScore: intOrZero(item.AverageScore),
+			IsAdult:      item.IsAdult,
+			Tags:         anilistTags(item),
 			RawJSON:      string(raw),
 		})
 	}
@@ -204,6 +293,16 @@ func intOrZero(p *int) int {
 }
 
 // anilistAuthors collects the Story/Art credits from the staff edges.
+func anilistTags(item anilistMedia) []string {
+	out := make([]string, 0, len(item.Tags))
+	for _, t := range item.Tags {
+		if t.Name != "" {
+			out = append(out, t.Name)
+		}
+	}
+	return out
+}
+
 func anilistAuthors(m anilistMedia) []string {
 	seen := map[string]bool{}
 	var out []string

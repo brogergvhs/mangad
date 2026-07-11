@@ -34,6 +34,10 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 	}
 	genres, err := json.Marshal(cleanStrings(m.Genres))
 	if err != nil {
+		return Manga{}, err
+	}
+	tags, err := json.Marshal(cleanStrings(m.Tags))
+	if err != nil {
 		return Manga{}, fmt.Errorf("encode genres: %w", err)
 	}
 	authors, err := json.Marshal(m.Authors)
@@ -51,8 +55,8 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 		INSERT INTO catalog_manga (
 			provider, provider_id, title_romaji, title_english, title_native,
 			description, cover_image, status, format, chapters, volumes, synonyms_json,
-			genres_json, authors_json, year, average_score, wanted, raw_json, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			genres_json, authors_json, year, average_score, is_adult, tags_json, wanted, raw_json, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(provider, provider_id) DO UPDATE SET
 			title_romaji = excluded.title_romaji,
 			title_english = excluded.title_english,
@@ -74,7 +78,7 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 		RETURNING id
 	`, m.Provider, m.ProviderID, m.TitleRomaji, m.TitleEnglish, m.TitleNative, m.Description,
 		m.CoverImage, m.Status, m.Format, chapters, volumes, string(synonyms),
-		string(genres), string(authors), m.Year, m.AverageScore, database.BoolToInt(m.Wanted), m.RawJSON)
+		string(genres), string(authors), m.Year, m.AverageScore, database.BoolToInt(m.IsAdult), string(tags), database.BoolToInt(m.Wanted), m.RawJSON)
 	var id int64
 	if err := row.Scan(&id); err != nil {
 		return Manga{}, fmt.Errorf("upsert manga: %w", err)
@@ -223,7 +227,7 @@ func mangaSelect() string {
 	return `
 		SELECT id, provider, provider_id, title_romaji, title_english, title_native,
 			description, cover_image, status, format, chapters, volumes, synonyms_json,
-			genres_json, authors_json, year, average_score, wanted, raw_json, updated_at
+			genres_json, authors_json, year, average_score, COALESCE(is_adult, 0), COALESCE(tags_json, '[]'), wanted, raw_json, updated_at
 		FROM catalog_manga`
 }
 
@@ -238,14 +242,15 @@ func matchSelect() string {
 func scanManga(row interface{ Scan(...any) error }) (Manga, error) {
 	var m Manga
 	var chapters, volumes sql.NullInt64
-	var synonymsJSON, genresJSON, authorsJSON string
-	var wanted int
+	var synonymsJSON, genresJSON, authorsJSON, tagsJSON string
+	var wanted, isAdult int
 	var updated string
 	if err := row.Scan(&m.ID, &m.Provider, &m.ProviderID, &m.TitleRomaji, &m.TitleEnglish,
 		&m.TitleNative, &m.Description, &m.CoverImage, &m.Status, &m.Format, &chapters, &volumes,
-		&synonymsJSON, &genresJSON, &authorsJSON, &m.Year, &m.AverageScore, &wanted, &m.RawJSON, &updated); err != nil {
+		&synonymsJSON, &genresJSON, &authorsJSON, &m.Year, &m.AverageScore, &isAdult, &tagsJSON, &wanted, &m.RawJSON, &updated); err != nil {
 		return Manga{}, err
 	}
+	m.IsAdult = isAdult != 0
 	if chapters.Valid {
 		v := int(chapters.Int64)
 		m.Chapters = &v
@@ -262,6 +267,7 @@ func scanManga(row interface{ Scan(...any) error }) (Manga, error) {
 		{"synonyms", synonymsJSON, &m.Synonyms},
 		{"genres", genresJSON, &m.Genres},
 		{"authors", authorsJSON, &m.Authors},
+		{"tags", tagsJSON, &m.Tags},
 	} {
 		if err := json.Unmarshal([]byte(f.raw), f.dst); err != nil {
 			return Manga{}, fmt.Errorf("decode %s for manga %d: %w", f.name, m.ID, err)

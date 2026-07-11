@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS catalog_manga (
 	authors_json TEXT NOT NULL DEFAULT '[]',
 	year INTEGER NOT NULL DEFAULT 0,
 	average_score INTEGER NOT NULL DEFAULT 0,
+	is_adult INTEGER NOT NULL DEFAULT 0,
+	tags_json TEXT NOT NULL DEFAULT '[]',
 	wanted INTEGER NOT NULL DEFAULT 0,
 	raw_json TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -190,6 +192,7 @@ CREATE TABLE IF NOT EXISTS users (
 	password_hash TEXT NOT NULL DEFAULT '',
 	role_id INTEGER NOT NULL REFERENCES roles(id),
 	origin TEXT NOT NULL DEFAULT 'local',
+	allow_adult INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -265,6 +268,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}
 	for _, col := range []struct{ table, name, def string }{
 		{"jobs", "parent_id", "INTEGER"},
+		{"catalog_manga", "is_adult", "INTEGER NOT NULL DEFAULT 0"},
+		{"catalog_manga", "tags_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"users", "allow_adult", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "volumes", "INTEGER"},

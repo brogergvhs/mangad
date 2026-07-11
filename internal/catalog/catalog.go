@@ -22,6 +22,8 @@ type Manga struct {
 	Authors      []string  `json:"authors,omitempty"`
 	Year         int       `json:"year,omitempty"`
 	AverageScore int       `json:"average_score,omitempty"`
+	IsAdult      bool      `json:"is_adult"`
+	Tags         []string  `json:"tags,omitempty"`
 	Wanted       bool      `json:"wanted"`
 	RawJSON      string    `json:"-"`
 	UpdatedAt    time.Time `json:"updated_at"`
