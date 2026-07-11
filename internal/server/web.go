@@ -253,6 +253,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/sources/{id}/edit", u.srcEdit)
 	mux.HandleFunc("POST /ui/sources/{id}/edit", u.srcEditSave)
 	mux.HandleFunc("GET /ui/sources/{id}/row", u.srcRow)
+	mux.HandleFunc("POST /ui/sources/{id}/enabled", u.srcEnabled)
+	mux.HandleFunc("POST /ui/sources/{id}/delete", u.srcDelete)
 	mux.HandleFunc("POST /ui/sources/sync", u.srcSync)
 	mux.HandleFunc("POST /ui/sources/test", u.srcTest)
 	mux.HandleFunc("POST /ui/sources/custom", u.srcAddCustom)
@@ -1186,6 +1188,29 @@ func (u *webUI) srcVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.frag(w, "sourceRow", sourceRowView{Source: src, Active: true})
+}
+
+func (u *webUI) srcEnabled(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := u.svc.SetSourceEnabled(r.Context(), id, r.FormValue("on") == "true"); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.srcRow(w, r)
+}
+
+func (u *webUI) srcDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := u.svc.RemoveLocalSource(r.Context(), id); err != nil {
+		u.fail(w, err)
+		return
+	}
+	srcs, err := u.svc.ListSources(r.Context())
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "sourcesTable", srcs)
 }
 
 func (u *webUI) srcRow(w http.ResponseWriter, r *http.Request) {

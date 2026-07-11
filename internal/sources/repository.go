@@ -80,7 +80,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				requires_browser_solver = excluded.requires_browser_solver,
 				requires_browser_downloader = excluded.requires_browser_downloader,
 				single_manga = excluded.single_manga,
-				enabled = excluded.enabled,
+				enabled = sources.enabled,
 				profile_version = excluded.profile_version,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE sources.origin != 'local' OR excluded.origin = 'local'
@@ -91,6 +91,19 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit source sync: %w", err)
+	}
+	return nil
+}
+
+// SetEnabled toggles a source on or off. The choice is durable: built-in
+// sync never overwrites enabled on existing rows.
+func (r *Repository) SetEnabled(ctx context.Context, id string, enabled bool) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE sources SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, database.BoolToInt(enabled), id)
+	if err != nil {
+		return fmt.Errorf("set source %s enabled: %w", id, err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("source %s not found", id)
 	}
 	return nil
 }

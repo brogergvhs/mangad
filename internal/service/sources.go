@@ -146,6 +146,10 @@ func (s *sourceService) SetFetchMethods(ctx context.Context, id, chapterFetch, i
 	return s.repo.SetFetchMethods(ctx, id, chapterFetch, imageFetch)
 }
 
+func (s *sourceService) SetEnabled(ctx context.Context, id string, enabled bool) error {
+	return s.repo.SetEnabled(ctx, strings.TrimSpace(id), enabled)
+}
+
 func (s *sourceService) RemoveLocal(ctx context.Context, id string) error {
 	return s.repo.RemoveLocal(ctx, strings.TrimSpace(id))
 }

@@ -611,6 +611,11 @@ func (s *JobService) ImportLocalSource(ctx context.Context, profile sources.Prof
 	return s.enqueueRefreshForSource(ctx, profile.ID)
 }
 
+// SetSourceEnabled toggles a source on or off.
+func (s *JobService) SetSourceEnabled(ctx context.Context, sourceID string, enabled bool) error {
+	return s.src.SetEnabled(ctx, sourceID, enabled)
+}
+
 // RemoveLocalSource removes a local DB-backed source profile.
 func (s *JobService) RemoveLocalSource(ctx context.Context, sourceID string) error {
 	return s.src.RemoveLocal(ctx, sourceID)
