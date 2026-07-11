@@ -813,10 +813,10 @@
   height: auto;
   background: #1e1e2e;
 }
-.reader-page.is-read {
-  outline: 1px solid #45475a;
-  outline-offset: -1px;
-}
+/* .reader-page.is-read { */
+  /* outline: 1px solid #45475a; */
+  /* outline-offset: -1px; */
+/* } */
 .reader-page-failed {
   padding: 40px 16px;
   color: #f38ba8;
