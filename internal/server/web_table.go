@@ -166,11 +166,6 @@ func paginate[T any](items []T, page, perPage int) ([]T, int) {
 	return items[start:end], total
 }
 
-// text escapes a plain string for safe embedding in a table cell.
-func text(s string) template.HTML {
-	return template.HTML(template.HTMLEscapeString(s))
-}
-
 func sortTitles(ts []library.Title, key, dir string) {
 	var less func(a, b library.Title) bool
 	switch key {

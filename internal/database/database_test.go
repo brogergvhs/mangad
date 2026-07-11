@@ -101,41 +101,6 @@ func TestOpenAppliesPragmasToEveryConnection(t *testing.T) {
 	}
 }
 
-func TestMigrateRecreatesObsoleteSourcesTable(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	db, err := Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer db.Close()
-
-	if _, err := db.ExecContext(ctx, `
-		CREATE TABLE sources (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			domains_json TEXT NOT NULL DEFAULT '[]',
-			status TEXT NOT NULL DEFAULT 'unknown',
-			last_checked_at TEXT,
-			last_error TEXT NOT NULL DEFAULT ''
-		)
-	`); err != nil {
-		t.Fatalf("create old sources table error = %v", err)
-	}
-	if err := Migrate(ctx, db); err != nil {
-		t.Fatalf("Migrate() error = %v", err)
-	}
-
-	ok, exists, err := tableHasColumn(ctx, db, "sources", "origin")
-	if err != nil {
-		t.Fatalf("tableHasColumn() error = %v", err)
-	}
-	if !exists || !ok {
-		t.Fatalf("sources.origin exists=%t ok=%t", exists, ok)
-	}
-}
-
 // tableHasColumn reports whether table exists and whether it has column.
 func tableHasColumn(ctx context.Context, db *sql.DB, table, column string) (bool, bool, error) {
 	rows, err := db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)

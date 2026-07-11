@@ -209,9 +209,6 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 	}()
 
-	if err = dropObsoleteSources(ctx, tx); err != nil {
-		return err
-	}
 	if _, err = tx.ExecContext(ctx, initialSchema); err != nil {
 		return fmt.Errorf("apply migration %d: %w", initialSchemaVersion, err)
 	}
@@ -253,40 +250,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
 		}
 	}
-	// zazamanga was removed as a built-in (its image CDN blocks downloads);
-	// clear the stale row from existing databases. Local overrides are kept.
-	if _, err = tx.ExecContext(ctx, `DELETE FROM sources WHERE id = 'zazamanga' AND origin = 'builtin'`); err != nil {
-		return fmt.Errorf("remove zazamanga source: %w", err)
-	}
-	// The per-title refresh interval used to default to 24h; treat those
-	// (never a user choice) as "use the global cadence".
-	if _, err = tx.ExecContext(ctx, `UPDATE titles SET refresh_interval = '' WHERE refresh_interval = '24h'`); err != nil {
-		return fmt.Errorf("clear default refresh interval: %w", err)
-	}
-	// Backfill title_sources from titles already linked to a real (http) source.
-	if _, err = tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO title_sources (title_id, source_id, url)
-		SELECT id, COALESCE(source_id, ''), source_url FROM titles WHERE source_url LIKE 'http%'
-	`); err != nil {
-		return fmt.Errorf("backfill title_sources: %w", err)
-	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration: %w", err)
 	}
 
-	return nil
-}
-
-// dropObsoleteSources removes the pre-origin sources table so initialSchema
-// can recreate it; ON DELETE SET NULL clears references from titles.
-func dropObsoleteSources(ctx context.Context, tx *sql.Tx) error {
-	ok, exists, err := txHasColumn(ctx, tx, "sources", "origin")
-	if err != nil || !exists || ok {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DROP TABLE sources`); err != nil {
-		return fmt.Errorf("drop obsolete sources table: %w", err)
-	}
 	return nil
 }
 
