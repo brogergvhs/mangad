@@ -46,12 +46,28 @@
 
 {{define "jobCancel"}}<button class="btn btn-error btn-soft btn-xs" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
 
-{{define "jobStatusBadge"}}
-{{- if eq .Status "done"}}<span class="badge badge-success badge-soft badge-sm">done</span>
-{{- else if eq .Status "running"}}<span class="badge badge-info badge-soft badge-sm">running</span>
-{{- else if eq .Status "queued"}}<span class="badge badge-warning badge-soft badge-sm">queued</span>
-{{- else if or (eq .Status "failed") (eq .Status "dead")}}<span class="badge badge-error badge-soft badge-sm">{{.Status}}</span>
+{{define "jobStatusIcon"}}
+{{- if eq .Status "done"}}<span class="text-success" title="done">{{template "iconCheckCircle"}}</span>
+{{- else if eq .Status "running"}}<span class="loading loading-xs" title="running" aria-label="running"></span>
+{{- else if eq .Status "queued"}}<span class="text-base-content/50" title="queued">{{template "iconClock"}}</span>
+{{- else if eq .Status "failed"}}<span class="text-warning" title="failed — will retry">{{template "iconAlert"}}</span>
+{{- else if eq .Status "dead"}}<span class="text-error" title="failed permanently">{{template "iconXCircle"}}</span>
+{{- else if eq .Status "cancelled"}}<span class="text-base-content/40" title="cancelled">{{template "iconBan"}}</span>
 {{- else}}<span class="badge badge-ghost badge-sm">{{.Status}}</span>{{end -}}
+{{end}}
+
+{{define "jobCell"}}
+<div class="min-w-0">
+  <span class="text-sm font-medium">{{jobLabel .Type}}</span>{{if .Children}} <span class="badge badge-ghost badge-sm">{{.Children}} titles{{if .ActiveChildren}} · {{.ActiveChildren}} active{{end}}</span>{{end}}
+  <div class="text-xs text-base-content/50">{{if gt .Attempts 0}}{{.Attempts}} attempt{{if gt .Attempts 1}}s{{end}} · {{end}}{{since .UpdatedAt}}</div>
+</div>
+{{end}}
+
+{{define "jobActions"}}
+<div class="flex items-center justify-end gap-2">
+  {{template "jobStatusIcon" .Job}}
+  {{if .CanCancel}}{{template "jobCancel" .Job}}{{end}}
+</div>
 {{end}}
 
 {{define "jobDetail"}}
@@ -102,10 +118,6 @@
 </div>
 {{end}}
 
-{{define "jobGroupLabel"}}
-{{jobLabel .Type}}{{if .Children}} <span class="badge badge-ghost badge-sm">{{.Children}} titles{{if .ActiveChildren}} · {{.ActiveChildren}} active{{end}}</span>{{end}}
-{{end}}
-
 {{define "jobChildren"}}
 <div class="divide-y divide-line/25">
   {{range .}}
@@ -114,7 +126,7 @@
       <span class="text-sm">{{jobLabel .Type}} <span class="text-xs text-base-content/50">#{{.ID}} · {{.Payload}}</span></span>
       {{if .LastError}}<div class="truncate text-xs text-error" title="{{.LastError}}">{{.LastError}}</div>{{end}}
     </div>
-    {{template "jobStatusBadge" .}}
+    {{template "jobStatusIcon" .}}
     {{if eq .Status "queued"}}{{template "jobCancel" .}}{{else if eq .Status "running"}}{{template "jobCancel" .}}{{else if eq .Status "failed"}}{{template "jobCancel" .}}{{end}}
   </div>
   {{end}}

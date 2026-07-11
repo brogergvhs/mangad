@@ -577,10 +577,7 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 		Page: page, PerPage: jobsPerPage, Total: total, Sort: key, Dir: dir,
 		Poll: anyActive(all), Empty: "No jobs yet.",
 		Columns: []tableColumn{
-			{Label: "Job", SortKey: "type"},
-			{Label: "Status"},
-			{Label: "Attempts"},
-			{Label: "When", SortKey: "updated"},
+			{Label: ""},
 			{Label: ""},
 		},
 	}
@@ -592,11 +589,7 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 				activeKids++
 			}
 		}
-		cancel := template.HTML("")
-		if active, _ := jobState(j.Status); active || activeKids > 0 {
-			cancel = u.renderToHTML("jobCancel", j)
-		}
-		label := u.renderToHTML("jobGroupLabel", jobGroupView{Job: j, Children: len(kids), ActiveChildren: activeKids})
+		selfActive, _ := jobState(j.Status)
 		detail := u.renderToHTML("jobDetail", j)
 		if len(kids) > 0 {
 			detail = u.renderToHTML("jobChildren", kids)
@@ -604,11 +597,8 @@ func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 		t.Rows = append(t.Rows, tableRow{
 			ID: strconv.FormatInt(j.ID, 10),
 			Cells: []template.HTML{
-				label,
-				u.renderToHTML("jobStatusBadge", j),
-				text(strconv.Itoa(j.Attempts)),
-				text(since(j.UpdatedAt)),
-				cancel,
+				u.renderToHTML("jobCell", jobGroupView{Job: j, Children: len(kids), ActiveChildren: activeKids}),
+				u.renderToHTML("jobActions", jobActionsView{Job: j, CanCancel: selfActive || activeKids > 0}),
 			},
 			Detail: detail,
 		})
@@ -745,6 +735,12 @@ type jobGroupView struct {
 	jobs.Job
 	Children       int
 	ActiveChildren int
+}
+
+// jobActionsView pairs a job with whether its cancel action is available.
+type jobActionsView struct {
+	Job       jobs.Job
+	CanCancel bool
 }
 
 // chaptersView drives the custom chapters list (reuses tableData paging).
