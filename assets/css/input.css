@@ -684,27 +684,32 @@
     transform: translateX(0);
   }
   @media (min-width: 1024px) {
-    /* DOM order is content-then-side; place them explicitly so the sidebar
-       takes the fixed left column and the content the flexible right one. */
+    /* Pin the shell to the viewport: the sidebar column stays put and only
+       the content column scrolls. DOM order is content-then-side, so both
+       are placed explicitly. */
     .drawer {
       display: grid;
       grid-template-columns: 16rem minmax(0, 1fr);
+      height: 100vh;
+      min-height: 100vh;
     }
     .drawer-side {
       grid-column: 1;
       grid-row: 1;
-      position: sticky;
-      top: 0;
+      position: static;
       inset: auto;
       height: 100vh;
       width: auto;
       visibility: visible;
-      overflow: visible;
+      overflow-y: auto;
     }
     .drawer-content {
       grid-column: 2;
       grid-row: 1;
       min-width: 0;
+      min-height: 0;
+      height: 100vh;
+      overflow-y: auto;
     }
     .drawer-side > .drawer-overlay {
       display: none;

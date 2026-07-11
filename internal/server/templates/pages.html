@@ -103,9 +103,9 @@
   </div>
 </div>
 
-<div class="card card-side bg-base-100 mb-4 max-lg:flex-col">
-  <figure class="shrink-0 p-4 max-lg:self-center max-lg:pb-0"><img class="h-40 w-28 rounded-lg object-cover bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
-  <div class="card-body gap-3">
+<div class="flex gap-5 mb-4 max-lg:flex-col">
+  <figure class="shrink-0 max-lg:self-center"><img class="h-40 w-28 rounded-lg object-cover bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
+  <div class="flex min-w-0 flex-1 flex-col gap-3">
     <!-- <div class="text-sm text-base-content/60"> -->
     <!--   {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a> -->
     <!--   {{else if imported .Title.SourceURL}}Imported from disk · no source linked -->
@@ -142,22 +142,19 @@
   <div class="collapse-title font-semibold">Sources{{if .LinkedSources}} <span class="badge badge-sm badge-ghost">{{len .LinkedSources}} linked</span>{{end}}</div>
   <div class="collapse-content space-y-4">
     {{if .LinkedSources}}
-    <div class="overflow-x-auto">
-      <table class="table table-sm">
-        <thead><tr><th>Source</th><th>Page</th><th></th></tr></thead>
-        <tbody>
-        {{range .LinkedSources}}
-        <tr>
-          <td class="whitespace-nowrap">{{.Name}}{{if .Active}} <span class="badge badge-success badge-soft badge-sm">active</span>{{end}}</td>
-          <td class="text-xs text-base-content/50 break-all">{{.URL}}</td>
-          <td class="whitespace-nowrap text-right">
-            {{if not .Active}}<button class="btn btn-ghost btn-xs" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
-            <button class="btn btn-ghost btn-xs text-error" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
-          </td>
-        </tr>
-        {{end}}
-        </tbody>
-      </table>
+    <div class="divide-y divide-line/25">
+      {{range .LinkedSources}}
+      <div class="flex items-center gap-3 py-2">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 text-sm font-medium">{{.Name}}{{if .Active}} <span class="badge badge-success badge-soft badge-sm">active</span>{{end}}</div>
+          <a class="block truncate text-xs text-base-content/50 link-hover" href="{{.URL}}" target="_blank" rel="noreferrer noopener" title="{{.URL}}">{{.URL}}</a>
+        </div>
+        <div class="flex shrink-0 gap-1">
+          {{if not .Active}}<button class="btn btn-ghost btn-xs" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
+          <button class="btn btn-ghost btn-xs text-error" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
+        </div>
+      </div>
+      {{end}}
     </div>
     {{end}}
 

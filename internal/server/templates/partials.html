@@ -32,23 +32,21 @@
 <div id="{{.DomID}}">
   {{if .Failed}}<p class="text-sm text-error">Source search failed{{if .Error}}: {{.Error}}{{end}}</p>
   {{else if .Matches}}
-  <div class="overflow-x-auto">
-  <table class="table table-sm">
-    <thead><tr><th>Source</th><th>Chapters</th><th>Confidence</th><th></th></tr></thead>
-    <tbody>
+  <div class="divide-y divide-line/25">
     {{range .Matches}}
-    <tr>
-      <td>{{.SourceID}}<div class="text-xs text-base-content/50 break-all">{{.SourceURL}}</div></td>
-      <td>{{.ChaptersFound}}</td>
-      <td>{{confidence .Confidence}}</td>
-      <td class="whitespace-nowrap">
-        {{if eq .SourceURL $.LinkedURL}}<span class="badge badge-success badge-soft">✓ linked</span>
-        {{else}}<button class="btn btn-xs" hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use this source</button>{{end}}
-      </td>
-    </tr>
+    <div class="flex items-center gap-3 py-2">
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-x-2 text-sm font-medium">{{.SourceID}}
+          <span class="text-xs font-normal text-base-content/50">{{.ChaptersFound}} chapters · {{confidence .Confidence}}</span>
+        </div>
+        <div class="truncate text-xs text-base-content/50" title="{{.SourceURL}}">{{.SourceURL}}</div>
+      </div>
+      <div class="shrink-0">
+        {{if eq .SourceURL $.LinkedURL}}<span class="badge badge-success badge-soft badge-sm">✓ linked</span>
+        {{else}}<button class="btn btn-xs" hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use</button>{{end}}
+      </div>
+    </div>
     {{end}}
-    </tbody>
-  </table>
   </div>
   {{else}}<p class="text-sm text-base-content/60">No matching sources found yet.</p>{{end}}
 </div>
