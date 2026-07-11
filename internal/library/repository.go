@@ -773,17 +773,47 @@ func (r *Repository) MarkChapterRangeRead(ctx context.Context, titleID int64, fr
 	if err != nil {
 		return 0, err
 	}
-	count := 0
-	for _, ch := range selected {
-		if !ch.Downloaded {
-			continue
+	// One transaction for the whole range: per-chapter marking commits (and
+	// fsyncs) chapter by chapter, which crawls on large ranges.
+	return retryBusy(ctx, func() (int, error) {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, fmt.Errorf("begin range read: %w", err)
 		}
-		if _, err := r.MarkChapterRead(ctx, ch.ID); err != nil {
-			return count, err
+		defer func() {
+			if err != nil {
+				_ = tx.Rollback()
+			}
+		}()
+		count := 0
+		for _, ch := range selected {
+			if !ch.Downloaded {
+				continue
+			}
+			total := ch.TotalPages
+			if total <= 0 {
+				total = ch.Pages
+			}
+			if total > 0 {
+				// set-based page fill: one statement per chapter, not per page
+				if _, err = tx.ExecContext(ctx, `
+					INSERT OR IGNORE INTO chapter_read_pages (chapter_id, page)
+					WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < ?)
+					SELECT ?, n FROM seq
+				`, total, ch.ID); err != nil {
+					return 0, fmt.Errorf("mark chapter %d pages read: %w", ch.ID, err)
+				}
+			}
+			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true); err != nil {
+				return 0, err
+			}
+			count++
 		}
-		count++
-	}
-	return count, nil
+		if err = tx.Commit(); err != nil {
+			return 0, fmt.Errorf("commit range read: %w", err)
+		}
+		return count, nil
+	})
 }
 
 // MarkChapterRangeUnread clears read progress in an inclusive label/number range.
@@ -796,12 +826,37 @@ func (r *Repository) MarkChapterRangeUnread(ctx context.Context, titleID int64, 
 	if err != nil {
 		return 0, err
 	}
-	for _, ch := range selected {
-		if _, err := r.MarkChapterUnread(ctx, ch.ID); err != nil {
-			return 0, err
-		}
+	if len(selected) == 0 {
+		return 0, nil
 	}
-	return len(selected), nil
+	ids := make([]any, 0, len(selected))
+	marks := make([]string, 0, len(selected))
+	for _, ch := range selected {
+		ids = append(ids, ch.ID)
+		marks = append(marks, "?")
+	}
+	in := "(" + strings.Join(marks, ",") + ")"
+	return retryBusy(ctx, func() (int, error) {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, fmt.Errorf("begin range unread: %w", err)
+		}
+		defer func() {
+			if err != nil {
+				_ = tx.Rollback()
+			}
+		}()
+		if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_pages WHERE chapter_id IN `+in, ids...); err != nil {
+			return 0, fmt.Errorf("clear read pages: %w", err)
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM chapter_read_progress WHERE chapter_id IN `+in, ids...); err != nil {
+			return 0, fmt.Errorf("clear read progress: %w", err)
+		}
+		if err = tx.Commit(); err != nil {
+			return 0, fmt.Errorf("commit range unread: %w", err)
+		}
+		return len(selected), nil
+	})
 }
 
 // GetChapterReadStatus returns read progress for one chapter.
