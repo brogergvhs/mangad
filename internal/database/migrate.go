@@ -130,21 +130,24 @@ CREATE TABLE IF NOT EXISTS downloads (
 );
 
 CREATE TABLE IF NOT EXISTS chapter_read_progress (
-	chapter_id INTEGER PRIMARY KEY REFERENCES chapters(id) ON DELETE CASCADE,
+	user_id INTEGER NOT NULL DEFAULT 1,
+	chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
 	last_page INTEGER NOT NULL DEFAULT 0,
 	read_pages INTEGER NOT NULL DEFAULT 0,
 	total_pages INTEGER NOT NULL DEFAULT 0,
 	completed INTEGER NOT NULL DEFAULT 0,
 	started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	last_read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	completed_at TEXT
+	completed_at TEXT,
+	PRIMARY KEY (user_id, chapter_id)
 );
 
 CREATE TABLE IF NOT EXISTS chapter_read_pages (
+	user_id INTEGER NOT NULL DEFAULT 1,
 	chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
 	page INTEGER NOT NULL,
 	read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	PRIMARY KEY(chapter_id, page)
+	PRIMARY KEY(user_id, chapter_id, page)
 );
 
 CREATE TABLE IF NOT EXISTS title_sources (
@@ -173,6 +176,30 @@ CREATE TABLE IF NOT EXISTS settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS roles (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL UNIQUE,
+	origin TEXT NOT NULL DEFAULT 'local',
+	permissions_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS users (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	username TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL DEFAULT '',
+	role_id INTEGER NOT NULL REFERENCES roles(id),
+	origin TEXT NOT NULL DEFAULT 'local',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+	token_hash TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	expires_at TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS browser_cookies (
 	domain TEXT NOT NULL,
@@ -250,6 +277,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
 		}
 	}
+	if err = migrateReadTablesPerUser(ctx, tx); err != nil {
+		return err
+	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration: %w", err)
 	}
@@ -292,4 +322,49 @@ func txHasColumn(ctx context.Context, tx *sql.Tx, table, column string) (bool, b
 		return false, false, err
 	}
 	return false, exists, nil
+}
+
+// migrateReadTablesPerUser rebuilds the read-progress tables with a user_id
+// key; pre-existing single-user progress is assigned to the env admin (id 1).
+func migrateReadTablesPerUser(ctx context.Context, tx *sql.Tx) error {
+	hasUser, exists, err := txHasColumn(ctx, tx, "chapter_read_progress", "user_id")
+	if err != nil || !exists || hasUser {
+		return err
+	}
+	stmts := []string{
+		`CREATE TABLE chapter_read_progress_new (
+			user_id INTEGER NOT NULL DEFAULT 1,
+			chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+			last_page INTEGER NOT NULL DEFAULT 0,
+			read_pages INTEGER NOT NULL DEFAULT 0,
+			total_pages INTEGER NOT NULL DEFAULT 0,
+			completed INTEGER NOT NULL DEFAULT 0,
+			started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			completed_at TEXT,
+			PRIMARY KEY (user_id, chapter_id)
+		)`,
+		`INSERT INTO chapter_read_progress_new (user_id, chapter_id, last_page, read_pages, total_pages, completed, started_at, last_read_at, completed_at)
+			SELECT 1, chapter_id, last_page, read_pages, total_pages, completed, started_at, last_read_at, completed_at FROM chapter_read_progress`,
+		`DROP TABLE chapter_read_progress`,
+		`ALTER TABLE chapter_read_progress_new RENAME TO chapter_read_progress`,
+		`CREATE TABLE chapter_read_pages_new (
+			user_id INTEGER NOT NULL DEFAULT 1,
+			chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+			page INTEGER NOT NULL,
+			read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, chapter_id, page)
+		)`,
+		`INSERT INTO chapter_read_pages_new (user_id, chapter_id, page, read_at)
+			SELECT 1, chapter_id, page, read_at FROM chapter_read_pages`,
+		`DROP TABLE chapter_read_pages`,
+		`ALTER TABLE chapter_read_pages_new RENAME TO chapter_read_pages`,
+		`CREATE INDEX IF NOT EXISTS idx_chapter_read_pages_chapter_id ON chapter_read_pages(chapter_id)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("migrate read tables per-user: %w", err)
+		}
+	}
+	return nil
 }
