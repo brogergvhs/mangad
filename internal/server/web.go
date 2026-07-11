@@ -56,7 +56,6 @@ type readerView struct {
 type dashData struct {
 	Titles     []library.Title
 	Sources    []sources.Source
-	Health     healthView
 	TotalBytes int64
 	TotalPages int64
 	TotalChaps int64
@@ -275,6 +274,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
 	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
 	mux.HandleFunc("GET /ui/health", u.health)
+	mux.HandleFunc("GET /ui/import/candidates", u.importCandidates)
 	mux.HandleFunc("PUT /ui/settings", u.settingsSave)
 }
 
@@ -346,7 +346,7 @@ func (u *webUI) fail(w http.ResponseWriter, err error) {
 func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
 	srcs, _ := u.svc.ListSources(r.Context())
-	data := dashData{Titles: titles, Sources: srcs, Health: u.healthView(r.Context())}
+	data := dashData{Titles: titles, Sources: srcs} // services health post-loads via /ui/health
 	for _, t := range titles {
 		data.TotalBytes += t.SizeBytes
 		data.TotalPages += t.Pages
@@ -459,6 +459,13 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		},
 	}
 	t.Cards = pageTitles
+	catalogIDs := make([]int64, 0, len(pageTitles))
+	for _, tl := range pageTitles {
+		if tl.CatalogMangaID != nil {
+			catalogIDs = append(catalogIDs, *tl.CatalogMangaID)
+		}
+	}
+	mangas, _ := u.svc.MangaByIDs(ctx, catalogIDs) // one query for all page rows
 	for _, tl := range pageTitles {
 		running, label, failed, msg := titleActivityFrom(js, tl)
 		if len(running) > 0 {
@@ -467,7 +474,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		view := activityView{Title: tl, Running: running, ActiveLabel: label, Failed: failed, Error: msg}
 		var detail template.HTML
 		if tl.CatalogMangaID != nil {
-			if m, err := u.svc.GetManga(ctx, *tl.CatalogMangaID); err == nil {
+			if m, ok := mangas[*tl.CatalogMangaID]; ok {
 				detail = u.renderToHTML("mangaDetail", m)
 			}
 		}
@@ -685,10 +692,11 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	view.RefreshEvery = u.svc.Setting(r.Context(), service.SettingServeRefreshEvery, service.SettingDefault(service.SettingServeRefreshEvery))
 	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
 	linked := u.linkedSourceIDs(r.Context(), id)
+	allSources, _ := u.svc.ListSources(r.Context()) // one fetch for every source-derived section
 	view.LinkedSources = u.linkedSourceViews(r.Context(), title)
-	view.Sources = u.sourceView(r.Context(), title, linked)
-	view.SingleSources = filterSources(u.singleMangaSources(r.Context()), linked)
-	view.LinkSources = filterSources(u.searchableSources(r.Context()), linked)
+	view.Sources = u.sourceView(r.Context(), title, linked, allSources)
+	view.SingleSources = filterSources(singleMangaSources(allSources), linked)
+	view.LinkSources = filterSources(searchableSources(allSources), linked)
 	if title.CatalogMangaID != nil {
 		view.Manga, _ = u.svc.GetManga(r.Context(), *title.CatalogMangaID)
 	}
@@ -696,8 +704,7 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 }
 
 // singleMangaSources returns enabled sources flagged as single-manga.
-func (u *webUI) singleMangaSources(ctx context.Context) []sources.Source {
-	all, _ := u.svc.ListSources(ctx)
+func singleMangaSources(all []sources.Source) []sources.Source {
 	var out []sources.Source
 	for _, s := range all {
 		if s.SingleManga && s.Enabled {
@@ -708,8 +715,7 @@ func (u *webUI) singleMangaSources(ctx context.Context) []sources.Source {
 }
 
 // searchableSources returns enabled multi-manga sources, for specifying a page.
-func (u *webUI) searchableSources(ctx context.Context) []sources.Source {
-	all, _ := u.svc.ListSources(ctx)
+func searchableSources(all []sources.Source) []sources.Source {
 	var out []sources.Source
 	for _, s := range all {
 		if s.Enabled && !s.SingleManga {
@@ -864,7 +870,7 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 
 // sourceView builds the candidate-source list for a title, excluding sources
 // already linked.
-func (u *webUI) sourceView(ctx context.Context, title library.Title, linked map[string]bool) matchView {
+func (u *webUI) sourceView(ctx context.Context, title library.Title, linked map[string]bool, all []sources.Source) matchView {
 	if title.CatalogMangaID == nil {
 		return titleSourceView(title, false, false, "", nil)
 	}
@@ -877,11 +883,9 @@ func (u *webUI) sourceView(ctx context.Context, title library.Title, linked map[
 	// Only offer sources that are currently usable: stored candidates from
 	// sources that were disabled or deleted since must not be linkable.
 	usable := map[string]bool{}
-	if all, err := u.svc.ListSources(ctx); err == nil {
-		for _, src := range all {
-			if src.Enabled {
-				usable[src.ID] = true
-			}
+	for _, src := range all {
+		if src.Enabled {
+			usable[src.ID] = true
 		}
 	}
 	kept := matches[:0]
@@ -1079,12 +1083,16 @@ type importPickerView struct {
 }
 
 func (u *webUI) importPage(w http.ResponseWriter, r *http.Request) {
+	u.page(w, r, "import", "Import", nil) // candidates post-load: the dir scan can be slow
+}
+
+func (u *webUI) importCandidates(w http.ResponseWriter, r *http.Request) {
 	cands, err := u.svc.ExploreDownloads(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		u.fail(w, err)
 		return
 	}
-	u.page(w, r, "import", "Import", cands)
+	u.frag(w, "importCandidates", cands)
 }
 
 func (u *webUI) importSearch(w http.ResponseWriter, r *http.Request) {
@@ -1150,7 +1158,8 @@ func (u *webUI) titleSources(w http.ResponseWriter, r *http.Request) {
 		u.frag(w, "matches", matchView{DomID: fmt.Sprintf("sources-%d", id), PollURL: fmt.Sprintf("/ui/library/%d/sources", id)})
 		return
 	}
-	u.frag(w, "matches", u.sourceView(r.Context(), title, u.linkedSourceIDs(r.Context(), id)))
+	allSources, _ := u.svc.ListSources(r.Context())
+	u.frag(w, "matches", u.sourceView(r.Context(), title, u.linkedSourceIDs(r.Context(), id), allSources))
 }
 
 func (u *webUI) unlinkSource(w http.ResponseWriter, r *http.Request) {

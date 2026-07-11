@@ -7,7 +7,9 @@
   <div class="stat"><div class="stat-title">Sources healthy</div><div class="stat-value text-3xl">{{healthyCount .Sources}}<span class="text-base-content/40">/{{len .Sources}}</span></div></div>
 </div>
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
-{{template "servicesHealth" .Health}}
+<div id="services-health" hx-get="/ui/health" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Checking services…</div>
+</div>
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Recent jobs</h2>
 <div hx-get="/ui/jobs/table" hx-trigger="load"></div>
 {{end}}
@@ -253,6 +255,12 @@
 
 {{define "import"}}
 <p class="text-sm text-base-content/60 mb-4">Folders in your download directory that aren't tracked yet. Match each to an AniList title to import it and recognize its existing chapters.</p>
+<div hx-get="/ui/import/candidates" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Scanning download folder…</div>
+</div>
+{{end}}
+
+{{define "importCandidates"}}
 {{range $i, $c := .}}
 <div class="card bg-base-100 mb-3"><div class="card-body p-4">
   <div class="flex items-center justify-between gap-2 flex-wrap">

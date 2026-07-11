@@ -535,6 +535,11 @@ func (s *JobService) TitlesByProvider(ctx context.Context, provider string) (map
 }
 
 // GetManga returns stored catalog metadata for a manga.
+// MangaByIDs returns catalog manga keyed by ID in one query.
+func (s *JobService) MangaByIDs(ctx context.Context, ids []int64) (map[int64]catalog.Manga, error) {
+	return s.want.catalog.MangaByIDs(ctx, ids)
+}
+
 func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {
 	return s.want.GetManga(ctx, catalogID)
 }

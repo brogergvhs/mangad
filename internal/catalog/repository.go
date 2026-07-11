@@ -83,6 +83,32 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 }
 
 // GetManga returns one canonical manga row.
+// MangaByIDs returns the given manga keyed by ID, in one query.
+func (r *Repository) MangaByIDs(ctx context.Context, ids []int64) (map[int64]Manga, error) {
+	out := make(map[int64]Manga, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	marks := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		marks[i], args[i] = "?", id
+	}
+	rows, err := r.db.QueryContext(ctx, mangaSelect()+` WHERE id IN (`+strings.Join(marks, ",")+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("load manga batch: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		m, err := scanManga(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[m.ID] = m
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) GetManga(ctx context.Context, id int64) (Manga, error) {
 	row := r.db.QueryRowContext(ctx, mangaSelect()+` WHERE id = ?`, id)
 	m, err := scanManga(row)
