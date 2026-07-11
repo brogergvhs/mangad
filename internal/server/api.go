@@ -5,7 +5,6 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -531,11 +530,8 @@ func New(
 		}
 		writeJSON(w, status, map[string]any{"ok": ok, "error": errorString(err)})
 	})
-	handler := csrfGuard(limitBody(mux))
-	if key := strings.TrimSpace(apiKey); key != "" {
-		registerLogin(mux, key)
-		handler = requireAPIKey(handler, key)
-	}
+	registerAuthRoutes(mux, svc)
+	handler := requireUser(csrfGuard(limitBody(mux)), svc, strings.TrimSpace(apiKey))
 	return gzipMiddleware(handler)
 }
 
@@ -597,61 +593,6 @@ func csrfGuard(next http.Handler) http.Handler {
 			}
 		}
 		next.ServeHTTP(w, r)
-	})
-}
-
-// requireAPIKey authenticates via header, bearer, or a login cookie so the
-// browser UI stays usable (headers can't ride top-level navigations). Static
-// assets and the login route bootstrap the page unauthenticated.
-func requireAPIKey(next http.Handler, key string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if authorized(r, key) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-	})
-}
-
-func authorized(r *http.Request, key string) bool {
-	token := r.Header.Get("X-API-Key")
-	if token == "" {
-		token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	}
-	if token == "" {
-		if c, err := r.Cookie("mangad_session"); err == nil {
-			token = c.Value
-		}
-	}
-	return subtle.ConstantTimeCompare([]byte(token), []byte(key)) == 1
-}
-
-const loginHTML = `<!doctype html><meta charset="utf-8"><title>Sign in · MangaD</title>
-<link rel="stylesheet" href="/static/app.css">
-<main><h1>MangaD</h1><form class="panel stack" method="post" action="/login">
-<input type="password" name="key" placeholder="API key" autofocus>
-<button>Sign in</button></form></main>`
-
-func registerLogin(mux *http.ServeMux, key string) {
-	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.WriteString(w, loginHTML)
-	})
-	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
-		if subtle.ConstantTimeCompare([]byte(r.FormValue("key")), []byte(key)) != 1 {
-			http.Error(w, "invalid key", http.StatusUnauthorized)
-			return
-		}
-		http.SetCookie(w, &http.Cookie{Name: "mangad_session", Value: key, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 }
 
