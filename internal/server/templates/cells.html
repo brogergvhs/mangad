@@ -73,13 +73,13 @@
       <div class="min-w-0 flex-1">
         {{template "chapterName" .ChapterStatus}}
         <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50 sm:hidden">
-          <span>{{.Percent}}%</span>
+          <span {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
           {{template "chapterReadAction" .ChapterStatus}}
           <span>{{.Size}}</span>
         </div>
       </div>
       <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/60 shrink-0">
-        <span class="w-10 text-right tabular-nums">{{.Percent}}%</span>
+        <span class="w-10 text-right tabular-nums cursor-help" {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
         {{template "chapterReadAction" .ChapterStatus}}
         <span class="w-20 text-right tabular-nums">{{.Size}}</span>
       </div>
@@ -90,12 +90,12 @@
     {{end}}
   </div>
   {{if gt .TotalPages 1}}
-  <div class="mt-3 flex items-center justify-between gap-3 flex-wrap">
+  <div class="mt-3 grid gap-2">
     <span class="text-sm text-base-content/60">{{.RangeStart}}–{{.RangeEnd}} of {{.Total}}</span>
-    <div class="join">
-      <button class="btn btn-sm join-item" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#chapters-table" hx-swap="outerHTML">‹</button>
-      <button class="btn btn-sm join-item pointer-events-none">{{.Page}} / {{.TotalPages}}</button>
-      <button class="btn btn-sm join-item" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#chapters-table" hx-swap="outerHTML">›</button>
+    <div class="join max-sm:w-full">
+      <button class="btn join-item max-sm:flex-1" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#chapters-table" hx-swap="outerHTML">‹</button>
+      <button class="btn join-item pointer-events-none max-sm:flex-1">{{.Page}} / {{.TotalPages}}</button>
+      <button class="btn join-item max-sm:flex-1" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#chapters-table" hx-swap="outerHTML">›</button>
     </div>
   </div>
   {{end}}

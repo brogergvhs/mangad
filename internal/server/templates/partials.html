@@ -43,7 +43,7 @@
       </div>
       <div class="shrink-0">
         {{if eq .SourceURL $.LinkedURL}}<span class="badge badge-success badge-soft badge-sm">✓ linked</span>
-        {{else}}<button class="btn btn-xs" hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use</button>{{end}}
+        {{else}}<button class="btn btn-sm btn-outline" hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use</button>{{end}}
       </div>
     </div>
     {{end}}

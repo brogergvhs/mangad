@@ -705,6 +705,7 @@ type chaptersView struct {
 type chapterRowView struct {
 	library.ChapterStatus
 	Percent int
+	ReadTip string // e.g. "7/12 pages read"
 	Size    string
 	When    string
 	Tint    string
@@ -746,6 +747,7 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 		t.Chapters = append(t.Chapters, chapterRowView{
 			ChapterStatus: c,
 			Percent:       chapterReadPercent(c),
+			ReadTip:       chapterReadTip(c),
 			Size:          size,
 			When:          when,
 			Tint:          chapterRowClass(c),
@@ -1548,6 +1550,22 @@ func chapterReadPercent(c library.ChapterStatus) int {
 		pct = 99
 	}
 	return pct
+}
+
+// chapterReadTip describes read progress as pages, e.g. "7/12 pages read".
+func chapterReadTip(c library.ChapterStatus) string {
+	total := c.TotalPages
+	if total <= 0 {
+		total = c.Pages
+	}
+	if total <= 0 {
+		return ""
+	}
+	read := c.ReadPages
+	if c.Read {
+		read = total
+	}
+	return fmt.Sprintf("%d/%d pages read", read, total)
 }
 
 // chapterRowClass tints a chapter row by download state.

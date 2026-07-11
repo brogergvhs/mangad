@@ -160,7 +160,7 @@
     {{end}}
 
     <div class="flex items-center justify-between gap-2 flex-wrap">
-      <button class="btn btn-outline" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
+      <button class="btn btn-outline max-sm:w-full" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
     </div>
     {{template "matches" .Sources}}
 
@@ -176,7 +176,7 @@
           <span class="text-xs text-base-content/60">Single-manga source</span>
           <div class="flex flex-wrap items-center gap-2">
             <select name="source_id" class="select select-sm min-w-40 flex-1">{{range .SingleSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
-            <button class="btn btn-sm btn-outline">Use this source</button>
+            <button class="btn btn-sm btn-outline max-sm:w-full">Use this source</button>
           </div>
         </form>
         {{end}}
@@ -186,7 +186,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <select name="source_id" class="select select-sm shrink-0">{{range .LinkSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
             <input name="url" class="input input-sm min-w-40 flex-1" placeholder="https://source/manga/…" required>
-            <button class="btn btn-sm btn-outline">Check &amp; link</button>
+            <button class="btn btn-sm btn-outline max-sm:w-full">Check &amp; link</button>
             <span id="verify-spin" class="htmx-indicator loading loading-sm"></span>
           </div>
         </form>
