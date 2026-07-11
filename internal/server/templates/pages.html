@@ -207,10 +207,16 @@
     </details>
   </div>
 </div>
-<input class="input input-sm w-full mb-2" name="q" placeholder="Filter chapters…"
+<form class="mb-2 flex items-center gap-2"
   hx-get="/ui/library/{{.Title.ID}}/chapters" hx-target="#chapters-table" hx-swap="outerHTML"
-  hx-trigger="keyup changed delay:300ms">
-<div class="card bg-base-100"><div class="card-body p-2 sm:p-4">{{template "table" .ChaptersTable}}</div></div>
+  hx-trigger="change, keyup changed delay:300ms from:input[name='q']">
+  <input class="input input-sm w-full" name="q" placeholder="Filter chapters…">
+  <select class="select select-sm shrink-0" name="dir" aria-label="Sort direction">
+    <option value="asc">Oldest first</option>
+    <option value="desc">Newest first</option>
+  </select>
+</form>
+{{template "chaptersList" .ChaptersTable}}
 {{end}}
 
 {{define "sourceProbe"}}

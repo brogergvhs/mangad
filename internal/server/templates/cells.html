@@ -64,3 +64,40 @@
   {{if .LastError}}<div class="text-sm text-error">{{.LastError}}</div>{{end}}
 </div>
 {{end}}
+
+{{define "chaptersList"}}
+<div id="chapters-table">
+  <div class="divide-y divide-line/25">
+    {{range .Chapters}}
+    <div class="flex items-center gap-3 px-2 py-2 rounded {{.Tint}}">
+      <div class="min-w-0 flex-1">
+        {{template "chapterName" .ChapterStatus}}
+        <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50 sm:hidden">
+          <span>{{.Percent}}%</span>
+          {{template "chapterReadAction" .ChapterStatus}}
+          <span>{{.Size}}</span>
+        </div>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/60 shrink-0">
+        <span class="w-10 text-right tabular-nums">{{.Percent}}%</span>
+        {{template "chapterReadAction" .ChapterStatus}}
+        <span class="w-20 text-right tabular-nums">{{.Size}}</span>
+      </div>
+      <span class="w-20 text-right text-xs text-base-content/50 whitespace-nowrap shrink-0">{{.When}}</span>
+    </div>
+    {{else}}
+    <p class="text-base-content/60 py-3">{{.Empty}}</p>
+    {{end}}
+  </div>
+  {{if gt .TotalPages 1}}
+  <div class="mt-3 flex items-center justify-between gap-3 flex-wrap">
+    <span class="text-sm text-base-content/60">{{.RangeStart}}–{{.RangeEnd}} of {{.Total}}</span>
+    <div class="join">
+      <button class="btn btn-sm join-item" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#chapters-table" hx-swap="outerHTML">‹</button>
+      <button class="btn btn-sm join-item pointer-events-none">{{.Page}} / {{.TotalPages}}</button>
+      <button class="btn btn-sm join-item" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#chapters-table" hx-swap="outerHTML">›</button>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

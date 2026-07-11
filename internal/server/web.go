@@ -78,7 +78,7 @@ type healthView struct {
 type activityView struct {
 	Title         library.Title
 	Manga         catalog.Manga
-	ChaptersTable tableData
+	ChaptersTable chaptersView
 	Sources       matchView
 	LinkedSources []linkedSourceView // sources already linked to this title
 	SingleSources []sources.Source   // single-manga sources selectable for linking
@@ -693,11 +693,28 @@ func (u *webUI) writeChaptersTable(w http.ResponseWriter, r *http.Request, title
 		http.NotFound(w, r)
 		return
 	}
-	u.frag(w, "table", u.buildChaptersTable(r.Context(), title, r.URL.Query()))
+	u.frag(w, "chaptersList", u.buildChaptersTable(r.Context(), title, r.URL.Query()))
 }
 
-func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, values url.Values) tableData {
+// chaptersView drives the custom chapters list (reuses tableData paging).
+type chaptersView struct {
+	tableData
+	Chapters []chapterRowView
+}
+
+type chapterRowView struct {
+	library.ChapterStatus
+	Percent int
+	Size    string
+	When    string
+	Tint    string
+}
+
+func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, values url.Values) chaptersView {
 	page, key, dir := tableParams(values, chaptersPerPage)
+	if key == "" {
+		key = "number"
+	}
 	chs, _ := u.svc.TitleChapters(ctx, title.ID)
 	chs = filterChapters(chs, values.Get("q"))
 	sortChapters(chs, key, dir)
@@ -707,36 +724,25 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 	if strings.HasPrefix(title.SourceURL, "http") {
 		empty = "No chapters yet — refresh to discover them."
 	}
-	t := tableData{
+	t := chaptersView{tableData: tableData{
 		ID: "chapters-table", BaseURL: fmt.Sprintf("/ui/library/%d/chapters", title.ID),
 		Page: page, PerPage: chaptersPerPage, Total: total, Sort: key, Dir: dir, Empty: empty,
 		Params: chapterTableParams(values),
-		Columns: []tableColumn{
-			{Label: "Chapter", SortKey: "number"},
-			{Label: "Read", SortKey: "read"},
-			{Label: "Size"},
-			{Label: ""},
-			{Label: "Downloaded", SortKey: "downloaded", Class: "text-right"},
-		},
-	}
+	}}
 	for _, c := range rows {
-		size, when := "—", "—"
+		size, when := "—", ""
 		if c.Downloaded {
 			size = util.Human(c.Bytes)
 			if c.DownloadedAt != nil {
 				when = c.DownloadedAt.Local().Format("02 Jan 2006")
 			}
 		}
-		t.Rows = append(t.Rows, tableRow{
-			ID:    strconv.FormatInt(c.ID, 10),
-			Class: chapterRowClass(c),
-			Cells: []template.HTML{
-				u.renderToHTML("chapterName", c),
-				text(strconv.Itoa(chapterReadPercent(c)) + "%"),
-				text(size),
-				u.renderToHTML("chapterReadAction", c),
-				template.HTML(`<span class="text-xs text-base-content/50 whitespace-nowrap float-right">` + template.HTMLEscapeString(when) + `</span>`),
-			},
+		t.Chapters = append(t.Chapters, chapterRowView{
+			ChapterStatus: c,
+			Percent:       chapterReadPercent(c),
+			Size:          size,
+			When:          when,
+			Tint:          chapterRowClass(c),
 		})
 	}
 	return t
@@ -1568,6 +1574,9 @@ func chapterTableParams(values url.Values) url.Values {
 	out := url.Values{}
 	if q := strings.TrimSpace(values.Get("q")); q != "" {
 		out.Set("q", q)
+	}
+	if values.Get("dir") == "desc" {
+		out.Set("dir", "desc")
 	}
 	return out
 }
