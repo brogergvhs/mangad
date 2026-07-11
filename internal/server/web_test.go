@@ -11,35 +11,35 @@ func TestTitleActivityFromTargetedTitleJob(t *testing.T) {
 	t.Parallel()
 
 	title := library.Title{ID: 42, Monitored: true}
-	// A queued job locks the button (running map) but shows no live label.
-	running, label, failed, _ := titleActivityFrom([]jobs.Job{{
+	// A queued job locks the button, shows no live label, and is listed as queued.
+	running, label, queued, failed, _ := titleActivityFrom([]jobs.Job{{
 		Type:    jobs.TypeDownloadMissing,
 		Status:  "queued",
 		Payload: `{"title_id":42}`,
 	}}, title)
-	if failed || label != "" || !running[jobs.TypeDownloadMissing] {
-		t.Fatalf("queued: running %v label %q failed %v", running, label, failed)
+	if failed || label != "" || !running[jobs.TypeDownloadMissing] || len(queued) != 1 || queued[0] != "downloading" {
+		t.Fatalf("queued: running %v label %q queued %v failed %v", running, label, queued, failed)
 	}
-	// A running job additionally surfaces the live label.
-	running, label, failed, _ = titleActivityFrom([]jobs.Job{{
+	// A running job surfaces the live label instead.
+	running, label, queued, failed, _ = titleActivityFrom([]jobs.Job{{
 		Type:    jobs.TypeDownloadMissing,
 		Status:  "running",
 		Payload: `{"title_id":42}`,
 	}}, title)
-	if failed || label != "downloading" || !running[jobs.TypeDownloadMissing] {
-		t.Fatalf("running: running %v label %q failed %v", running, label, failed)
+	if failed || label != "downloading" || len(queued) != 0 || !running[jobs.TypeDownloadMissing] {
+		t.Fatalf("running: running %v label %q queued %v failed %v", running, label, queued, failed)
 	}
 }
 
 func TestTitleActivityFromIgnoresGlobalTitleJob(t *testing.T) {
 	t.Parallel()
 
-	running, label, failed, _ := titleActivityFrom([]jobs.Job{{
+	running, label, queued, failed, _ := titleActivityFrom([]jobs.Job{{
 		Type:    jobs.TypeDownloadMissing,
 		Status:  "queued",
 		Payload: `{}`,
 	}}, library.Title{ID: 42, Monitored: true})
-	if len(running) != 0 || label != "" || failed {
+	if len(running) != 0 || label != "" || len(queued) != 0 || failed {
 		t.Fatalf("activity = running %v label %q failed %v", running, label, failed)
 	}
 }

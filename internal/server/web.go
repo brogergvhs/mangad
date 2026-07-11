@@ -91,6 +91,7 @@ type activityView struct {
 	RefreshEvery  string             // effective global refresh cadence
 	Running       map[string]bool    // job type -> active (for button locking)
 	ActiveLabel   string
+	Queued        []string
 	Failed        bool
 	Error         string
 	ReadLabel     string
@@ -484,7 +485,8 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 	}
 	mangas, _ := u.svc.MangaByIDs(ctx, catalogIDs) // one query for all page rows
 	for _, tl := range pageTitles {
-		running, label, failed, msg := titleActivityFrom(js, tl)
+		running, label, queued, failed, msg := titleActivityFrom(js, tl)
+		_ = queued
 		if len(running) > 0 {
 			t.Poll = true
 		}
@@ -1635,12 +1637,13 @@ func (u *webUI) titleActivity(ctx context.Context, id int64) activityView {
 	if err != nil {
 		title = library.Title{ID: id, Monitored: true}
 	}
-	running, label, failed, msg := titleActivityFrom(u.jobs(ctx), title)
-	return activityView{Title: title, Running: running, ActiveLabel: label, Failed: failed, Error: msg}
+	running, label, queued, failed, msg := titleActivityFrom(u.jobs(ctx), title)
+	return activityView{Title: title, Running: running, ActiveLabel: label, Queued: queued, Failed: failed, Error: msg}
 }
 
-func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]bool, label string, failed bool, msg string) {
+func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]bool, label string, queued []string, failed bool, msg string) {
 	running = map[string]bool{}
+	queuedSeen := map[string]bool{}
 	for _, j := range js { // List is newest-first
 		var p service.JobPayload
 		if json.Unmarshal([]byte(j.Payload), &p) != nil {
@@ -1657,11 +1660,14 @@ func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]b
 		switch {
 		case active:
 			running[j.Type] = true
-			// Only surface a live indicator for a job that is actually
-			// running; a merely-queued job shows nothing (but still locks its
-			// button and keeps the poll alive via the running map).
+			// A running job shows the live spinner; merely waiting jobs are
+			// listed as queued.
 			if label == "" && j.Status == "running" {
 				label = verb
+			}
+			if j.Status == "queued" && !queuedSeen[j.Type] {
+				queuedSeen[j.Type] = true
+				queued = append(queued, verb)
 			}
 		case isFailed && !failed:
 			failed, msg = true, j.LastError
@@ -1670,7 +1676,7 @@ func titleActivityFrom(js []jobs.Job, title library.Title) (running map[string]b
 	if len(running) > 0 {
 		failed = false // something is running; don't also show the last failure
 	}
-	return running, label, failed, msg
+	return running, label, queued, failed, msg
 }
 
 func titleVerb(typ string) string {
