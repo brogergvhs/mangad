@@ -712,6 +712,12 @@ type chapterRowView struct {
 
 func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, values url.Values) chaptersView {
 	page, key, dir := tableParams(values, chaptersPerPage)
+	// The sort dropdown submits one combined "order" value, e.g. "read-desc".
+	if o := values.Get("order"); o != "" {
+		if k, d, ok := strings.Cut(o, "-"); ok {
+			key, dir = k, d
+		}
+	}
 	if key == "" {
 		key = "number"
 	}
@@ -1577,6 +1583,9 @@ func chapterTableParams(values url.Values) url.Values {
 	}
 	if values.Get("dir") == "desc" {
 		out.Set("dir", "desc")
+	}
+	if o := values.Get("order"); o != "" {
+		out.Set("order", o)
 	}
 	return out
 }

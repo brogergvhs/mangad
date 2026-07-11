@@ -67,9 +67,9 @@
 
 {{define "chaptersList"}}
 <div id="chapters-table">
-  <div class="divide-y divide-line/25">
+  <div class="divide-y divide-line/25 rounded-xl overflow-hidden">
     {{range .Chapters}}
-    <div class="flex items-center gap-3 px-2 py-2 rounded {{.Tint}}">
+    <div class="flex items-center gap-3 p-4 {{.Tint}}">
       <div class="min-w-0 flex-1">
         {{template "chapterName" .ChapterStatus}}
         <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50 sm:hidden">
@@ -83,7 +83,7 @@
         {{template "chapterReadAction" .ChapterStatus}}
         <span class="w-20 text-right tabular-nums">{{.Size}}</span>
       </div>
-      <span class="w-20 text-right text-xs text-base-content/50 whitespace-nowrap shrink-0">{{.When}}</span>
+      <span class="w-20 text-right text-sm text-base-content/50 whitespace-nowrap shrink-0">{{.When}}</span>
     </div>
     {{else}}
     <p class="text-base-content/60 py-3">{{.Empty}}</p>

@@ -96,15 +96,15 @@
         <li><button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>{{template "iconDownload"}}Download missing{{if gt .Title.FailedCount 0}} · {{.Title.FailedCount}} failed{{end}}</button></li>{{end}}
         {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
         <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
-        {{if linked .Title.SourceURL}}<li><button onclick="settings_modal_{{.Title.ID}}.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+        {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
         <li><button class="text-error" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none" hx-confirm="Remove this title and its tracked chapters?">{{template "iconTrash"}}Remove title</button></li>
       </ul>
     </details>
   </div>
 </div>
 
-<div class="card card-side bg-base-100 mb-4">
-  <figure class="shrink-0 p-4"><img class="rounded-lg object-cover bg-base-300 max-sm:h-28 max-sm:w-20" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
+<div class="card card-side bg-base-100 mb-4 max-lg:flex-col">
+  <figure class="shrink-0 p-4 max-lg:self-center max-lg:pb-0"><img class="h-40 w-28 rounded-lg object-cover bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
   <div class="card-body gap-3">
     <!-- <div class="text-sm text-base-content/60"> -->
     <!--   {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a> -->
@@ -119,7 +119,7 @@
 {{template "titleActivity" .}}
 
 {{if linked .Title.SourceURL}}
-<dialog id="settings_modal_{{.Title.ID}}" class="modal">
+<dialog id="title_settings_modal" class="modal">
   <div class="modal-box">
     <h3 class="text-lg font-bold mb-3">Title settings</h3>
     <form hx-post="/ui/library/{{.Title.ID}}/refresh-interval" hx-swap="none">
@@ -128,8 +128,8 @@
         <span class="label">Leave blank to use the global schedule. Example: 6h, 30m.</span>
       </label>
       <div class="modal-action">
-        <button type="button" class="btn btn-ghost" onclick="settings_modal_{{.Title.ID}}.close()">Close</button>
-        <button class="btn btn-primary" onclick="settings_modal_{{.Title.ID}}.close()">Save</button>
+        <button type="button" class="btn btn-ghost" onclick="title_settings_modal.close()">Close</button>
+        <button class="btn btn-primary" onclick="title_settings_modal.close()">Save</button>
       </div>
     </form>
   </div>
@@ -194,12 +194,12 @@
   </div>
 </div>
 
-<div class="flex items-center justify-between gap-2 mt-6 mb-3 flex-wrap">
+<div class="flex sm:items-center justify-between gap-2 mt-6 mb-3 max-sm:flex-col">
   <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Chapters · {{.ChaptersTable.Total}}</h2>
-  <div class="flex items-center gap-2">
-    {{if gt .Title.CompletedCount 0}}<a class="btn btn-sm btn-primary" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
-    <details class="dropdown dropdown-end">
-      <summary class="btn btn-sm btn-ghost">Bulk mark</summary>
+  <div class="flex sm:items-center gap-2 max-sm:flex-col">
+    {{if gt .Title.CompletedCount 0}}<a class="btn btn-sm px-5 py-2.5 btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+    <details class="dropdown dropdown-end max-sm:w-full">
+      <summary class="btn btn-sm px-5 py-2.5 btn-ghost max-sm:w-full">Bulk mark</summary>
       <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
         <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
         <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
@@ -211,9 +211,13 @@
   hx-get="/ui/library/{{.Title.ID}}/chapters" hx-target="#chapters-table" hx-swap="outerHTML"
   hx-trigger="change, keyup changed delay:300ms from:input[name='q']">
   <input class="input input-sm w-full" name="q" placeholder="Filter chapters…">
-  <select class="select select-sm shrink-0" name="dir" aria-label="Sort direction">
-    <option value="asc">Oldest first</option>
-    <option value="desc">Newest first</option>
+  <select class="select select-sm shrink-0" name="order" aria-label="Sort chapters">
+    <option value="number-asc">Oldest first</option>
+    <option value="number-desc">Newest first</option>
+    <option value="label-asc">Label ↑</option>
+    <option value="label-desc">Label ↓</option>
+    <option value="read-asc">Least read</option>
+    <option value="read-desc">Most read</option>
   </select>
 </form>
 {{template "chaptersList" .ChaptersTable}}

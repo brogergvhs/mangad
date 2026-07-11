@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
@@ -211,6 +211,8 @@ func sortChapters(cs []library.ChapterStatus, key, dir string) {
 			}
 			return a.SuffixNum < b.SuffixNum
 		}
+	case "label":
+		less = func(a, b library.ChapterStatus) bool { return naturalLess(a.Label, b.Label) }
 	case "read":
 		less = func(a, b library.ChapterStatus) bool { return chapterReadPercent(a) < chapterReadPercent(b) }
 	case "downloaded":

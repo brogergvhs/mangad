@@ -57,7 +57,12 @@
 
 {{define "progressBar"}}
 <progress class="progress progress-primary" value="{{.CompletedCount}}" max="{{.DiscoveredCount}}"></progress>
-<div class="text-sm text-base-content/60">{{.CompletedCount}}/{{.DiscoveredCount}} · {{.MissingCount}} missing{{if gt .FailedCount 0}} · {{.FailedCount}} failed{{end}} · {{humanBytes .SizeBytes}} · {{.Pages}} pages</div>
+<div class="text-sm text-base-content/60 flex flex-wrap gap-x-2 max-sm:justify-between max-sm:w-full">
+  <span>{{.CompletedCount}}/{{.DiscoveredCount}}</span><span class="max-sm:hidden">·</span>
+  <span>{{.MissingCount}} missing</span>{{if gt .FailedCount 0}}<span class="max-sm:hidden">·</span><span>{{.FailedCount}} failed</span>{{end}}<span class="max-sm:hidden">·</span>
+  <span>{{humanBytes .SizeBytes}}</span><span class="max-sm:hidden">·</span>
+  <span>{{.Pages}} pages</span>
+</div>
 {{end}}
 
 {{define "monitorToggle"}}
