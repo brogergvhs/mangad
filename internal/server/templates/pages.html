@@ -160,7 +160,7 @@
     {{end}}
 
     <div class="flex items-center justify-between gap-2 flex-wrap">
-      <button class="btn btn-outline max-sm:w-full" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
+      <button class="btn btn-sm btn-outline max-sm:w-full" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
     </div>
     {{template "matches" .Sources}}
 
@@ -193,13 +193,13 @@
         {{end}}
       </div>
     </details>
-    <div id="verify-{{.Title.ID}}"></div>
+    <div id="verify-{{.Title.ID}}" class="empty:hidden"></div>
     {{end}}
   </div>
 </div>
 
 <div class="flex sm:items-center justify-between gap-2 mt-6 mb-3 max-sm:flex-col">
-  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Chapters · {{.ChaptersTable.Total}}</h2>
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.ChaptersTable.Total}} Chapters</h2>
   <div class="flex sm:items-center gap-2 max-sm:flex-col">
     {{if gt .Title.CompletedCount 0}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
     <details class="dropdown dropdown-end max-sm:w-full">

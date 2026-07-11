@@ -44,6 +44,14 @@
     --control-sm: 2rem;
     --control-xs: 1.5rem;
   }
+  /* touch-friendlier controls on small screens: every size steps up */
+  @media (max-width: 640px) {
+    :root {
+      --control-md: 2.75rem;
+      --control-sm: 2.375rem;
+      --control-xs: 1.75rem;
+    }
+  }
 
   /* ---- buttons ---- */
   .btn {
