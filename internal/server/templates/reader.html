@@ -5,14 +5,14 @@
   data-resume-page="{{.Manifest.ResumePage}}">
   <div class="reader-controls">
     <div class="reader-nav-left">
-      <a class="button ghost" href="/library/{{.Title.ID}}">Back</a>
-      {{if .PrevURL}}<a class="button ghost" data-reader-prev href="{{.PrevURL}}">Prev chapter</a>{{end}}
+      <a class="btn btn-primary btn-sm" href="/library/{{.Title.ID}}">Back</a>
+      {{if .PrevURL}}<a class="btn btn-outline btn-sm" data-reader-prev href="{{.PrevURL}}">Prev chapter</a>{{end}}
     </div>
     <div class="reader-title">
       <span id="reader-position">{{.PagePosition}}</span>
     </div>
     <div class="reader-nav-right">
-      {{if .NextURL}}<a class="button ghost" data-reader-next href="{{.NextURL}}">Next chapter</a>{{end}}
+      {{if .NextURL}}<a class="btn btn-outline btn-sm" data-reader-next href="{{.NextURL}}">Next chapter</a>{{end}}
     </div>
   </div>
   {{if .Empty}}

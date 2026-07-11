@@ -253,6 +253,11 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
 		}
 	}
+	// zazamanga was removed as a built-in (its image CDN blocks downloads);
+	// clear the stale row from existing databases. Local overrides are kept.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sources WHERE id = 'zazamanga' AND origin = 'builtin'`); err != nil {
+		return fmt.Errorf("remove zazamanga source: %w", err)
+	}
 	// The per-title refresh interval used to default to 24h; treat those
 	// (never a user choice) as "use the global cadence".
 	if _, err = tx.ExecContext(ctx, `UPDATE titles SET refresh_interval = '' WHERE refresh_interval = '24h'`); err != nil {

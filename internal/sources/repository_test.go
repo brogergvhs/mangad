@@ -151,9 +151,6 @@ func TestBuiltInProfiles(t *testing.T) {
 		if profile.ID == "" || profile.BaseURL == "" || profile.SampleMangaURL == "" {
 			t.Fatalf("incomplete profile = %#v", profile)
 		}
-		if profile.ID == "zazamanga" && (!profile.RequiresBrowserDownload || profile.MinChapters != 42) {
-			t.Fatalf("zazamanga profile = %#v", profile)
-		}
 		if profile.ID == "comickz" && profile.Scraper != "comickz" {
 			t.Fatalf("comickz profile = %#v", profile)
 		}
