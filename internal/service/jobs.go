@@ -1160,7 +1160,8 @@ func titleRefreshDue(title library.Title, now time.Time) bool {
 func globalTitleJobApplies(typ string, title library.Title, now time.Time) bool {
 	switch typ {
 	case jobs.TypeRefreshTitle:
-		return title.Monitored && titleRefreshDue(title, now)
+		// pending:/local: titles have nothing to refresh from
+		return title.Monitored && strings.HasPrefix(title.SourceURL, "http") && titleRefreshDue(title, now)
 	case jobs.TypeDownloadMissing:
 		return title.Monitored && strings.HasPrefix(title.SourceURL, "http") && (title.MissingCount > 0 || title.DiscoveredCount == 0)
 	case jobs.TypeScanDownloads:

@@ -29,3 +29,23 @@ func TestTitleRefreshDue(t *testing.T) {
 		}
 	}
 }
+
+func TestGlobalJobsSkipUnlinkedTitles(t *testing.T) {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://mangapill.com/manga/1/x", true},
+		{"local:Infinite%20leveling%20murim", false},
+		{"pending:42", false},
+	} {
+		title := library.Title{SourceURL: tc.url, Monitored: true, MissingCount: 3, DiscoveredCount: 10}
+		if got := globalTitleJobApplies("refresh_title", title, now); got != tc.want {
+			t.Errorf("refresh applies(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+		if got := globalTitleJobApplies("download_missing", title, now); got != tc.want {
+			t.Errorf("download applies(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}

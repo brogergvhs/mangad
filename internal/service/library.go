@@ -195,6 +195,9 @@ func (s *LibraryService) RefreshTitle(
 	logSvc ui.Log,
 	title library.Title,
 ) (RefreshResult, error) {
+	if !strings.HasPrefix(title.SourceURL, "http") {
+		return RefreshResult{}, fmt.Errorf("title %q has no linked source to refresh from", title.DisplayTitle)
+	}
 	downloadSvc, err := s.downloadServiceForTitle(ctx, cfg, logSvc, nil, title)
 	if err != nil {
 		return RefreshResult{}, err
