@@ -54,8 +54,8 @@
   </select>
 </form>
 <div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
-<div id="search-results"><div hx-get="/ui/search/trending" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div></div>
 <div hx-get="/ui/anilist/suggestions" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div>
+<div id="search-results"><div hx-get="/ui/search/trending" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div></div>
 {{end}}
 
 {{define "library"}}
@@ -109,8 +109,8 @@
     </select></label>
   </div>
 </form>
-<div id="library-results">{{template "libraryResults" .Table}}</div>
 <div hx-get="/ui/anilist/suggestions?view={{.Controls.View}}" hx-trigger="load" hx-swap="outerHTML"></div>
+<div id="library-results">{{template "libraryResults" .Table}}</div>
 {{end}}
 
 {{define "title"}}

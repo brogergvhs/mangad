@@ -602,14 +602,14 @@ func hasNumericPathPart(parts []string) bool {
 	return false
 }
 
-// sameSeriesSlug accepts chapter URLs whose own slug embeds the series slug,
+// sameSeriesSlug accepts chapter URLs whose path embeds the series slug
 func sameSeriesSlug(baseParts, candidateParts []string) bool {
 	slug := baseParts[len(baseParts)-1]
 	if len(slug) < 4 {
 		return false // too short to be a distinctive series slug
 	}
 	for _, part := range candidateParts {
-		if strings.HasPrefix(part, slug+"-") {
+		if part == slug || strings.HasPrefix(part, slug+"-") {
 			return true
 		}
 	}

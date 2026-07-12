@@ -458,11 +458,24 @@ func TestSameSeriesChapterLinkAcceptsEmbeddedSlug(t *testing.T) {
 		{"https://rizzfables.com/chapter/r2311170-top-tier-providence-chapter-225", true},
 		{"https://rizzfables.com/chapter/r2311170-top-tier-providence-chapter-223.5", true},
 		{"https://rizzfables.com/chapter/other-series-chapter-1", false},
+		{"https://rizzfables.com/read/r2311170-top-tier-providence/en/chapter-3", true},
 		{"https://other-site.com/chapter/r2311170-top-tier-providence-chapter-225", false},
 	}
 	for _, tc := range cases {
 		if got := sameSeriesChapterLink(page, tc.href); got != tc.want {
 			t.Errorf("sameSeriesChapterLink(%q) = %v, want %v", tc.href, got, tc.want)
 		}
+	}
+}
+
+// MangaFire embeds the series slug as an exact path segment of chapter URLs:
+// /title/{slug} → /read/{slug}/en/chapter-N.
+func TestSameSeriesChapterLinkAcceptsSlugSegment(t *testing.T) {
+	page := "https://mangafire.to/title/k39vr-edens-last-stand"
+	if !sameSeriesChapterLink(page, "https://mangafire.to/read/k39vr-edens-last-stand/en/chapter-12") {
+		t.Fatal("slug-segment chapter link rejected")
+	}
+	if sameSeriesChapterLink(page, "https://mangafire.to/read/other-manga/en/chapter-12") {
+		t.Fatal("foreign chapter link accepted")
 	}
 }
