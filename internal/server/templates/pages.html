@@ -369,7 +369,8 @@
           <label class="fieldset"><span class="fieldset-legend">Scraper</span>
             <select class="select w-full" name="scraper">
               {{range .Scrapers}}<option value="{{.}}" {{if eq . "generic"}}selected{{end}}>{{.}}</option>{{end}}
-            </select><span class="label">How chapter lists are read; generic fits most sites.</span></label>
+            </select><span class="label">How chapter lists are read; generic fits most sites.</span>
+          </label>
           <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="solver"> Load pages with FlareSolverr (Cloudflare)</label>
           <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="browser"> Capture images with a browser</label>
           <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="single_manga"> Single-manga source (no search)</label>

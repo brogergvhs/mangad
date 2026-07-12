@@ -148,23 +148,26 @@
       <label class="fieldset"><span class="fieldset-legend">Domains (comma-separated)</span><input class="input w-full" name="domains" value="{{range $i, $d := .Domains}}{{if $i}}, {{end}}{{$d}}{{end}}"></label>
       <label class="fieldset"><span class="fieldset-legend">Image types (comma-separated)</span><input class="input w-full" name="extensions" value="{{range $i, $e := .AllowedExtensions}}{{if $i}}, {{end}}{{$e}}{{end}}"></label>
       <div class="grid grid-cols-2 gap-3">
-        <label class="fieldset"><span class="fieldset-legend">Scraper</span>
-          <select class="select w-full" name="scraper">
-            {{$cur := .Scraper}}{{range .Scrapers}}<option value="{{.}}" {{if eq . $cur}}selected{{end}}>{{.}}</option>{{end}}
-          </select><span class="label">How chapter lists are read; generic fits most sites.</span></label>
         <label class="fieldset"><span class="fieldset-legend">Pages fetch</span>
           <select class="select w-full" name="chapter_fetch">
             <option value="" {{if eq .ChapterFetch ""}}selected{{end}}>auto</option>
             <option value="http" {{if eq .ChapterFetch "http"}}selected{{end}}>http</option>
             <option value="solver" {{if eq .ChapterFetch "solver"}}selected{{end}}>solver (FlareSolverr)</option>
-          </select></label>
+          </select>
+        </label>
         <label class="fieldset"><span class="fieldset-legend">Images fetch</span>
           <select class="select w-full" name="image_fetch">
             <option value="" {{if eq .ImageFetch ""}}selected{{end}}>auto</option>
             <option value="http" {{if eq .ImageFetch "http"}}selected{{end}}>http</option>
             <option value="browser" {{if eq .ImageFetch "browser"}}selected{{end}}>browser (Selenium)</option>
-          </select></label>
+          </select>
+        </label>
       </div>
+      <label class="fieldset"><span class="fieldset-legend">Scraper</span>
+        <select class="select w-full" name="scraper">
+          {{$cur := .Scraper}}{{range .Scrapers}}<option value="{{.}}" {{if eq . $cur}}selected{{end}}>{{.}}</option>{{end}}
+        </select><span class="label">How chapter lists are read; generic fits most sites.</span>
+      </label>
       <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="single_manga" {{if .SingleManga}}checked{{end}}> Single manga source (no search)</label>
       <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="enabled" {{if .Enabled}}checked{{end}}> Enabled</label>
       <div class="modal-action">
