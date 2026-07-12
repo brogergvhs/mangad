@@ -47,6 +47,7 @@ type WantedService struct {
 
 // AniListAPI is the catalog metadata client surface used by services.
 type AniListAPI interface {
+	Get(context.Context, int) (catalog.Manga, error)
 	Related(context.Context, int, int) ([]catalog.Manga, error)
 	Trending(context.Context, int) ([]catalog.Manga, error)
 	UserList(context.Context, int) ([]catalog.AniListEntry, error)

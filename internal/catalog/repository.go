@@ -72,6 +72,8 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 			authors_json = excluded.authors_json,
 			year = excluded.year,
 			average_score = excluded.average_score,
+			is_adult = excluded.is_adult,
+			tags_json = excluded.tags_json,
 			wanted = CASE WHEN excluded.wanted != 0 THEN excluded.wanted ELSE catalog_manga.wanted END,
 			raw_json = excluded.raw_json,
 			updated_at = CURRENT_TIMESTAMP
