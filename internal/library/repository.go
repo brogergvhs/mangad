@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -1262,7 +1263,9 @@ func (r *Repository) titleSelectQuery() string {
 			t.updated_at,
 			COALESCE(m.cover_image, ''),
 			COALESCE(m.status, ''),
-			COALESCE(m.is_adult, 0)
+			COALESCE(m.is_adult, 0),
+			COALESCE(m.tags_json, '[]'),
+			COALESCE(m.genres_json, '[]')
 		FROM titles t
 		LEFT JOIN (
 			SELECT
@@ -1287,6 +1290,7 @@ func (r *Repository) titleSelectQuery() string {
 func scanTitle(row database.Scanner) (Title, error) {
 	var title Title
 	var isAdult int
+	var tagsJSON, genresJSON string
 	var catalogID sql.NullInt64
 	var monitored int
 	var lastRefreshed sql.NullString
@@ -1315,9 +1319,15 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&title.CoverImage,
 		&title.ReleaseStatus,
 		&isAdult,
+		&tagsJSON,
+		&genresJSON,
 	); err != nil {
 		return Title{}, err
 	}
+	var tags, genres []string
+	_ = json.Unmarshal([]byte(tagsJSON), &tags)
+	_ = json.Unmarshal([]byte(genresJSON), &genres)
+	title.ContentTags = append(tags, genres...)
 
 	if catalogID.Valid {
 		title.CatalogMangaID = &catalogID.Int64

@@ -159,6 +159,8 @@ func settingMeta(key string) (label, desc string) {
 	switch key {
 	case service.SettingServeAniListSyncEvery:
 		return "AniList sync", "How often connected accounts sync reading progress with AniList (e.g. 12h). Empty disables."
+	case service.SettingServeCatalogEvery:
+		return "Catalog refresh", "How often cached AniList metadata (tags, release status) is re-fetched for tracked titles. Empty disables."
 	case service.SettingAniListClientID:
 		return "AniList client ID", "From your AniList developer application."
 	case service.SettingAniListClientSecret:
@@ -357,7 +359,7 @@ func (u *webUI) stripItems(ctx context.Context, items []catalog.Manga) []searchR
 	inLibrary, _ := u.svc.TitlesByProvider(ctx, catalog.AniListProvider)
 	views := make([]searchResultView, 0, len(items))
 	for _, m := range items {
-		if m.IsAdult && !adultAllowed(ctx) {
+		if !contentAllowed(ctx, m.IsAdult, mangaContentTags(m)) {
 			continue
 		}
 		views = append(views, searchResultView{Manga: m, TitleID: inLibrary[m.ProviderID]})
@@ -385,7 +387,7 @@ func (u *webUI) relatedManga(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
-	items, err := u.svc.TrendingManga(r.Context(), 18)
+	items, err := u.svc.RecommendedManga(r.Context(), 18)
 	if err != nil {
 		u.frag(w, "mangaResults", mangaResults{})
 		return
@@ -393,20 +395,40 @@ func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), items))
 }
 
-// adultAllowed reports whether the acting user may see adult content.
-func adultAllowed(ctx context.Context) bool {
+// contentAllowed reports whether the acting user may see content with the
+// given adult flag and tag/genre set. The env admin is never restricted.
+func contentAllowed(ctx context.Context, isAdult bool, tags []string) bool {
 	u := auth.FromContext(ctx)
-	return u != nil && u.AllowAdult
+	if u == nil {
+		return false
+	}
+	if u.IsEnvAdmin() {
+		return true
+	}
+	if isAdult && !u.AllowAdult {
+		return false
+	}
+	for _, blocked := range u.BlockedTags {
+		for _, tag := range tags {
+			if strings.EqualFold(strings.TrimSpace(blocked), strings.TrimSpace(tag)) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
-// filterAdultTitles hides adult-flagged titles from restricted users.
-func filterAdultTitles(ctx context.Context, titles []library.Title) []library.Title {
-	if adultAllowed(ctx) {
-		return titles
-	}
+// mangaContentTags collects the tag/genre vocabulary a catalog entry carries.
+func mangaContentTags(m catalog.Manga) []string {
+	return append(append([]string{}, m.Tags...), m.Genres...)
+}
+
+// filterRestrictedTitles hides titles the acting user must not see (adult
+// flag or blocked tags/genres).
+func filterRestrictedTitles(ctx context.Context, titles []library.Title) []library.Title {
 	out := titles[:0]
 	for _, t := range titles {
-		if !t.IsAdult {
+		if contentAllowed(ctx, t.IsAdult, t.ContentTags) {
 			out = append(out, t)
 		}
 	}
@@ -469,7 +491,7 @@ func (u *webUI) fail(w http.ResponseWriter, err error) {
 
 func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
-	titles = filterAdultTitles(r.Context(), titles)
+	titles = filterRestrictedTitles(r.Context(), titles)
 	srcs, _ := u.svc.ListSources(r.Context())
 	data := dashData{Titles: titles, Sources: srcs, User: userFrom(r.Context())} // services health post-loads via /ui/health
 	for _, t := range titles {
@@ -534,7 +556,7 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if progress.Title.IsAdult && !adultAllowed(r.Context()) {
+	if !contentAllowed(r.Context(), progress.Title.IsAdult, progress.Title.ContentTags) {
 		http.Error(w, "adult content is not available for this account", http.StatusForbidden)
 		return
 	}
@@ -572,7 +594,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 	page, _, _ := tableParams(values, libraryPerPage)
 	controls := libraryControlsFrom(values)
 	titles, _ := u.svc.ListTitles(ctx)
-	titles = filterAdultTitles(ctx, titles)
+	titles = filterRestrictedTitles(ctx, titles)
 	allCount := len(titles)
 	titles = filterTitles(titles, controls)
 	sortTitles(titles, controls.Sort, controls.Dir)
@@ -836,7 +858,7 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if title.IsAdult && !adultAllowed(r.Context()) {
+	if !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
 		http.Error(w, "adult content is not available for this account", http.StatusForbidden)
 		return
 	}
@@ -1525,6 +1547,17 @@ func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Refresh", "true")
 }
 
+// splitCommaList splits on commas only; items like tags may contain spaces.
+func splitCommaList(s string) []string {
+	var out []string
+	for _, v := range strings.Split(s, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func splitList(s string) []string {
 	var out []string
 	for _, v := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' }) {
@@ -1754,7 +1787,8 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 			settingGroup{Title: "Scheduling", Fields: fields(
 				service.SettingServeRefreshEvery, service.SettingServeScanEvery,
 				service.SettingServeDownloadEvery, service.SettingServeRunEvery,
-				service.SettingServeAniListSyncEvery)},
+				service.SettingServeAniListSyncEvery,
+				service.SettingServeCatalogEvery)},
 			settingGroup{Title: "Jobs & downloads", Fields: fields(
 				service.SettingJobsMaxAttempts, service.SettingJobsTimeout,
 				service.SettingJobsWorkers, service.SettingDownloadsMaxAttempts)},
@@ -2057,6 +2091,8 @@ func jobLabel(typ string) string {
 	switch typ {
 	case jobs.TypeSyncAniList:
 		return "AniList sync"
+	case jobs.TypeCatalogRefresh:
+		return "Catalog refresh"
 	case jobs.TypeRefreshTitle:
 		return "Refresh chapters"
 	case jobs.TypeScanDownloads:

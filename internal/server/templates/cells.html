@@ -20,7 +20,7 @@
   <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-base-content/50">
     {{if .Authors}}<span>By {{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</span>{{end}}
     {{if .Chapters}}<span>{{.Chapters}} chapters (AniList)</span>{{end}}
-    {{if .Volumes}}<span>{{.Volumes}} volumes</span>{{end}}
+    {{if .Volumes}}<span>{{.Volumes}} volumes (AniList)</span>{{end}}
   </div>
   {{if .Genres}}<div class="flex flex-wrap gap-1.5">{{range .Genres}}<span class="badge badge-outline badge-sm">{{.}}</span>{{end}}</div>{{end}}
 </div>
@@ -159,8 +159,8 @@
   {{if not .Rows}}
   <p class="text-base-content/60 py-3">{{.Empty}}</p>
   {{else}}
-  {{if or (eq .View "table") (eq .View "auto")}}
-  <div class="{{if eq .View "auto"}}max-md:hidden{{end}} rounded-xl overflow-hidden">
+  {{if eq .View "table"}}
+  <div class="rounded-xl overflow-hidden">
     <table class="table">
       <tbody>
       {{range .Rows}}
@@ -179,8 +179,8 @@
     {{$cm := .CanManage}}{{range .Cards}}{{template "libraryCard" cardView . $cm}}{{end}}
   </div>
   {{end}}
-  {{if eq .View "full"}}
-  <div class="grid gap-3">
+  {{if or (eq .View "full") (eq .View "auto")}}
+  <div class="{{if eq .View "auto"}}max-md:hidden{{end}} grid gap-3">
     {{range .Fulls}}
     <div class="card bg-base-100 p-4">
       <div class="flex gap-5 max-sm:flex-col">

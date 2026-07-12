@@ -410,12 +410,15 @@
   <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">AniList account</h2>
   {{if .AniList.Connected}}
   <div class="flex items-center justify-between gap-3 flex-wrap">
-    <div class="text-sm">Connected as <span class="font-medium">{{.AniList.Name}}</span>{{if .AniList.ExpiresAt}} <span class="text-xs {{if .AniList.ExpiringSoon}}text-warning{{else}}text-base-content/50{{end}}">· token valid until {{.AniList.ExpiresAt}}</span>{{end}}</div>
-    <div class="flex items-center gap-2">
+    <div>
+      <div class="text-sm">Connected as <span class="font-medium">{{.AniList.Name}}</span></div>
+      {{if .AniList.ExpiresAt}} <span class="text-xs {{if .AniList.ExpiringSoon}}text-warning{{else}}text-base-content/50{{end}}">Token valid until {{.AniList.ExpiresAt}}</span>{{end}}
+    </div>
+    <div class="flex max-sm:flex-col items-center gap-2 ">
       {{if .AniList.ExpiringSoon}}<a class="btn btn-sm btn-warning" href="/anilist/connect">Reconnect</a>{{end}}
-      <button class="btn btn-sm btn-outline" hx-post="/ui/anilist/sync" hx-target="#anilist-sync-msg" hx-swap="innerHTML">Sync now</button>
+      <button class="btn btn-sm btn-outline max-sm:w-full" hx-post="/ui/anilist/sync" hx-target="#anilist-sync-msg" hx-swap="innerHTML">Sync now</button>
       <span id="anilist-sync-msg"></span>
-      <button class="btn btn-sm btn-outline text-error" hx-post="/ui/anilist/disconnect" hx-swap="none" hx-confirm="Disconnect your AniList account?">Disconnect</button>
+      <button class="btn btn-sm btn-outline max-sm:w-full text-error" hx-post="/ui/anilist/disconnect" hx-swap="none" hx-confirm="Disconnect your AniList account?">Disconnect</button>
     </div>
   </div>
   <details class="mt-1">
@@ -574,6 +577,10 @@
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
       </label>
+      <label class="fieldset"><span class="fieldset-legend">Blocked tags/genres</span>
+        <input class="input w-full" name="blocked_tags" placeholder="Gore, Horror, …">
+        <span class="label">Comma-separated; matching manga are hidden from this user everywhere.</span>
+      </label>
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="user_add_modal.close()">Cancel</button>
         <button class="btn btn-primary">Create user</button>
@@ -634,6 +641,10 @@
         <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult"{{if .User.AllowAdult}} checked{{end}}>
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
+      </label>
+      <label class="fieldset"><span class="fieldset-legend">Blocked tags/genres</span>
+        <input class="input w-full" name="blocked_tags" value="{{range $i, $t := .User.BlockedTags}}{{if $i}}, {{end}}{{$t}}{{end}}" placeholder="Gore, Horror, …">
+        <span class="label">Comma-separated; matching manga are hidden from this user everywhere.</span>
       </label>
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-edit-modal').remove()">Cancel</button>

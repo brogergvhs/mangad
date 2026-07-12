@@ -28,6 +28,7 @@ type Title struct {
 	Pages           int64
 	ReleaseStatus   string
 	IsAdult         bool
+	ContentTags     []string // catalog tags+genres, for per-user content guards
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

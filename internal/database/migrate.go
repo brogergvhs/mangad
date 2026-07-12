@@ -287,6 +287,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"catalog_manga", "is_adult", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "tags_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"users", "allow_adult", "INTEGER NOT NULL DEFAULT 0"},
+		{"users", "blocked_tags", "TEXT NOT NULL DEFAULT '[]'"},
 		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "volumes", "INTEGER"},

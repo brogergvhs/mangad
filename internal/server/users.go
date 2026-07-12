@@ -122,7 +122,7 @@ func (u *webUI) roleEditModal(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) userCreate(w http.ResponseWriter, r *http.Request) {
 	roleID, _ := strconv.ParseInt(r.FormValue("role_id"), 10, 64)
-	if err := u.svc.Auth().CreateUser(r.Context(), r.FormValue("username"), r.FormValue("password"), roleID, r.FormValue("allow_adult") == "on"); err != nil {
+	if err := u.svc.Auth().CreateUser(r.Context(), r.FormValue("username"), r.FormValue("password"), roleID, r.FormValue("allow_adult") == "on", splitCommaList(r.FormValue("blocked_tags"))); err != nil {
 		u.fail(w, err)
 		return
 	}
@@ -136,7 +136,7 @@ func (u *webUI) userUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roleID, _ := strconv.ParseInt(r.FormValue("role_id"), 10, 64)
-	if err := u.svc.Auth().UpdateUser(r.Context(), id, roleID, r.FormValue("password"), r.FormValue("allow_adult") == "on"); err != nil {
+	if err := u.svc.Auth().UpdateUser(r.Context(), id, roleID, r.FormValue("password"), r.FormValue("allow_adult") == "on", splitCommaList(r.FormValue("blocked_tags"))); err != nil {
 		u.fail(w, err)
 		return
 	}

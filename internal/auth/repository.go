@@ -139,22 +139,23 @@ func (s *Service) Logout(ctx context.Context, token string) {
 // GetUser loads one user with its role and permissions.
 func (s *Service) GetUser(ctx context.Context, id int64) (*User, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.origin, u.allow_adult, u.created_at, r.id, r.name, r.permissions_json
+		SELECT u.id, u.username, u.origin, u.allow_adult, u.blocked_tags, u.created_at, r.id, r.name, r.permissions_json
 		FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?`, id)
 	return scanUser(row)
 }
 
 func scanUser(row *sql.Row) (*User, error) {
 	var u User
-	var created, perms string
+	var created, perms, blocked string
 	var allowAdult int
-	if err := row.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &blocked, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
 	u.AllowAdult = allowAdult != 0
+	_ = json.Unmarshal([]byte(blocked), &u.BlockedTags)
 	u.CreatedAt, _ = database.ParseTime(created)
 	var list []string
 	_ = json.Unmarshal([]byte(perms), &list)
@@ -168,7 +169,7 @@ func scanUser(row *sql.Row) (*User, error) {
 // ListUsers returns all users with role names.
 func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.username, u.origin, u.allow_adult, u.created_at, r.id, r.name, r.permissions_json
+		SELECT u.id, u.username, u.origin, u.allow_adult, u.blocked_tags, u.created_at, r.id, r.name, r.permissions_json
 		FROM users u JOIN roles r ON r.id = u.role_id ORDER BY u.id`)
 	if err != nil {
 		return nil, err
@@ -177,12 +178,13 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	var out []User
 	for rows.Next() {
 		var u User
-		var created, perms string
+		var created, perms, blocked string
 		var allowAdult int
-		if err := rows.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &blocked, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
 			return nil, err
 		}
 		u.AllowAdult = allowAdult != 0
+		_ = json.Unmarshal([]byte(blocked), &u.BlockedTags)
 		u.CreatedAt, _ = database.ParseTime(created)
 		var list []string
 		_ = json.Unmarshal([]byte(perms), &list)
@@ -196,7 +198,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 }
 
 // CreateUser adds a local user.
-func (s *Service) CreateUser(ctx context.Context, username, password string, roleID int64, allowAdult bool) error {
+func (s *Service) CreateUser(ctx context.Context, username, password string, roleID int64, allowAdult bool, blockedTags []string) error {
 	username = strings.TrimSpace(username)
 	if username == "" || len(password) < 4 {
 		return fmt.Errorf("username and a password of at least 4 characters are required")
@@ -205,9 +207,10 @@ func (s *Service) CreateUser(ctx context.Context, username, password string, rol
 	if err != nil {
 		return err
 	}
+	blocked, _ := json.Marshal(blockedTags)
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (username, password_hash, role_id, origin, allow_adult) VALUES (?, ?, ?, 'local', ?)
-	`, username, string(hash), roleID, boolInt(allowAdult)); err != nil {
+		INSERT INTO users (username, password_hash, role_id, origin, allow_adult, blocked_tags) VALUES (?, ?, ?, 'local', ?, ?)
+	`, username, string(hash), roleID, boolInt(allowAdult), string(blocked)); err != nil {
 		return fmt.Errorf("create user %q: %w", username, err)
 	}
 	return nil
@@ -215,10 +218,11 @@ func (s *Service) CreateUser(ctx context.Context, username, password string, rol
 
 // UpdateUser changes a local user's role and optionally password. The env
 // admin is immutable.
-func (s *Service) UpdateUser(ctx context.Context, id int64, roleID int64, password string, allowAdult bool) error {
+func (s *Service) UpdateUser(ctx context.Context, id int64, roleID int64, password string, allowAdult bool, blockedTags []string) error {
 	if id == EnvAdminID {
 		return fmt.Errorf("the environment admin cannot be edited")
 	}
+	blocked, _ := json.Marshal(blockedTags)
 	if password != "" {
 		if len(password) < 4 {
 			return fmt.Errorf("password must be at least 4 characters")
@@ -227,10 +231,10 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, roleID int64, passwo
 		if err != nil {
 			return err
 		}
-		_, err = s.db.ExecContext(ctx, `UPDATE users SET role_id = ?, allow_adult = ?, password_hash = ? WHERE id = ? AND origin != 'env'`, roleID, boolInt(allowAdult), string(hash), id)
+		_, err = s.db.ExecContext(ctx, `UPDATE users SET role_id = ?, allow_adult = ?, blocked_tags = ?, password_hash = ? WHERE id = ? AND origin != 'env'`, roleID, boolInt(allowAdult), string(blocked), string(hash), id)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET role_id = ?, allow_adult = ? WHERE id = ? AND origin != 'env'`, roleID, boolInt(allowAdult), id)
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET role_id = ?, allow_adult = ?, blocked_tags = ? WHERE id = ? AND origin != 'env'`, roleID, boolInt(allowAdult), string(blocked), id)
 	return err
 }
 
