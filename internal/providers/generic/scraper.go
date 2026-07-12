@@ -375,7 +375,7 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 	}
 
 	out := scanChapterLinks(doc, pageURL, s.log)
-	out = s.expandChapterListIfGapped(ctx, pageURL, doc, out)
+	out = s.expandChapterList(ctx, pageURL, doc, out)
 	if len(out) == 0 && s.browser != nil && !fromBrowser {
 		s.log.Infof("No static chapter links found for %s; trying browser-rendered HTML.\n", pageURL)
 		body, err = s.fetchViaBrowser(ctx, pageURL)
@@ -387,7 +387,7 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 			return nil, err
 		}
 		out = scanChapterLinks(doc, pageURL, s.log)
-		out = s.expandChapterListIfGapped(ctx, pageURL, doc, out)
+		out = s.expandChapterList(ctx, pageURL, doc, out)
 	}
 	if len(out) == 0 && looksDynamicApp(body) {
 		return nil, fmt.Errorf("no static chapter links found; enable browser_solver.enabled (FlareSolverr) for JS-rendered chapter lists")
@@ -402,12 +402,10 @@ func ScanChapterLinks(doc *goquery.Document, pageURL string, log ui.Log) []provi
 	return scanChapterLinks(doc, pageURL, log)
 }
 
-func (s *Scraper) expandChapterListIfGapped(ctx context.Context, pageURL string, doc *goquery.Document, chapters []providers.Chapter) []providers.Chapter {
-	if !hasDefinitiveChapterGap(chapters) {
-		return chapters
-	}
+// expandChapterList follows explicit "show all"/"full chapter list" controls.
+func (s *Scraper) expandChapterList(ctx context.Context, pageURL string, doc *goquery.Document, chapters []providers.Chapter) []providers.Chapter {
 	for _, u := range chapterExpansionURLs(doc, pageURL) {
-		s.log.Infof("Chapter gap detected; trying expanded chapter list %s.\n", u)
+		s.log.Infof("Chapter list has an expansion control; trying %s.\n", u)
 		nextDoc, _, _, err := s.fetchDOMBody(ctx, u)
 		if err != nil {
 			s.log.Debugf("Skipping chapter expansion %s: %v\n", u, err)
@@ -475,30 +473,6 @@ func scanChapterLinks(doc *goquery.Document, pageURL string, log ui.Log) []provi
 	providers.SortChapters(out)
 
 	return out
-}
-
-func hasDefinitiveChapterGap(chapters []providers.Chapter) bool {
-	if len(chapters) < 3 {
-		return false
-	}
-	min, max := chapters[0].NumMain, chapters[0].NumMain
-	seen := map[int]bool{}
-	for _, ch := range chapters {
-		if ch.SuffixType != "" {
-			continue
-		}
-		seen[ch.NumMain] = true
-		if ch.NumMain < min {
-			min = ch.NumMain
-		}
-		if ch.NumMain > max {
-			max = ch.NumMain
-		}
-	}
-	if len(seen) < 3 {
-		return false
-	}
-	return max-min+1-len(seen) >= 10
 }
 
 func chapterExpansionURLs(doc *goquery.Document, pageURL string) []string {

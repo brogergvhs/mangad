@@ -3,6 +3,7 @@ package generic
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -477,5 +478,45 @@ func TestSameSeriesChapterLinkAcceptsSlugSegment(t *testing.T) {
 	}
 	if sameSeriesChapterLink(page, "https://mangafire.to/read/other-manga/en/chapter-12") {
 		t.Fatal("foreign chapter link accepted")
+	}
+}
+
+// WeebCentral shows the first few chapters plus the latest few, so the hidden
+// middle can be small; an explicit "Show All Chapters" control must be
+// followed regardless of how the visible numbering looks.
+func TestGetChaptersExpandsSmallGapBehindShowAll(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `
+			<html><body>
+				<a href="/chapters/a"><span>Episode 1</span></a>
+				<a href="/chapters/b"><span>Episode 2</span></a>
+				<a href="/chapters/c"><span>Episode 3</span></a>
+				<a href="/chapters/x"><span>Episode 14</span></a>
+				<a href="/chapters/y"><span>Episode 15</span></a>
+				<button hx-get="/series/title/full-chapter-list" hx-target="#chapter-list">Show All Chapters</button>
+			</body></html>
+		`
+		if req.URL.Path == "/series/title/full-chapter-list" {
+			var sb strings.Builder
+			for i := 1; i <= 15; i++ {
+				fmt.Fprintf(&sb, `<a href="/chapters/n%d"><span>Episode %d</span></a>`, i, i)
+			}
+			body = sb.String()
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     http.Header{},
+		}, nil
+	})}
+
+	scraper := NewScraper(client, ui.NewLogger(false), nil, false, nil)
+	chapters, err := scraper.GetChapters(context.Background(), "https://weebcentral.com/series/title")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chapters) != 15 {
+		t.Fatalf("chapters = %d, want 15", len(chapters))
 	}
 }
