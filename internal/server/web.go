@@ -96,6 +96,7 @@ type activityView struct {
 	Error         string
 	ReadLabel     string
 	User          *auth.User
+	AniList       service.AniListConnection
 }
 type sourceRowView struct {
 	Source sources.Source
@@ -295,6 +296,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /anilist/callback", u.anilistCallback)
 	mux.HandleFunc("POST /ui/anilist/disconnect", u.anilistDisconnect)
 	mux.HandleFunc("GET /ui/anilist/library", u.anilistLibrary)
+	mux.HandleFunc("POST /ui/anilist/sync", u.anilistSyncNow)
+	mux.HandleFunc("POST /ui/library/{id}/anilist-sync", u.anilistSyncTitle)
 	mux.HandleFunc("GET /ui/account", u.accountFrag)
 	mux.HandleFunc("POST /ui/account/password", u.accountPassword)
 	mux.HandleFunc("POST /ui/account/sessions/revoke", u.accountRevokeSessions)
@@ -815,6 +818,9 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	view := u.titleActivity(r.Context(), id)
 	view.Title = title
 	view.User = userFrom(r.Context())
+	if title.CatalogMangaID != nil {
+		view.AniList = u.svc.AniListConnectionFor(r.Context(), auth.UserID(r.Context()))
+	}
 	view.ReadLabel = "Read"
 	if progress, err := u.svc.ReaderProgress(r.Context(), id); err == nil && progress.NextChapterID != 0 && progress.ReadPages > 0 {
 		view.ReadLabel = "Continue reading"
@@ -881,7 +887,7 @@ func (u *webUI) chapterRead(read bool) http.HandlerFunc {
 		if read {
 			_, err = u.svc.MarkChapterRead(r.Context(), chapterID)
 			if err == nil {
-				u.svc.PushAniListProgress(r.Context(), auth.UserID(r.Context()), titleID)
+				u.svc.PushAniListEntry(r.Context(), auth.UserID(r.Context()), titleID)
 			}
 		} else {
 			_, err = u.svc.MarkChapterUnread(r.Context(), chapterID)
@@ -908,7 +914,7 @@ func (u *webUI) chapterRangeRead(w http.ResponseWriter, r *http.Request) {
 	case "read":
 		_, err = u.svc.MarkChapterRangeRead(r.Context(), titleID, r.FormValue("from"), r.FormValue("to"))
 		if err == nil {
-			u.svc.PushAniListProgress(r.Context(), auth.UserID(r.Context()), titleID)
+			u.svc.PushAniListEntry(r.Context(), auth.UserID(r.Context()), titleID)
 		}
 	case "unread":
 		_, err = u.svc.MarkChapterRangeUnread(r.Context(), titleID, r.FormValue("from"), r.FormValue("to"))

@@ -73,6 +73,8 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermLibraryView
 	case strings.Contains(p, "/chapters/"): // read/unread marking, bulk range
 		return auth.PermReaderUse
+	case strings.HasSuffix(p, "/anilist-sync"): // personal list reconcile
+		return auth.PermReaderUse
 	default:
 		return auth.PermLibraryManage
 	}

@@ -77,6 +77,29 @@ func (u *webUI) anilistLibrary(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "mangaStrip", mangaStrip{Heading: "Your AniList list", Items: u.stripItems(r.Context(), items), CanAdd: user.Can(auth.PermLibraryAdd)})
 }
 
+func (u *webUI) anilistSyncNow(w http.ResponseWriter, r *http.Request) {
+	if err := u.svc.EnqueueAniListSync(r.Context(), auth.UserID(r.Context())); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.kick()
+	u.frag(w, "toast", toastView{OK: true, Msg: "AniList sync queued ✓"})
+}
+
+// anilistSyncTitle reconciles one title with the acting user's AniList list.
+func (u *webUI) anilistSyncTitle(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.SyncAniListTitle(r.Context(), id); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "toast", toastView{OK: true, Msg: "AniList synced ✓"})
+}
+
 func (u *webUI) anilistDisconnect(w http.ResponseWriter, r *http.Request) {
 	if err := u.svc.DisconnectAniList(r.Context(), auth.UserID(r.Context())); err != nil {
 		u.fail(w, err)

@@ -40,8 +40,8 @@ type WantedService struct {
 		Related(context.Context, int, int) ([]catalog.Manga, error)
 		Trending(context.Context, int) ([]catalog.Manga, error)
 		UserList(context.Context, int) ([]catalog.AniListEntry, error)
-		MediaProgress(context.Context, int) (int, error)
-		SaveProgress(context.Context, int, int) error
+		MediaEntry(context.Context, int) (int, string, bool, error)
+		SaveEntry(context.Context, int, int, string) error
 	}
 }
 
@@ -50,8 +50,8 @@ type AniListAPI interface {
 	Related(context.Context, int, int) ([]catalog.Manga, error)
 	Trending(context.Context, int) ([]catalog.Manga, error)
 	UserList(context.Context, int) ([]catalog.AniListEntry, error)
-	MediaProgress(context.Context, int) (int, error)
-	SaveProgress(context.Context, int, int) error
+	MediaEntry(context.Context, int) (int, string, bool, error)
+	SaveEntry(context.Context, int, int, string) error
 }
 
 // AniList exposes the catalog metadata client.

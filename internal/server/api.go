@@ -182,7 +182,7 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		svc.PushAniListProgress(r.Context(), auth.UserID(r.Context()), progress.TitleID)
+		svc.PushAniListEntry(r.Context(), auth.UserID(r.Context()), progress.TitleID)
 		writeJSON(w, http.StatusOK, progress)
 	})
 

@@ -581,6 +581,7 @@ func (s *JobService) AddCatalogTitle(ctx context.Context, anilistID int) (librar
 	if err != nil {
 		return library.Title{}, err
 	}
+	s.PushAniListEntry(ctx, auth.UserID(ctx), title.ID)
 	if err := s.enqueueSourceSearchForTitle(ctx, title); err != nil {
 		return title, err
 	}
@@ -688,8 +689,9 @@ func (s *JobService) expandAniListSync(ctx context.Context, parentID int64) erro
 	return errors.Join(errs...)
 }
 
-// runAniListSync merges reading progress with AniList for one user:
-// remote > local pulls read marks down; local > remote pushes up.
+// runAniListSync reconciles the whole library with AniList for one user:
+// remote > local pulls read marks down; local > remote pushes up; tracked
+// titles missing from the remote list are added with their computed status.
 func (s *JobService) runAniListSync(ctx context.Context, userID int64) error {
 	ctx = auth.WithUser(ctx, &auth.User{ID: userID})
 	actx, aid, ok := s.aniListIdentity(ctx, userID)
@@ -700,38 +702,103 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64) error {
 	if err != nil {
 		return err
 	}
+	remote := make(map[string]catalog.AniListEntry, len(entries))
+	for _, e := range entries {
+		remote[e.Manga.ProviderID] = e
+	}
 	tracked, err := s.lib.TitlesByProvider(ctx, catalog.AniListProvider)
 	if err != nil {
 		return err
 	}
 	var errs []error
-	for _, e := range entries {
-		titleID, ok := tracked[e.Manga.ProviderID]
-		if !ok || e.Progress <= 0 {
+	for pid, titleID := range tracked {
+		mediaID, err := strconv.Atoi(pid)
+		if err != nil {
 			continue
 		}
-		var local int
-		if err := s.db.QueryRowContext(ctx, `
-			SELECT COALESCE(MAX(c.number_main), 0)
-			FROM chapters c JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ? AND rp.completed = 1
-			WHERE c.title_id = ?`, userID, titleID).Scan(&local); err != nil {
+		e, listed := remote[pid]
+		if listed && e.Progress > 0 {
+			// Pull first so pushed state reflects chapters read elsewhere.
+			local, _, err := s.localAniListState(ctx, userID, titleID)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if e.Progress > local {
+				if _, err := s.lib.MarkChaptersReadThrough(ctx, titleID, e.Progress); err != nil {
+					errs = append(errs, fmt.Errorf("pull %s: %w", pid, err))
+					continue
+				}
+			}
+		}
+		local, status, err := s.localAniListState(ctx, userID, titleID)
+		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		switch {
-		case e.Progress > local:
-			if _, err := s.lib.MarkChaptersReadThrough(ctx, titleID, e.Progress); err != nil {
-				errs = append(errs, fmt.Errorf("pull %s: %w", e.Manga.ProviderID, err))
+		if !listed {
+			if err := s.want.AniList().SaveEntry(actx, mediaID, local, status); err != nil {
+				errs = append(errs, fmt.Errorf("add %s: %w", pid, err))
 			}
-		case local > e.Progress:
-			if mediaID, err := strconv.Atoi(e.Manga.ProviderID); err == nil {
-				if err := s.want.AniList().SaveProgress(actx, mediaID, local); err != nil {
-					errs = append(errs, fmt.Errorf("push %s: %w", e.Manga.ProviderID, err))
-				}
+			continue
+		}
+		progress := -1
+		if local > e.Progress {
+			progress = local
+		}
+		push := ""
+		if aniListStatusRank(status) > aniListStatusRank(e.Status) {
+			push = status
+		}
+		if progress >= 0 || push != "" {
+			if err := s.want.AniList().SaveEntry(actx, mediaID, progress, push); err != nil {
+				errs = append(errs, fmt.Errorf("push %s: %w", pid, err))
 			}
 		}
 	}
 	return errs2err(errs)
+}
+
+// localAniListState computes the user's progress and list status for a title:
+// nothing read → PLANNING, everything read → COMPLETED, otherwise CURRENT.
+func (s *JobService) localAniListState(ctx context.Context, userID, titleID int64) (int, string, error) {
+	var progress, unread, total int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(MAX(CASE WHEN rp.completed = 1 THEN c.number_main END), 0),
+			COUNT(*) - COUNT(CASE WHEN rp.completed = 1 THEN 1 END),
+			COUNT(*)
+		FROM chapters c
+		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
+		WHERE c.title_id = ?`, userID, titleID).Scan(&progress, &unread, &total); err != nil {
+		return 0, "", err
+	}
+	switch {
+	case progress <= 0:
+		return progress, "PLANNING", nil
+	case unread == 0 && total > 0:
+		return progress, "COMPLETED", nil
+	default:
+		return progress, "CURRENT", nil
+	}
+}
+
+// aniListStatusRank orders statuses so pushes only ever upgrade. DROPPED is
+// overridable (a re-added title is no longer dropped); PAUSED and REPEATING
+// are manual reading states the sync must not touch.
+func aniListStatusRank(status string) int {
+	switch status {
+	case "", "DROPPED":
+		return 0
+	case "PLANNING":
+		return 1
+	case "CURRENT":
+		return 2
+	case "COMPLETED":
+		return 3
+	default: // PAUSED, REPEATING
+		return 9
+	}
 }
 
 func errs2err(errs []error) error { return errors.Join(errs...) }
@@ -746,6 +813,15 @@ func (s *JobService) aniListIdentity(ctx context.Context, userID int64) (context
 	return catalog.WithToken(ctx, token), aid, true
 }
 
+// EnqueueAniListSync queues a progress sync for one user right now.
+func (s *JobService) EnqueueAniListSync(ctx context.Context, userID int64) error {
+	if _, _, ok := s.aniListIdentity(ctx, userID); !ok {
+		return fmt.Errorf("no AniList account connected")
+	}
+	_, err := s.enqueueExact(ctx, jobs.TypeSyncAniList, JobPayload{UserID: userID}, time.Now())
+	return err
+}
+
 // AniListLibrary returns the connected user's AniList manga list.
 func (s *JobService) AniListLibrary(ctx context.Context) ([]catalog.AniListEntry, error) {
 	ctx, aid, ok := s.aniListIdentity(ctx, auth.UserID(ctx))
@@ -755,48 +831,136 @@ func (s *JobService) AniListLibrary(ctx context.Context) ([]catalog.AniListEntry
 	return s.want.AniList().UserList(ctx, aid)
 }
 
-// PushAniListProgress pushes the user's local read progress for a title to
-// AniList (never downgrades the remote value). Failures are logged only.
-func (s *JobService) PushAniListProgress(ctx context.Context, userID, titleID int64) {
+// PushAniListEntry pushes the user's local progress and list status for a
+// title to AniList in the background, creating the entry if it doesn't exist.
+// Never downgrades remote progress or manual states. Failures are logged only.
+func (s *JobService) PushAniListEntry(ctx context.Context, userID, titleID int64) {
 	ctx = context.WithoutCancel(ctx)
 	ctx, _, ok := s.aniListIdentity(ctx, userID)
 	if !ok {
 		return
 	}
-	title, err := s.lib.GetTitle(ctx, titleID)
-	if err != nil || title.CatalogMangaID == nil {
+	mediaID, ok := s.aniListMediaID(ctx, titleID)
+	if !ok {
 		return
 	}
-	m, err := s.want.GetManga(ctx, *title.CatalogMangaID)
+	local, status, err := s.localAniListState(ctx, userID, titleID)
 	if err != nil {
-		return
-	}
-	mediaID, err := strconv.Atoi(m.ProviderID)
-	if err != nil {
-		return
-	}
-	var local int
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(c.number_main), 0)
-		FROM chapters c JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ? AND rp.completed = 1
-		WHERE c.title_id = ?`, userID, titleID).Scan(&local); err != nil || local <= 0 {
 		return
 	}
 	go func() {
 		pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		remote, err := s.want.AniList().MediaProgress(pctx, mediaID)
-		if err != nil {
-			log.Printf("anilist progress read (%s): %v", m.ProviderID, err)
-			return
-		}
-		if local <= remote {
-			return
-		}
-		if err := s.want.AniList().SaveProgress(pctx, mediaID, local); err != nil {
-			log.Printf("anilist progress push (%s): %v", m.ProviderID, err)
+		if err := s.reconcileAniListEntry(pctx, mediaID, local, status); err != nil {
+			log.Printf("anilist entry push (media %d): %v", mediaID, err)
 		}
 	}()
+}
+
+// reconcileAniListEntry raises the remote entry to at least the local
+// progress/status, creating it when absent.
+func (s *JobService) reconcileAniListEntry(ctx context.Context, mediaID, local int, desired string) error {
+	remote, rstatus, found, err := s.want.AniList().MediaEntry(ctx, mediaID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return s.want.AniList().SaveEntry(ctx, mediaID, local, desired)
+	}
+	progress := -1
+	if local > remote {
+		progress = local
+	}
+	status := ""
+	if aniListStatusRank(desired) > aniListStatusRank(rstatus) {
+		status = desired
+	}
+	if progress < 0 && status == "" {
+		return nil
+	}
+	return s.want.AniList().SaveEntry(ctx, mediaID, progress, status)
+}
+
+// aniListMediaID resolves a tracked title to its AniList media id.
+func (s *JobService) aniListMediaID(ctx context.Context, titleID int64) (int, bool) {
+	title, err := s.lib.GetTitle(ctx, titleID)
+	if err != nil || title.CatalogMangaID == nil {
+		return 0, false
+	}
+	m, err := s.want.GetManga(ctx, *title.CatalogMangaID)
+	if err != nil {
+		return 0, false
+	}
+	mediaID, err := strconv.Atoi(m.ProviderID)
+	if err != nil {
+		return 0, false
+	}
+	return mediaID, true
+}
+
+// markAniListDropped sets a removed title to DROPPED on every connected
+// user's AniList list that actually has an entry for it. Background-only.
+func (s *JobService) markAniListDropped(ctx context.Context, mediaID int) {
+	ctx = context.WithoutCancel(ctx)
+	// Collect first: acting on AniList while the rows cursor is open would
+	// hold SQLite's single connection hostage.
+	rows, err := s.db.QueryContext(ctx, `SELECT access_token FROM user_anilist`)
+	if err != nil {
+		return
+	}
+	var tokens []string
+	for rows.Next() {
+		var t string
+		if rows.Scan(&t) == nil && t != "" {
+			tokens = append(tokens, t)
+		}
+	}
+	rows.Close()
+	go func() {
+		for _, t := range tokens {
+			tctx, cancel := context.WithTimeout(catalog.WithToken(ctx, t), 20*time.Second)
+			if _, _, found, err := s.want.AniList().MediaEntry(tctx, mediaID); err == nil && found {
+				if err := s.want.AniList().SaveEntry(tctx, mediaID, -1, "DROPPED"); err != nil {
+					log.Printf("anilist drop (media %d): %v", mediaID, err)
+				}
+			}
+			cancel()
+		}
+	}()
+}
+
+// SyncAniListTitle reconciles a single title with the acting user's AniList
+// list right now: pulls remote progress down, then pushes progress/status up.
+func (s *JobService) SyncAniListTitle(ctx context.Context, titleID int64) error {
+	userID := auth.UserID(ctx)
+	actx, _, ok := s.aniListIdentity(ctx, userID)
+	if !ok {
+		return fmt.Errorf("no AniList account connected")
+	}
+	mediaID, ok := s.aniListMediaID(ctx, titleID)
+	if !ok {
+		return fmt.Errorf("title has no AniList link")
+	}
+	remote, _, found, err := s.want.AniList().MediaEntry(actx, mediaID)
+	if err != nil {
+		return err
+	}
+	if found && remote > 0 {
+		local, _, err := s.localAniListState(ctx, userID, titleID)
+		if err != nil {
+			return err
+		}
+		if remote > local {
+			if _, err := s.lib.MarkChaptersReadThrough(ctx, titleID, remote); err != nil {
+				return err
+			}
+		}
+	}
+	local, status, err := s.localAniListState(ctx, userID, titleID)
+	if err != nil {
+		return err
+	}
+	return s.reconcileAniListEntry(actx, mediaID, local, status)
 }
 
 // RelatedManga returns AniList relations/recommendations for a catalog entry.
@@ -851,11 +1015,16 @@ func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles
 			return library.Title{}, err
 		}
 	}
+	// Resolve the AniList link before the rows disappear.
+	mediaID, hasAniList := s.aniListMediaID(ctx, id)
 	if err := s.cancelTitleJobs(ctx, id); err != nil {
 		return library.Title{}, err
 	}
 	if _, err := s.lib.RemoveTitle(ctx, id); err != nil {
 		return library.Title{}, err
+	}
+	if hasAniList {
+		s.markAniListDropped(ctx, mediaID)
 	}
 	if filesDir != "" {
 		if err := os.RemoveAll(filesDir); err != nil {
@@ -909,6 +1078,7 @@ func (s *JobService) ImportFolder(ctx context.Context, folder string, anilistID 
 	if err != nil {
 		return library.Title{}, err
 	}
+	s.PushAniListEntry(ctx, auth.UserID(ctx), title.ID)
 	if err := s.enqueueSourceSearchForTitle(ctx, title); err != nil {
 		return title, err
 	}
@@ -947,6 +1117,7 @@ func (s *JobService) TrackMatch(ctx context.Context, matchID int64, output strin
 	if err != nil {
 		return library.Title{}, err
 	}
+	s.PushAniListEntry(ctx, auth.UserID(ctx), title.ID)
 	if err := s.enqueueRefreshForTitle(ctx, title); err != nil {
 		return title, err
 	}

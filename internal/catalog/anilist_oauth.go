@@ -147,30 +147,40 @@ func (c *AniListClient) UserList(ctx context.Context, anilistUserID int) ([]AniL
 	return out, nil
 }
 
-// MediaProgress returns the authenticated user's current progress on a media.
-func (c *AniListClient) MediaProgress(ctx context.Context, mediaID int) (int, error) {
+// MediaEntry returns the authenticated user's list entry for a media.
+func (c *AniListClient) MediaEntry(ctx context.Context, mediaID int) (progress int, status string, found bool, err error) {
 	var resp struct {
 		Data struct {
 			Media struct {
 				MediaListEntry *struct {
-					Progress int `json:"progress"`
+					Progress int    `json:"progress"`
+					Status   string `json:"status"`
 				} `json:"mediaListEntry"`
 			} `json:"Media"`
 		} `json:"data"`
 	}
 	if err := c.do(ctx, `
-		query ($id: Int) { Media(id: $id, type: MANGA) { mediaListEntry { progress } } }
+		query ($id: Int) { Media(id: $id, type: MANGA) { mediaListEntry { progress status } } }
 	`, map[string]any{"id": mediaID}, &resp); err != nil {
-		return 0, err
+		return 0, "", false, err
 	}
-	if resp.Data.Media.MediaListEntry == nil {
-		return 0, nil
+	e := resp.Data.Media.MediaListEntry
+	if e == nil {
+		return 0, "", false, nil
 	}
-	return resp.Data.Media.MediaListEntry.Progress, nil
+	return e.Progress, e.Status, true, nil
 }
 
-// SaveProgress sets the authenticated user's chapter progress on a media.
-func (c *AniListClient) SaveProgress(ctx context.Context, mediaID, progress int) error {
+// SaveEntry upserts the authenticated user's list entry. An empty status
+// keeps the remote status; progress < 0 keeps the remote progress.
+func (c *AniListClient) SaveEntry(ctx context.Context, mediaID, progress int, status string) error {
+	vars := map[string]any{"id": mediaID}
+	if progress >= 0 {
+		vars["progress"] = progress
+	}
+	if status != "" {
+		vars["status"] = status
+	}
 	var resp struct {
 		Data struct {
 			SaveMediaListEntry struct {
@@ -179,7 +189,7 @@ func (c *AniListClient) SaveProgress(ctx context.Context, mediaID, progress int)
 		} `json:"data"`
 	}
 	return c.do(ctx, `
-		mutation ($id: Int, $progress: Int) {
-			SaveMediaListEntry(mediaId: $id, progress: $progress) { id }
-		}`, map[string]any{"id": mediaID, "progress": progress}, &resp)
+		mutation ($id: Int, $progress: Int, $status: MediaListStatus) {
+			SaveMediaListEntry(mediaId: $id, progress: $progress, status: $status) { id }
+		}`, vars, &resp)
 }
