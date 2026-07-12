@@ -192,3 +192,25 @@
   {{end}}
 </div>
 {{end}}
+
+{{define "mangaStrip"}}
+{{if .Items}}
+<div class="mt-6">
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">{{.Heading}}</h2>
+  <div class="flex gap-3 overflow-x-auto pb-2">
+    {{$canAdd := .CanAdd}}{{range .Items}}
+    <div class="w-28 shrink-0">
+      <div class="aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
+        {{if .TitleID}}<a href="/library/{{.TitleID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>
+        {{else}}<img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{end}}
+      </div>
+      <div class="mt-1 line-clamp-2 min-h-[2.5em] text-xs font-medium leading-tight">{{mangaTitle .Manga}}</div>
+      {{if .TitleID}}<a class="btn btn-xs btn-success btn-soft w-full" href="/library/{{.TitleID}}">✓ In library</a>
+      {{else if $canAdd}}<button class="btn btn-xs btn-outline w-full" hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add</button>
+      {{else}}<div class="text-center text-xs text-base-content/40">{{if .AverageScore}}★ {{.AverageScore}}%{{end}}</div>{{end}}
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+{{end}}

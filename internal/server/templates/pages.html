@@ -49,7 +49,7 @@
   <button class="btn btn-primary join-item">Search</button>
 </form>
 <div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
-<div id="search-results"></div>
+<div id="search-results"><div hx-get="/ui/search/trending" hx-trigger="load" hx-swap="outerHTML"></div></div>
 {{end}}
 
 {{define "library"}}
@@ -269,6 +269,10 @@
   </select>
 </form>
 {{template "chaptersList" .ChaptersTable}}
+
+{{if .Title.CatalogMangaID}}
+<div hx-get="/ui/library/{{.Title.ID}}/related" hx-trigger="load" hx-swap="outerHTML"></div>
+{{end}}
 {{end}}
 
 {{define "sourceProbe"}}
@@ -380,6 +384,37 @@
 {{end}}
 
 {{define "settings"}}
+<div hx-get="/ui/account" hx-trigger="load" hx-swap="outerHTML"></div>
+<div class="card bg-base-100 card-body p-4 gap-2 mb-4">
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">AniList account</h2>
+  {{if .AniList.Connected}}
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div class="text-sm">Connected as <span class="font-medium">{{.AniList.Name}}</span>{{if .AniList.ExpiresAt}} <span class="text-xs {{if .AniList.ExpiringSoon}}text-warning{{else}}text-base-content/50{{end}}">· token valid until {{.AniList.ExpiresAt}}</span>{{end}}</div>
+    <div class="flex items-center gap-2">
+      {{if .AniList.ExpiringSoon}}<a class="btn btn-sm btn-warning" href="/anilist/connect">Reconnect</a>{{end}}
+      <button class="btn btn-sm btn-outline text-error" hx-post="/ui/anilist/disconnect" hx-swap="none" hx-confirm="Disconnect your AniList account?">Disconnect</button>
+    </div>
+  </div>
+  <details class="mt-1">
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Browse your AniList list<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <div hx-get="/ui/anilist/library" hx-trigger="intersect once" hx-swap="outerHTML">
+      <div class="flex items-center gap-2 py-2 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading your list…</div>
+    </div>
+  </details>
+  {{else if .AppConfigured}}
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div class="text-sm text-base-content/60">Link your AniList account for personal syncing and recommendations.</div>
+    <a class="btn btn-sm btn-primary" href="/anilist/connect">Connect AniList</a>
+  </div>
+  {{else}}
+  <div class="text-sm text-base-content/60">
+    No AniList application is configured yet. An admin creates one at
+    <span class="font-medium">anilist.co/settings/developer</span> using this redirect URL:
+  </div>
+  <code class="rounded-lg bg-base-300 px-3 py-2 text-sm break-all select-all">{{.RedirectURL}}</code>
+  <div class="text-xs text-base-content/50">Then enter the client ID and secret in the AniList application section below (admins only).</div>
+  {{end}}
+</div>
 <form class="grid gap-4" hx-put="/ui/settings" hx-target="#settings-msg">
   {{range .Groups}}
   {{if eq .Title "Appearance"}}
@@ -511,6 +546,11 @@
       <label class="fieldset"><span class="fieldset-legend">Password</span><input class="input w-full" type="password" name="password" required autocomplete="new-password"></label>
       <label class="fieldset"><span class="fieldset-legend">Role</span>
         <select name="role_id" class="select w-full">{{range .Roles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult">
+        <span><span class="text-sm font-medium">Allow adult content</span>
+        <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
+      </label>
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="user_add_modal.close()">Cancel</button>
         <button class="btn btn-primary">Create user</button>
@@ -567,6 +607,11 @@
         </select></label>
       <label class="fieldset"><span class="fieldset-legend">New password</span>
         <input class="input w-full" type="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult"{{if .User.AllowAdult}} checked{{end}}>
+        <span><span class="text-sm font-medium">Allow adult content</span>
+        <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
+      </label>
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-edit-modal').remove()">Cancel</button>
         <button class="btn btn-primary">Save</button>
@@ -613,4 +658,55 @@
   </div>
   <div class="modal-backdrop" onclick="document.getElementById('role-edit-modal').remove()"></div>
 </dialog>
+{{end}}
+
+{{define "accountCard"}}
+<div id="account-card" class="card bg-base-100 card-body p-4 gap-3 mb-4">
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Account · {{.User.Username}}</h2>
+
+  {{if not .User.IsEnvAdmin}}
+  <details>
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Change password<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <form class="mt-2 flex flex-wrap items-center gap-2" hx-post="/ui/account/password" hx-target="#account-msg" hx-swap="innerHTML">
+      <input class="input input-sm min-w-40 flex-1" type="password" name="current" placeholder="Current password" required autocomplete="current-password">
+      <input class="input input-sm min-w-40 flex-1" type="password" name="password" placeholder="New password" required autocomplete="new-password">
+      <button class="btn btn-sm btn-primary">Change</button>
+      <span id="account-msg"></span>
+    </form>
+  </details>
+  {{end}}
+
+  <details>
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Sessions ({{len .Sessions}})<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <div class="mt-2 grid gap-1">
+      {{range .Sessions}}
+      <div class="flex items-center justify-between gap-2 text-sm">
+        <span>signed in {{.CreatedAt}} · expires {{.ExpiresAt}}</span>
+        {{if .Current}}<span class="badge badge-success badge-soft badge-sm">this session</span>{{end}}
+      </div>
+      {{end}}
+      <button class="btn btn-sm btn-outline text-error justify-self-start" hx-post="/ui/account/sessions/revoke" hx-target="#account-card" hx-swap="outerHTML" hx-confirm="Sign out everywhere else?">Sign out other sessions</button>
+    </div>
+  </details>
+
+  <details {{if .NewToken}}open{{end}}>
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">API tokens ({{len .Tokens}})<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <div class="mt-2 grid gap-2">
+      {{if .NewToken}}
+      <div class="alert alert-success alert-soft text-sm">Copy it now — it won't be shown again:
+        <code class="break-all select-all">{{.NewToken}}</code></div>
+      {{end}}
+      {{range .Tokens}}
+      <div class="flex items-center justify-between gap-2 text-sm">
+        <span>{{.Name}} <span class="text-xs text-base-content/50">· created {{.CreatedAt}}</span></span>
+        <button class="btn btn-ghost btn-xs text-error" hx-post="/ui/account/tokens/{{.ID}}/delete" hx-target="#account-card" hx-swap="outerHTML" hx-confirm="Revoke this token?">Revoke</button>
+      </div>
+      {{else}}<p class="text-sm text-base-content/60">Use tokens as <code>X-API-Key</code> or <code>Bearer</code> headers for scripts — they act with your permissions.</p>{{end}}
+      <form class="flex items-center gap-2" hx-post="/ui/account/tokens" hx-target="#account-card" hx-swap="outerHTML">
+        <input class="input input-sm w-40" name="name" placeholder="Token name">
+        <button class="btn btn-sm btn-outline">Create token</button>
+      </form>
+    </div>
+  </details>
+</div>
 {{end}}
