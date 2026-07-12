@@ -88,6 +88,57 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 	return r.GetManga(ctx, id)
 }
 
+// ContentTag is one AniList genre or tag name, for content-guard pickers.
+type ContentTag struct {
+	Name string
+	Kind string // "genre" or "tag"
+}
+
+// ReplaceContentTags swaps the stored tag/genre vocabulary.
+func (r *Repository) ReplaceContentTags(ctx context.Context, genres, tags []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM content_tags`); err != nil {
+		return err
+	}
+	insert := func(names []string, kind string) error {
+		for _, name := range cleanStrings(names) {
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO content_tags (name, kind) VALUES (?, ?)`, name, kind); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := insert(genres, "genre"); err != nil {
+		return err
+	}
+	if err := insert(tags, "tag"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ContentTags lists the stored vocabulary, genres first, alphabetical within.
+func (r *Repository) ContentTags(ctx context.Context) ([]ContentTag, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT name, kind FROM content_tags ORDER BY kind = 'genre' DESC, name COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ContentTag
+	for rows.Next() {
+		var t ContentTag
+		if err := rows.Scan(&t.Name, &t.Kind); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // GetManga returns one canonical manga row.
 // MangaByIDs returns the given manga keyed by ID, in one query.
 func (r *Repository) MangaByIDs(ctx context.Context, ids []int64) (map[int64]Manga, error) {

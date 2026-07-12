@@ -1968,6 +1968,13 @@ func (u *webUI) funcs() template.FuncMap {
 			return false
 		},
 		"mangaTitle": mangaTitle,
+		"tagPicker": func(options []catalog.ContentTag, values []string) map[string]any {
+			selected := make(map[string]bool, len(values))
+			for _, v := range values {
+				selected[v] = true
+			}
+			return map[string]any{"Options": options, "Selected": selected, "Values": values}
+		},
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },
 		"orUnknown":  func(s string) string { return orDefault(s, "unknown") },

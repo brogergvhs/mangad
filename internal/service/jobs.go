@@ -864,6 +864,10 @@ func (s *JobService) aniListIdentity(ctx context.Context, userID int64) (context
 func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressManager) error {
 	// Deliberately unauthenticated: catalog metadata is public, and a stale
 	// or revoked user token must not be able to fail the whole refresh.
+	var errs []error
+	if err := s.refreshTagVocabulary(ctx); err != nil {
+		errs = append(errs, err) // the per-title refresh is still worth running
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT cm.provider_id
 		FROM titles t JOIN catalog_manga cm ON cm.id = t.catalog_manga_id
@@ -882,7 +886,6 @@ func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressMan
 	handle := progress.Register("catalog refresh")
 	handle.SetTotal(len(pids))
 	defer handle.MarkDone()
-	var errs []error
 	for i, pid := range pids {
 		handle.Update(i+1, len(pids), 0)
 		mediaID, err := strconv.Atoi(pid)
@@ -899,6 +902,28 @@ func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressMan
 		}
 	}
 	return errs2err(errs)
+}
+
+// refreshTagVocabulary re-fetches AniList's global genre/tag lists.
+func (s *JobService) refreshTagVocabulary(ctx context.Context) error {
+	genres, tags, err := s.want.AniList().TagVocabulary(ctx)
+	if err != nil {
+		return fmt.Errorf("tag vocabulary: %w", err)
+	}
+	return s.want.catalog.ReplaceContentTags(ctx, genres, tags)
+}
+
+// ContentTagOptions returns the stored tag/genre vocabulary for pickers,
+// fetching it once from AniList when nothing is stored yet.
+func (s *JobService) ContentTagOptions(ctx context.Context) ([]catalog.ContentTag, error) {
+	tags, err := s.want.catalog.ContentTags(ctx)
+	if err != nil || len(tags) > 0 {
+		return tags, err
+	}
+	if err := s.refreshTagVocabulary(ctx); err != nil {
+		return nil, err
+	}
+	return s.want.catalog.ContentTags(ctx)
 }
 
 // encryptLegacyTokens re-encrypts plaintext AniList tokens left over from

@@ -163,6 +163,27 @@ func (c *AniListClient) Get(ctx context.Context, id int) (Manga, error) {
 	return items[0], nil
 }
 
+// TagVocabulary returns AniList's global genre and tag name lists.
+func (c *AniListClient) TagVocabulary(ctx context.Context) (genres, tags []string, err error) {
+	var resp struct {
+		Data struct {
+			GenreCollection    []string `json:"GenreCollection"`
+			MediaTagCollection []struct {
+				Name string `json:"name"`
+			} `json:"MediaTagCollection"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, `query { GenreCollection MediaTagCollection { name } }`, nil, &resp); err != nil {
+		return nil, nil, err
+	}
+	for _, t := range resp.Data.MediaTagCollection {
+		if t.Name != "" {
+			tags = append(tags, t.Name)
+		}
+	}
+	return resp.Data.GenreCollection, tags, nil
+}
+
 // send paces the request through the client limiter and, when AniList still
 // answers 429, sits out the advertised Retry-After window before retrying.
 func (c *AniListClient) send(ctx context.Context, body []byte) (*http.Response, error) {

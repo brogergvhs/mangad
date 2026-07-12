@@ -414,7 +414,7 @@
       <div class="text-sm">Connected as <span class="font-medium">{{.AniList.Name}}</span></div>
       {{if .AniList.ExpiresAt}} <span class="text-xs {{if .AniList.ExpiringSoon}}text-warning{{else}}text-base-content/50{{end}}">Token valid until {{.AniList.ExpiresAt}}</span>{{end}}
     </div>
-    <div class="flex max-sm:flex-col items-center gap-2 ">
+    <div class="flex max-sm:flex-col max-sm:w-full items-center gap-2 ">
       {{if .AniList.ExpiringSoon}}<a class="btn btn-sm btn-warning" href="/anilist/connect">Reconnect</a>{{end}}
       <button class="btn btn-sm btn-outline max-sm:w-full" hx-post="/ui/anilist/sync" hx-target="#anilist-sync-msg" hx-swap="innerHTML">Sync now</button>
       <span id="anilist-sync-msg"></span>
@@ -577,10 +577,7 @@
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
       </label>
-      <label class="fieldset"><span class="fieldset-legend">Blocked tags/genres</span>
-        <input class="input w-full" name="blocked_tags" placeholder="Gore, Horror, …">
-        <span class="label">Comma-separated; matching manga are hidden from this user everywhere.</span>
-      </label>
+      {{template "tagPicker" tagPicker .TagOptions nil}}
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="user_add_modal.close()">Cancel</button>
         <button class="btn btn-primary">Create user</button>
@@ -623,6 +620,35 @@
 </dialog>
 {{end}}
 
+{{define "tagPicker"}}
+<div class="fieldset"><span class="fieldset-legend">Blocked tags/genres</span>
+  {{if .Options}}
+  <details class="group rounded-lg border border-base-300">
+    <summary class="flex cursor-pointer select-none items-center justify-between p-2 text-sm">
+      <span>{{if .Selected}}{{len .Selected}} blocked{{else}}None blocked{{end}}</span>
+      <span class="text-base-content/50 transition-transform group-open:rotate-90">{{template "iconChevron"}}</span>
+    </summary>
+    <div class="border-t border-base-300 p-2">
+      <input class="input input-sm mb-2 w-full" placeholder="Filter tags…" data-tag-filter>
+      <div class="grid max-h-52 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto" data-tag-list>
+        {{$sel := .Selected}}{{range .Options}}
+        <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="blocked_tags" value="{{.Name}}" {{if index $sel .Name}}checked{{end}}>
+          <span class="truncate">{{.Name}}</span>
+          {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
+        </label>
+        {{end}}
+      </div>
+    </div>
+  </details>
+  <span class="label">Matching manga are hidden from this user everywhere.</span>
+  {{else}}
+  <input class="input w-full" name="blocked_tags" value="{{range $i, $t := .Values}}{{if $i}}, {{end}}{{$t}}{{end}}" placeholder="Gore, Horror, …">
+  <span class="label">Comma-separated (AniList tag list unavailable); matching manga are hidden from this user everywhere.</span>
+  {{end}}
+</div>
+{{end}}
+
 {{define "userEditModal"}}
 <dialog class="modal modal-open" id="user-edit-modal">
   <div class="modal-box">
@@ -642,10 +668,7 @@
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
       </label>
-      <label class="fieldset"><span class="fieldset-legend">Blocked tags/genres</span>
-        <input class="input w-full" name="blocked_tags" value="{{range $i, $t := .User.BlockedTags}}{{if $i}}, {{end}}{{$t}}{{end}}" placeholder="Gore, Horror, …">
-        <span class="label">Comma-separated; matching manga are hidden from this user everywhere.</span>
-      </label>
+      {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags}}
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-edit-modal').remove()">Cancel</button>
         <button class="btn btn-primary">Save</button>

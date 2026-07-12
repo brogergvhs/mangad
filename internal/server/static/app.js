@@ -68,6 +68,18 @@ document.body.addEventListener("htmx:afterSwap", function () {
   });
 });
 
+// Tag picker: the filter input hides non-matching checkbox rows.
+document.addEventListener("input", function (e) {
+  var filter = e.target.closest("[data-tag-filter]");
+  if (!filter) return;
+  var list = filter.parentElement.querySelector("[data-tag-list]");
+  if (!list) return;
+  var q = filter.value.trim().toLowerCase();
+  list.querySelectorAll("label").forEach(function (row) {
+    row.hidden = q !== "" && row.textContent.toLowerCase().indexOf(q) === -1;
+  });
+});
+
 (function () {
   var shell = document.querySelector("[data-reader]");
   if (!shell) return;
