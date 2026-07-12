@@ -55,6 +55,7 @@
 </form>
 <div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
 <div id="search-results"><div hx-get="/ui/search/trending" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div></div>
+<div hx-get="/ui/anilist/suggestions" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div>
 {{end}}
 
 {{define "library"}}
@@ -109,6 +110,7 @@
   </div>
 </form>
 <div id="library-results">{{template "libraryResults" .Table}}</div>
+<div hx-get="/ui/anilist/suggestions?view={{.Controls.View}}" hx-trigger="load" hx-swap="outerHTML"></div>
 {{end}}
 
 {{define "title"}}

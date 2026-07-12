@@ -298,6 +298,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/anilist/disconnect", u.anilistDisconnect)
 	mux.HandleFunc("GET /ui/anilist/library", u.anilistLibrary)
 	mux.HandleFunc("POST /ui/anilist/sync", u.anilistSyncNow)
+	mux.HandleFunc("GET /ui/anilist/suggestions", u.anilistSuggestions)
 	mux.HandleFunc("POST /ui/library/{id}/anilist-sync", u.anilistSyncTitle)
 	mux.HandleFunc("GET /ui/account", u.accountFrag)
 	mux.HandleFunc("POST /ui/account/password", u.accountPassword)

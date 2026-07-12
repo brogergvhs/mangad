@@ -76,6 +76,33 @@ func (u *webUI) anilistLibrary(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", "cards", items))
 }
 
+// anilistSuggestions lists the user's AniList entries that aren't in the
+// library yet, as a collapsible in the page's current view. Renders nothing
+// when disconnected, on API failure, or with nothing missing.
+func (u *webUI) anilistSuggestions(w http.ResponseWriter, r *http.Request) {
+	entries, err := u.svc.AniListLibrary(r.Context())
+	if err != nil {
+		u.frag(w, "anilistSuggestions", mangaResults{})
+		return
+	}
+	items := make([]catalog.Manga, 0, len(entries))
+	for _, e := range entries {
+		if e.Status == "DROPPED" { // usually a title deliberately removed here
+			continue
+		}
+		items = append(items, e.Manga)
+	}
+	view := u.mangaResultsView(r.Context(), "", resultView(r), items)
+	missing := view.Items[:0]
+	for _, it := range view.Items {
+		if it.TitleID == 0 {
+			missing = append(missing, it)
+		}
+	}
+	view.Items = missing
+	u.frag(w, "anilistSuggestions", view)
+}
+
 func (u *webUI) anilistSyncNow(w http.ResponseWriter, r *http.Request) {
 	if err := u.svc.EnqueueAniListSync(r.Context(), auth.UserID(r.Context())); err != nil {
 		u.fail(w, err)

@@ -212,6 +212,16 @@
 </div>
 {{end}}
 
+{{define "anilistSuggestions"}}
+{{if .Items}}
+<div class="collapse collapse-arrow bg-base-100 mt-4">
+  <input type="checkbox">
+  <div class="collapse-title font-semibold">From your AniList <span class="badge badge-sm badge-ghost">{{len .Items}} not in library</span></div>
+  <div class="collapse-content">{{template "mangaResults" .}}</div>
+</div>
+{{end}}
+{{end}}
+
 {{define "mangaSummary"}}
 <div class="flex flex-wrap items-center gap-1.5">
   {{if .Status}}<span class="badge badge-soft badge-sm">{{.Status}}</span>{{end}}
