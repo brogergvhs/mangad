@@ -817,6 +817,44 @@ func (r *Repository) MarkChapterRangeRead(ctx context.Context, titleID int64, fr
 	})
 }
 
+// MarkChaptersReadThrough marks every chapter with number <= maxNumber as
+// read for the acting user, in one transaction (AniList pull-merge).
+func (r *Repository) MarkChaptersReadThrough(ctx context.Context, titleID int64, maxNumber int) (int, error) {
+	chapters, err := r.ListChapters(ctx, titleID)
+	if err != nil {
+		return 0, err
+	}
+	return retryBusy(ctx, func() (int, error) {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, fmt.Errorf("begin read-through: %w", err)
+		}
+		defer func() {
+			if err != nil {
+				_ = tx.Rollback()
+			}
+		}()
+		count := 0
+		for _, ch := range chapters {
+			if ch.NumberMain > maxNumber || ch.Read {
+				continue
+			}
+			total := ch.TotalPages
+			if total <= 0 {
+				total = ch.Pages
+			}
+			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true); err != nil {
+				return 0, err
+			}
+			count++
+		}
+		if err = tx.Commit(); err != nil {
+			return 0, fmt.Errorf("commit read-through: %w", err)
+		}
+		return count, nil
+	})
+}
+
 // MarkChapterRangeUnread clears read progress in an inclusive label/number range.
 func (r *Repository) MarkChapterRangeUnread(ctx context.Context, titleID int64, from, to string) (int, error) {
 	chapters, err := r.ListChapters(ctx, titleID)
@@ -1223,7 +1261,8 @@ func (r *Repository) titleSelectQuery() string {
 			t.created_at,
 			t.updated_at,
 			COALESCE(m.cover_image, ''),
-			COALESCE(m.status, '')
+			COALESCE(m.status, ''),
+			COALESCE(m.is_adult, 0)
 		FROM titles t
 		LEFT JOIN (
 			SELECT
@@ -1247,6 +1286,7 @@ func (r *Repository) titleSelectQuery() string {
 
 func scanTitle(row database.Scanner) (Title, error) {
 	var title Title
+	var isAdult int
 	var catalogID sql.NullInt64
 	var monitored int
 	var lastRefreshed sql.NullString
@@ -1274,6 +1314,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&updatedAt,
 		&title.CoverImage,
 		&title.ReleaseStatus,
+		&isAdult,
 	); err != nil {
 		return Title{}, err
 	}
@@ -1282,6 +1323,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 		title.CatalogMangaID = &catalogID.Int64
 	}
 	title.Monitored = monitored != 0
+	title.IsAdult = isAdult != 0
 	if lastRefreshed.Valid {
 		t, err := database.ParseTime(lastRefreshed.String)
 		if err != nil {

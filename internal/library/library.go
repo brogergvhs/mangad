@@ -27,6 +27,7 @@ type Title struct {
 	SizeBytes       int64
 	Pages           int64
 	ReleaseStatus   string
+	IsAdult         bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

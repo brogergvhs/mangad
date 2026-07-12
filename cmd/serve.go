@@ -100,18 +100,20 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	nextRefresh := time.Now()
 	nextScan := time.Now()
 	nextDownload := time.Now()
-	var refreshEvery, scanEvery, downloadEvery, runEvery time.Duration
+	nextAniList := time.Now()
+	var refreshEvery, scanEvery, downloadEvery, anilistEvery, runEvery time.Duration
 
 	for {
-		oldRefresh, oldScan, oldDownload, oldRun := refreshEvery, scanEvery, downloadEvery, runEvery
+		oldRefresh, oldScan, oldDownload, oldAniList, oldRun := refreshEvery, scanEvery, downloadEvery, anilistEvery, runEvery
 		refreshEvery = serveDuration(svc, ctx, service.SettingServeRefreshEvery)
 		scanEvery = serveDuration(svc, ctx, service.SettingServeScanEvery)
 		downloadEvery = serveDuration(svc, ctx, service.SettingServeDownloadEvery)
+		anilistEvery = serveDuration(svc, ctx, service.SettingServeAniListSyncEvery)
 		runEvery = serveDuration(svc, ctx, service.SettingServeRunEvery)
 		if runEvery <= 0 {
 			runEvery = fallbackDuration(service.SettingDefault(service.SettingServeRunEvery))
 		}
-		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldRun != runEvery
+		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldAniList != anilistEvery || oldRun != runEvery
 		if oldRefresh != refreshEvery {
 			nextRefresh = time.Now().Add(refreshEvery)
 		}
@@ -121,13 +123,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		if oldDownload != downloadEvery {
 			nextDownload = time.Now().Add(downloadEvery)
 		}
+		if oldAniList != anilistEvery {
+			nextAniList = time.Now().Add(anilistEvery)
+		}
 		if changed {
 			fmt.Printf("Serving: refresh=%s scan=%s download=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, runEvery)
 		}
 
 		// Transient failures (e.g. SQLITE_BUSY) must not kill the daemon;
 		// shutdown is handled by the ctx.Done select below.
-		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery)); err != nil && ctx.Err() == nil {
+		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery), nextDue(&nextAniList, anilistEvery)); err != nil && ctx.Err() == nil {
 			fmt.Fprintf(os.Stderr, "serve tick: %v\n", err)
 		}
 		if _, err := runDue(ctx, svc); err != nil && ctx.Err() == nil {
@@ -147,7 +152,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 }
 
-func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, download bool) error {
+func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, download, anilist bool) error {
 	now := time.Now()
 	if refresh {
 		if _, err := svc.Enqueue(ctx, jobs.TypeRefreshTitle, 0, now); err != nil {
@@ -161,6 +166,11 @@ func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, down
 	}
 	if download {
 		if _, err := svc.Enqueue(ctx, jobs.TypeDownloadMissing, 0, now); err != nil {
+			return err
+		}
+	}
+	if anilist {
+		if _, err := svc.Enqueue(ctx, jobs.TypeSyncAniList, 0, now); err != nil {
 			return err
 		}
 	}

@@ -37,7 +37,26 @@ type WantedService struct {
 	anilist interface {
 		Search(context.Context, string, int) ([]catalog.Manga, error)
 		Get(context.Context, int) (catalog.Manga, error)
+		Related(context.Context, int, int) ([]catalog.Manga, error)
+		Trending(context.Context, int) ([]catalog.Manga, error)
+		UserList(context.Context, int) ([]catalog.AniListEntry, error)
+		MediaProgress(context.Context, int) (int, error)
+		SaveProgress(context.Context, int, int) error
 	}
+}
+
+// AniListAPI is the catalog metadata client surface used by services.
+type AniListAPI interface {
+	Related(context.Context, int, int) ([]catalog.Manga, error)
+	Trending(context.Context, int) ([]catalog.Manga, error)
+	UserList(context.Context, int) ([]catalog.AniListEntry, error)
+	MediaProgress(context.Context, int) (int, error)
+	SaveProgress(context.Context, int, int) error
+}
+
+// AniList exposes the catalog metadata client.
+func (s *WantedService) AniList() AniListAPI {
+	return s.anilist
 }
 
 // OpenWanted opens the app database for wanted-title workflows.

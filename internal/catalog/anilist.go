@@ -164,6 +164,9 @@ func (c *AniListClient) do(ctx context.Context, query string, variables map[stri
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if token := TokenFromContext(ctx); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("anilist request: %w", err)

@@ -147,6 +147,11 @@ func (s *LibraryService) MarkChapterUnread(ctx context.Context, chapterID int64)
 }
 
 // MarkChapterRangeRead marks downloaded chapters in a title range read.
+// MarkChaptersReadThrough marks chapters up to a number read (AniList pull).
+func (s *LibraryService) MarkChaptersReadThrough(ctx context.Context, titleID int64, maxNumber int) (int, error) {
+	return s.repo.MarkChaptersReadThrough(ctx, titleID, maxNumber)
+}
+
 func (s *LibraryService) MarkChapterRangeRead(ctx context.Context, titleID int64, from, to string) (int, error) {
 	return s.repo.MarkChapterRangeRead(ctx, titleID, from, to)
 }
