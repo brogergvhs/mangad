@@ -21,6 +21,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/mangad/internal/providers/registry"
 	"github.com/brogergvhs/mangad/internal/service"
 	"github.com/brogergvhs/mangad/internal/sources"
 	"github.com/brogergvhs/mangad/internal/util"
@@ -1104,7 +1105,12 @@ func (u *webUI) sourcesPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	u.page(w, r, "sources", "Sources", srcs)
+	u.page(w, r, "sources", "Sources", sourcesPageView{Sources: srcs, Scrapers: registry.Names()})
+}
+
+type sourcesPageView struct {
+	Sources  []sources.Source
+	Scrapers []string
 }
 
 func (u *webUI) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -1472,13 +1478,19 @@ func (u *webUI) srcRow(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "sourceRow", sourceRowView{Source: src, Active: active})
 }
 
+// sourceEditView carries the scraper choices next to the profile fields.
+type sourceEditView struct {
+	sources.Source
+	Scrapers []string
+}
+
 func (u *webUI) srcEdit(w http.ResponseWriter, r *http.Request) {
 	src, err := u.svc.GetSource(r.Context(), r.PathValue("id"))
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "sourceEdit", src)
+	u.frag(w, "sourceEdit", sourceEditView{Source: src, Scrapers: registry.Names()})
 }
 
 func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
@@ -1496,6 +1508,7 @@ func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
 	p.SearchURL = strings.TrimSpace(r.FormValue("search_url"))
 	p.Domains = splitList(r.FormValue("domains"))
 	p.AllowedExtensions = splitList(r.FormValue("extensions"))
+	p.Scraper = strings.TrimSpace(r.FormValue("scraper"))
 	p.SingleManga = formChecked(r, "single_manga")
 	p.Enabled = formChecked(r, "enabled")
 	// Saving stores a local override; built-in sync no longer clobbers it.
@@ -1606,7 +1619,7 @@ func customProfileFromForm(r *http.Request) (sources.Profile, bool, bool, error)
 	browser := formChecked(r, "browser")
 	return sources.Profile{
 		ID: id, Name: name, Domains: domains,
-		BaseURL: base, SampleMangaURL: manga, Scraper: "generic",
+		BaseURL: base, SampleMangaURL: manga, Scraper: strings.TrimSpace(r.FormValue("scraper")),
 		AllowedExtensions: exts, MinChapters: 1,
 		RequiresBrowserSolver: solver, RequiresBrowserDownload: browser,
 		SingleManga: formChecked(r, "single_manga"), Enabled: true,

@@ -5,6 +5,7 @@ package registry
 import (
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/providers/comickz"
@@ -30,6 +31,16 @@ var constructors = map[string]Constructor{
 	"iken": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
 		return iken.NewScraper(client, log, allowExt, checkJS, browser)
 	},
+}
+
+// Names lists the registered scrapers, sorted for display.
+func Names() []string {
+	names := make([]string, 0, len(constructors))
+	for name := range constructors {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Supported reports whether name is a known scraper.
