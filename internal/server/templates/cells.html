@@ -159,7 +159,7 @@
   {{if not .Rows}}
   <p class="text-base-content/60 py-3">{{.Empty}}</p>
   {{else}}
-  {{if ne .View "cards"}}
+  {{if or (eq .View "table") (eq .View "auto")}}
   <div class="{{if eq .View "auto"}}max-md:hidden{{end}} rounded-xl overflow-hidden">
     <table class="table">
       <tbody>
@@ -174,9 +174,28 @@
     </table>
   </div>
   {{end}}
-  {{if ne .View "table"}}
+  {{if or (eq .View "cards") (eq .View "auto")}}
   <div class="{{if eq .View "auto"}}md:hidden{{end}} grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
     {{$cm := .CanManage}}{{range .Cards}}{{template "libraryCard" cardView . $cm}}{{end}}
+  </div>
+  {{end}}
+  {{if eq .View "full"}}
+  <div class="grid gap-3">
+    {{range .Fulls}}
+    <div class="card bg-base-100 p-4">
+      <div class="flex gap-5 max-sm:flex-col">
+        <figure class="shrink-0 max-sm:self-center"><a href="/library/{{.Title.ID}}"><img id="full-cover-{{.Title.ID}}" hx-preserve class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a></figure>
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <div class="flex items-start justify-between gap-3">
+            <a href="/library/{{.Title.ID}}" class="text-lg font-semibold text-balance">{{.Title.DisplayTitle}}</a>
+            <span class="shrink-0 text-xs text-base-content/50">{{.Title.CompletedCount}}/{{.Title.DiscoveredCount}}{{if gt .Title.MissingCount 0}} · {{.Title.MissingCount}} missing{{end}} · {{humanBytes .Title.SizeBytes}}</span>
+          </div>
+          {{template "progressBar" .Title}}
+          {{template "mangaSummary" .Manga}}
+        </div>
+      </div>
+    </div>
+    {{end}}
   </div>
   {{end}}
   {{end}}
@@ -191,6 +210,23 @@
   </div>
   {{end}}
 </div>
+{{end}}
+
+{{define "mangaSummary"}}
+<div class="flex flex-wrap items-center gap-1.5">
+  {{if .Status}}<span class="badge badge-soft badge-sm">{{.Status}}</span>{{end}}
+  {{if .Format}}<span class="badge badge-ghost badge-sm">{{.Format}}</span>{{end}}
+  {{if .AverageScore}}<span class="badge badge-warning badge-soft badge-sm">★ {{.AverageScore}}%</span>{{end}}
+  {{if .Year}}<span class="badge badge-ghost badge-sm">{{.Year}}</span>{{end}}
+  {{if .Chapters}}<span class="badge badge-ghost badge-sm">{{.Chapters}} ch</span>{{end}}
+</div>
+{{if .Description}}<p class="line-clamp-3 text-sm leading-relaxed text-base-content/70">{{.Description}}</p>{{end}}
+{{if or .Genres .Tags}}
+<div class="flex flex-wrap gap-1.5">
+  {{range .Genres}}<span class="badge badge-outline badge-sm">{{.}}</span>{{end}}
+  {{range .Tags}}<span class="badge badge-ghost badge-sm">{{.}}</span>{{end}}
+</div>
+{{end}}
 {{end}}
 
 {{define "mangaResults"}}
@@ -216,6 +252,29 @@
       {{end}}
     </tbody>
   </table>
+</div>
+{{else if eq .View "full"}}
+<div class="grid gap-3">
+  {{$canAdd := .CanAdd}}{{range .Items}}
+  <div class="card bg-base-100 p-4">
+    <div class="flex gap-5 max-sm:flex-col">
+      <figure class="shrink-0 max-sm:self-center">
+        {{if .TitleID}}<a href="/library/{{.TitleID}}"><img class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></a>
+        {{else}}<img class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">{{end}}
+      </figure>
+      <div class="flex min-w-0 flex-1 flex-col gap-2">
+        <div class="flex items-start justify-between gap-3">
+          <h3 class="text-lg font-semibold text-balance">{{mangaTitle .Manga}}</h3>
+          <div class="shrink-0">
+            {{if .TitleID}}<a class="btn btn-sm btn-success btn-soft" href="/library/{{.TitleID}}">✓ In library</a>
+            {{else if $canAdd}}<button class="btn btn-sm btn-outline" hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add</button>{{end}}
+          </div>
+        </div>
+        {{template "mangaSummary" .Manga}}
+      </div>
+    </div>
+  </div>
+  {{end}}
 </div>
 {{else}}
 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">

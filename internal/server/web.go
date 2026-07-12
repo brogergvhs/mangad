@@ -338,10 +338,12 @@ type mangaResults struct {
 
 // resultView picks the search results layout from the request.
 func resultView(r *http.Request) string {
-	if r.FormValue("view") == "table" {
-		return "table"
+	switch v := r.FormValue("view"); v {
+	case "table", "full":
+		return v
+	default:
+		return "cards"
 	}
-	return "cards"
 }
 
 func (u *webUI) mangaResultsView(ctx context.Context, heading, view string, items []catalog.Manga) mangaResults {
@@ -509,8 +511,14 @@ func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
 type libraryResults struct {
 	tableData
 	Cards     []library.Title
+	Fulls     []libraryFullRow // detailed rows for the full view
 	CanManage bool
 	View      string
+}
+
+type libraryFullRow struct {
+	Title library.Title
+	Manga catalog.Manga
 }
 
 func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
@@ -600,12 +608,15 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 			t.Poll = true
 		}
 		view := activityView{Title: tl, Running: running, ActiveLabel: label, Failed: failed, Error: msg, User: auth.FromContext(ctx)}
+		full := libraryFullRow{Title: tl}
 		var detail template.HTML
 		if tl.CatalogMangaID != nil {
 			if m, ok := mangas[*tl.CatalogMangaID]; ok {
 				detail = u.renderToHTML("mangaDetail", m)
+				full.Manga = m
 			}
 		}
+		t.Fulls = append(t.Fulls, full)
 		t.Rows = append(t.Rows, tableRow{
 			ID: strconv.FormatInt(tl.ID, 10),
 			Cells: []template.HTML{
@@ -629,7 +640,7 @@ func libraryControlsFrom(values url.Values) libraryControls {
 		Dir:      values.Get("dir"),
 		View:     values.Get("view"),
 	}
-	if c.View != "table" && c.View != "cards" {
+	if c.View != "table" && c.View != "cards" && c.View != "full" {
 		c.View = "auto"
 	}
 	if c.Monitor == "" {
