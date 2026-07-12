@@ -73,8 +73,7 @@ func (u *webUI) anilistLibrary(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		items = append(items, e.Manga)
 	}
-	user := userFrom(r.Context())
-	u.frag(w, "mangaStrip", mangaStrip{Heading: "Your AniList list", Items: u.stripItems(r.Context(), items), CanAdd: user.Can(auth.PermLibraryAdd)})
+	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", "cards", items))
 }
 
 func (u *webUI) anilistSyncNow(w http.ResponseWriter, r *http.Request) {

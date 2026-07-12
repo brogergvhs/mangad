@@ -329,10 +329,24 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 	}
 }
 
-type mangaStrip struct {
+type mangaResults struct {
 	Heading string
+	View    string // "cards" (default) or "table"
 	Items   []searchResultView
 	CanAdd  bool
+}
+
+// resultView picks the search results layout from the request.
+func resultView(r *http.Request) string {
+	if r.FormValue("view") == "table" {
+		return "table"
+	}
+	return "cards"
+}
+
+func (u *webUI) mangaResultsView(ctx context.Context, heading, view string, items []catalog.Manga) mangaResults {
+	user := userFrom(ctx)
+	return mangaResults{Heading: heading, View: view, Items: u.stripItems(ctx, items), CanAdd: user.Can(auth.PermLibraryAdd)}
 }
 
 func (u *webUI) stripItems(ctx context.Context, items []catalog.Manga) []searchResultView {
@@ -355,26 +369,24 @@ func (u *webUI) relatedManga(w http.ResponseWriter, r *http.Request) {
 	}
 	title, err := u.svc.GetTitle(r.Context(), id)
 	if err != nil || title.CatalogMangaID == nil {
-		u.frag(w, "mangaStrip", mangaStrip{})
+		u.frag(w, "mangaResults", mangaResults{})
 		return
 	}
 	items, err := u.svc.RelatedManga(r.Context(), *title.CatalogMangaID, 12)
 	if err != nil {
-		u.frag(w, "mangaStrip", mangaStrip{})
+		u.frag(w, "mangaResults", mangaResults{})
 		return
 	}
-	user := userFrom(r.Context())
-	u.frag(w, "mangaStrip", mangaStrip{Heading: "Related manga", Items: u.stripItems(r.Context(), items), CanAdd: user.Can(auth.PermLibraryAdd)})
+	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", "cards", items))
 }
 
 func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
-	items, err := u.svc.TrendingManga(r.Context(), 12)
+	items, err := u.svc.TrendingManga(r.Context(), 18)
 	if err != nil {
-		u.frag(w, "mangaStrip", mangaStrip{})
+		u.frag(w, "mangaResults", mangaResults{})
 		return
 	}
-	user := userFrom(r.Context())
-	u.frag(w, "mangaStrip", mangaStrip{Heading: "Trending on AniList", Items: u.stripItems(r.Context(), items), CanAdd: user.Can(auth.PermLibraryAdd)})
+	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), items))
 }
 
 // adultAllowed reports whether the acting user may see adult content.
@@ -1100,20 +1112,18 @@ type searchResultView struct {
 }
 
 func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
-	items, err := u.svc.SearchAniList(r.Context(), r.FormValue("q"), 10)
+	q := strings.TrimSpace(r.FormValue("q"))
+	if q == "" {
+		// Cleared input: fall back to the recommendations grid.
+		u.trendingManga(w, r)
+		return
+	}
+	items, err := u.svc.SearchAniList(r.Context(), q, 12)
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	inLibrary, _ := u.svc.TitlesByProvider(r.Context(), catalog.AniListProvider)
-	views := make([]searchResultView, 0, len(items))
-	for _, m := range items {
-		if m.IsAdult && !adultAllowed(r.Context()) {
-			continue
-		}
-		views = append(views, searchResultView{Manga: m, TitleID: inLibrary[m.ProviderID]})
-	}
-	u.frag(w, "searchResults", views)
+	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), items))
 }
 
 func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
@@ -1128,6 +1138,10 @@ func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.kick()
+	if r.FormValue("card") != "" {
+		u.frag(w, "addedButtonCard", title)
+		return
+	}
 	u.frag(w, "addedButton", title)
 }
 

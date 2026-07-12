@@ -44,12 +44,16 @@
 {{end}}
 
 {{define "search"}}
-<form class="join w-full mb-4" hx-post="/ui/search" hx-target="#search-results" hx-indicator="#search-spin">
-  <input name="q" class="input join-item w-full" placeholder="Search AniList…" autofocus required>
-  <button class="btn btn-primary join-item">Search</button>
+<form id="search-form" class="mb-4 flex items-center gap-2" hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML" hx-indicator="#search-spin"
+  hx-trigger="submit, change from:select, keyup changed delay:400ms from:input[name='q']">
+  <input name="q" class="input w-full" placeholder="Search AniList…" autofocus>
+  <select name="view" class="select w-28 shrink-0" aria-label="Results view">
+    <option value="cards">Cards</option>
+    <option value="table">Table</option>
+  </select>
 </form>
 <div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
-<div id="search-results"><div hx-get="/ui/search/trending" hx-trigger="load" hx-swap="outerHTML"></div></div>
+<div id="search-results"><div hx-get="/ui/search/trending" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div></div>
 {{end}}
 
 {{define "library"}}
@@ -243,6 +247,16 @@
 
 {{end}}
 
+{{if .Title.CatalogMangaID}}
+<div class="collapse collapse-arrow bg-base-100 mt-4">
+  <input type="checkbox">
+  <div class="collapse-title font-semibold">Related manga</div>
+  <div class="collapse-content">
+    <div hx-get="/ui/library/{{.Title.ID}}/related" hx-trigger="load" hx-swap="outerHTML"></div>
+  </div>
+</div>
+{{end}}
+
 <div class="flex sm:items-center justify-between gap-2 mt-6 mb-3 max-sm:flex-col">
   <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.ChaptersTable.Total}} Chapters</h2>
   <div class="flex sm:items-center gap-2 max-sm:flex-col">
@@ -271,9 +285,6 @@
 </form>
 {{template "chaptersList" .ChaptersTable}}
 
-{{if .Title.CatalogMangaID}}
-<div hx-get="/ui/library/{{.Title.ID}}/related" hx-trigger="load" hx-swap="outerHTML"></div>
-{{end}}
 {{end}}
 
 {{define "sourceProbe"}}
