@@ -90,7 +90,7 @@ document.body.addEventListener("htmx:afterSwap", function () {
     if ((e.key === "ArrowLeft" || e.key === "[") && prev) {
       location.href = prev.href;
     } else if ((e.key === "ArrowRight" || e.key === "]") && next) {
-      location.href = next.href;
+      goNext();
     } else if (e.key === "j") {
       window.scrollBy({ top: window.innerHeight * 0.9, behavior: "smooth" });
     } else if (e.key === "k") {
@@ -159,6 +159,7 @@ document.body.addEventListener("htmx:afterSwap", function () {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
+      keepalive: true, // final page marks must survive chapter navigation
     }).then(function (resp) {
       if (!resp.ok) throw new Error("reader write failed");
       return resp.json();
@@ -223,7 +224,10 @@ document.body.addEventListener("htmx:afterSwap", function () {
     var atBottom = built && window.scrollY + window.innerHeight >= doc.scrollHeight - 4;
     pages.forEach(function (img) {
       var rect = img.getBoundingClientRect();
-      if ((rect.bottom > 0 && rect.bottom <= threshold) || (atBottom && rect.top < window.innerHeight)) {
+      // Anything whose bottom rose above the 85% line counts as read — with
+      // no lower bound, so short pages that jump across the whole band (or
+      // off-screen entirely) between two scroll frames aren't skipped.
+      if (rect.bottom <= threshold || (atBottom && rect.top < window.innerHeight)) {
         mark(img);
       }
     });
@@ -235,6 +239,28 @@ document.body.addEventListener("htmx:afterSwap", function () {
   }
   window.addEventListener("scroll", requestCheck, { passive: true });
   window.addEventListener("resize", requestCheck);
+
+  // Moving on to the next chapter finishes the current screen: short final
+  // pages sit fully visible without ever crossing the 85% line, so sweep
+  // everything on or above the viewport, flush the write queue, then follow
+  // the link (keepalive covers writes the browser would otherwise cancel).
+  function goNext() {
+    if (!next) return;
+    if (!pages) { // the empty page initialises no strip state
+      location.href = next.href;
+      return;
+    }
+    pages.forEach(function (img) {
+      if (img.getBoundingClientRect().top < window.innerHeight) mark(img);
+    });
+    queueWrite(function () { location.href = next.href; });
+  }
+  if (next) {
+    next.addEventListener("click", function (e) {
+      e.preventDefault();
+      goNext();
+    });
+  }
 
   // --- sequential builder: preload a few ahead, append strictly in order.
   // Appending is gated on scroll proximity so a long title isn't downloaded

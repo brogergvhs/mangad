@@ -1014,11 +1014,6 @@ func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Man
 	return s.want.GetManga(ctx, catalogID)
 }
 
-// RemoveTitle removes a tracked title.
-func (s *JobService) RemoveTitle(ctx context.Context, id int64) (library.Title, error) {
-	return s.RemoveTitleFiles(ctx, id, false)
-}
-
 // RemoveTitleFiles removes a title and, when deleteFiles is set, its
 // downloaded folder on disk. Without deletion the folder reappears on the
 // Import page as an untracked candidate.
