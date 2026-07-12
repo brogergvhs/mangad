@@ -581,6 +581,9 @@ func sameSeriesChapterLink(pageURL, href string) bool {
 	if sameSeriesID(baseParts, candidateParts) {
 		return true
 	}
+	if sameSeriesSlug(baseParts, candidateParts) {
+		return true
+	}
 	if candidateParts[0] == "chapters" && !hasNumericPathPart(baseParts) {
 		return true
 	}
@@ -593,6 +596,20 @@ func sameSeriesChapterLink(pageURL, href string) bool {
 func hasNumericPathPart(parts []string) bool {
 	for _, part := range parts {
 		if _, err := strconv.Atoi(part); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// sameSeriesSlug accepts chapter URLs whose own slug embeds the series slug,
+func sameSeriesSlug(baseParts, candidateParts []string) bool {
+	slug := baseParts[len(baseParts)-1]
+	if len(slug) < 4 {
+		return false // too short to be a distinctive series slug
+	}
+	for _, part := range candidateParts {
+		if strings.HasPrefix(part, slug+"-") {
 			return true
 		}
 	}

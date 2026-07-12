@@ -446,3 +446,23 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
+
+// MangaThemesia sites list chapters under a different path root whose slug
+// embeds the series slug: /series/{slug} → /chapter/{slug}-chapter-N.
+func TestSameSeriesChapterLinkAcceptsEmbeddedSlug(t *testing.T) {
+	page := "https://rizzfables.com/series/r2311170-top-tier-providence"
+	cases := []struct {
+		href string
+		want bool
+	}{
+		{"https://rizzfables.com/chapter/r2311170-top-tier-providence-chapter-225", true},
+		{"https://rizzfables.com/chapter/r2311170-top-tier-providence-chapter-223.5", true},
+		{"https://rizzfables.com/chapter/other-series-chapter-1", false},
+		{"https://other-site.com/chapter/r2311170-top-tier-providence-chapter-225", false},
+	}
+	for _, tc := range cases {
+		if got := sameSeriesChapterLink(page, tc.href); got != tc.want {
+			t.Errorf("sameSeriesChapterLink(%q) = %v, want %v", tc.href, got, tc.want)
+		}
+	}
+}
