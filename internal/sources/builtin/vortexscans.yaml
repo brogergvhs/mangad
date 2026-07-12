@@ -5,7 +5,7 @@ domains:
 base_url: https://vortexscans.org/
 sample_manga_url: https://vortexscans.org/series/hardcore-leveling-warrior:-earth-game
 search_url: https://api.vortexscans.org/api/query?searchTerm={query}&perPage=10
-scraper: madara
+scraper: iken
 allowed_extensions:
   - jpg
   - webp
