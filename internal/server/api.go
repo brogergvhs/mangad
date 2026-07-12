@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/brogergvhs/mangad/internal/auth"
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/service"
@@ -181,6 +182,7 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		svc.PushAniListProgress(r.Context(), auth.UserID(r.Context()), progress.TitleID)
 		writeJSON(w, http.StatusOK, progress)
 	})
 

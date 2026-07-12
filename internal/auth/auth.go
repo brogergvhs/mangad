@@ -43,13 +43,14 @@ const (
 )
 
 type User struct {
-	ID        int64
-	Username  string
-	Origin    string // env|local
-	RoleID    int64
-	RoleName  string
-	Perms     map[string]bool
-	CreatedAt time.Time
+	ID         int64
+	Username   string
+	Origin     string // env|local
+	RoleID     int64
+	RoleName   string
+	AllowAdult bool // per-user (not role): may see adult-flagged content
+	Perms      map[string]bool
+	CreatedAt  time.Time
 }
 
 // Can reports whether the user holds a permission.

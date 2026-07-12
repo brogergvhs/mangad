@@ -134,7 +134,10 @@ func titleSourceView(title library.Title, active, failed bool, msg string, match
 }
 
 type settingsView struct {
-	Groups []settingGroup
+	Groups        []settingGroup
+	AniList       service.AniListConnection
+	RedirectURL   string
+	AppConfigured bool
 }
 type settingGroup struct {
 	Title  string
@@ -152,6 +155,12 @@ func settingMeta(key string) (label, desc string) {
 		return token, ""
 	}
 	switch key {
+	case service.SettingServeAniListSyncEvery:
+		return "AniList sync", "How often connected accounts sync reading progress with AniList (e.g. 12h). Empty disables."
+	case service.SettingAniListClientID:
+		return "AniList client ID", "From your AniList developer application."
+	case service.SettingAniListClientSecret:
+		return "AniList client secret", "Kept server-side; used to exchange login codes for tokens."
 	case service.SettingUITheme:
 		return "Theme", "Interface color theme. Pick custom to use the colors below."
 	case service.SettingServeRefreshEvery:
@@ -280,6 +289,17 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
 	mux.HandleFunc("GET /ui/health", u.health)
 	mux.HandleFunc("GET /ui/import/candidates", u.importCandidates)
+	mux.HandleFunc("GET /ui/library/{id}/related", u.relatedManga)
+	mux.HandleFunc("GET /ui/search/trending", u.trendingManga)
+	mux.HandleFunc("GET /anilist/connect", u.anilistConnect)
+	mux.HandleFunc("GET /anilist/callback", u.anilistCallback)
+	mux.HandleFunc("POST /ui/anilist/disconnect", u.anilistDisconnect)
+	mux.HandleFunc("GET /ui/anilist/library", u.anilistLibrary)
+	mux.HandleFunc("GET /ui/account", u.accountFrag)
+	mux.HandleFunc("POST /ui/account/password", u.accountPassword)
+	mux.HandleFunc("POST /ui/account/sessions/revoke", u.accountRevokeSessions)
+	mux.HandleFunc("POST /ui/account/tokens", u.accountTokenCreate)
+	mux.HandleFunc("POST /ui/account/tokens/{id}/delete", u.accountTokenDelete)
 	mux.HandleFunc("GET /users", u.usersPage)
 	mux.HandleFunc("GET /ui/users", u.usersFrag)
 	mux.HandleFunc("POST /ui/users", u.userCreate)
@@ -304,6 +324,74 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), User: userFrom(r.Context()), Theme: theme, ThemeCSS: css, Content: template.HTML(buf.String())}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+type mangaStrip struct {
+	Heading string
+	Items   []searchResultView
+	CanAdd  bool
+}
+
+func (u *webUI) stripItems(ctx context.Context, items []catalog.Manga) []searchResultView {
+	inLibrary, _ := u.svc.TitlesByProvider(ctx, catalog.AniListProvider)
+	views := make([]searchResultView, 0, len(items))
+	for _, m := range items {
+		if m.IsAdult && !adultAllowed(ctx) {
+			continue
+		}
+		views = append(views, searchResultView{Manga: m, TitleID: inLibrary[m.ProviderID]})
+	}
+	return views
+}
+
+func (u *webUI) relatedManga(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	title, err := u.svc.GetTitle(r.Context(), id)
+	if err != nil || title.CatalogMangaID == nil {
+		u.frag(w, "mangaStrip", mangaStrip{})
+		return
+	}
+	items, err := u.svc.RelatedManga(r.Context(), *title.CatalogMangaID, 12)
+	if err != nil {
+		u.frag(w, "mangaStrip", mangaStrip{})
+		return
+	}
+	user := userFrom(r.Context())
+	u.frag(w, "mangaStrip", mangaStrip{Heading: "Related manga", Items: u.stripItems(r.Context(), items), CanAdd: user.Can(auth.PermLibraryAdd)})
+}
+
+func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
+	items, err := u.svc.TrendingManga(r.Context(), 12)
+	if err != nil {
+		u.frag(w, "mangaStrip", mangaStrip{})
+		return
+	}
+	user := userFrom(r.Context())
+	u.frag(w, "mangaStrip", mangaStrip{Heading: "Trending on AniList", Items: u.stripItems(r.Context(), items), CanAdd: user.Can(auth.PermLibraryAdd)})
+}
+
+// adultAllowed reports whether the acting user may see adult content.
+func adultAllowed(ctx context.Context) bool {
+	u := auth.FromContext(ctx)
+	return u != nil && u.AllowAdult
+}
+
+// filterAdultTitles hides adult-flagged titles from restricted users.
+func filterAdultTitles(ctx context.Context, titles []library.Title) []library.Title {
+	if adultAllowed(ctx) {
+		return titles
+	}
+	out := titles[:0]
+	for _, t := range titles {
+		if !t.IsAdult {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // theme returns the active UI theme and, for the custom theme, a CSS block of
@@ -362,6 +450,7 @@ func (u *webUI) fail(w http.ResponseWriter, err error) {
 
 func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
+	titles = filterAdultTitles(r.Context(), titles)
 	srcs, _ := u.svc.ListSources(r.Context())
 	data := dashData{Titles: titles, Sources: srcs, User: userFrom(r.Context())} // services health post-loads via /ui/health
 	for _, t := range titles {
@@ -420,6 +509,10 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if progress.Title.IsAdult && !adultAllowed(r.Context()) {
+		http.Error(w, "adult content is not available for this account", http.StatusForbidden)
+		return
+	}
 	currentID, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64)
 	manifest, prevID, nextID := readerManifestWindow(progress, currentID)
 	data := readerView{Title: progress.Title, Manifest: manifest, PagePosition: initialReaderPosition(manifest)}
@@ -454,6 +547,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 	page, _, _ := tableParams(values, libraryPerPage)
 	controls := libraryControlsFrom(values)
 	titles, _ := u.svc.ListTitles(ctx)
+	titles = filterAdultTitles(ctx, titles)
 	allCount := len(titles)
 	titles = filterTitles(titles, controls)
 	sortTitles(titles, controls.Sort, controls.Dir)
@@ -714,6 +808,10 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if title.IsAdult && !adultAllowed(r.Context()) {
+		http.Error(w, "adult content is not available for this account", http.StatusForbidden)
+		return
+	}
 	view := u.titleActivity(r.Context(), id)
 	view.Title = title
 	view.User = userFrom(r.Context())
@@ -782,6 +880,9 @@ func (u *webUI) chapterRead(read bool) http.HandlerFunc {
 		}
 		if read {
 			_, err = u.svc.MarkChapterRead(r.Context(), chapterID)
+			if err == nil {
+				u.svc.PushAniListProgress(r.Context(), auth.UserID(r.Context()), titleID)
+			}
 		} else {
 			_, err = u.svc.MarkChapterUnread(r.Context(), chapterID)
 		}
@@ -806,6 +907,9 @@ func (u *webUI) chapterRangeRead(w http.ResponseWriter, r *http.Request) {
 	switch r.FormValue("action") {
 	case "read":
 		_, err = u.svc.MarkChapterRangeRead(r.Context(), titleID, r.FormValue("from"), r.FormValue("to"))
+		if err == nil {
+			u.svc.PushAniListProgress(r.Context(), auth.UserID(r.Context()), titleID)
+		}
 	case "unread":
 		_, err = u.svc.MarkChapterRangeUnread(r.Context(), titleID, r.FormValue("from"), r.FormValue("to"))
 	default:
@@ -975,7 +1079,11 @@ func (u *webUI) sourcesPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *webUI) settingsPage(w http.ResponseWriter, r *http.Request) {
-	u.page(w, r, "settings", "Settings", u.settings(r.Context()))
+	view := u.settings(r.Context())
+	view.AniList = u.svc.AniListConnectionFor(r.Context(), auth.UserID(r.Context()))
+	view.RedirectURL = anilistRedirectURL(r)
+	view.AppConfigured = u.svc.Setting(r.Context(), service.SettingAniListClientID, "") != ""
+	u.page(w, r, "settings", "Settings", view)
 }
 
 // --- search & add ---
@@ -992,9 +1100,12 @@ func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inLibrary, _ := u.svc.TitlesByProvider(r.Context(), catalog.AniListProvider)
-	views := make([]searchResultView, len(items))
-	for i, m := range items {
-		views[i] = searchResultView{Manga: m, TitleID: inLibrary[m.ProviderID]}
+	views := make([]searchResultView, 0, len(items))
+	for _, m := range items {
+		if m.IsAdult && !adultAllowed(r.Context()) {
+			continue
+		}
+		views = append(views, searchResultView{Manga: m, TitleID: inLibrary[m.ProviderID]})
 	}
 	u.frag(w, "searchResults", views)
 }
@@ -1597,7 +1708,8 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 		groups = append(groups,
 			settingGroup{Title: "Scheduling", Fields: fields(
 				service.SettingServeRefreshEvery, service.SettingServeScanEvery,
-				service.SettingServeDownloadEvery, service.SettingServeRunEvery)},
+				service.SettingServeDownloadEvery, service.SettingServeRunEvery,
+				service.SettingServeAniListSyncEvery)},
 			settingGroup{Title: "Jobs & downloads", Fields: fields(
 				service.SettingJobsMaxAttempts, service.SettingJobsTimeout,
 				service.SettingJobsWorkers, service.SettingDownloadsMaxAttempts)},
@@ -1607,6 +1719,8 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 				service.SettingBrowserDownloaderEnabled, service.SettingBrowserDownloaderEndpoint,
 				service.SettingBrowserDownloaderTimeoutSeconds, service.SettingServicesHealthInterval)},
 			settingGroup{Title: "Sources", Fields: fields(service.SettingSourceRegistryURL)},
+			settingGroup{Title: "AniList application", Fields: fields(
+				service.SettingAniListClientID, service.SettingAniListClientSecret)},
 		)
 	}
 	return settingsView{Groups: groups}
@@ -1896,6 +2010,8 @@ func mangaTitle(m catalog.Manga) string {
 
 func jobLabel(typ string) string {
 	switch typ {
+	case jobs.TypeSyncAniList:
+		return "AniList sync"
 	case jobs.TypeRefreshTitle:
 		return "Refresh chapters"
 	case jobs.TypeScanDownloads:

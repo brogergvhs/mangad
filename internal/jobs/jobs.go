@@ -7,6 +7,7 @@ const (
 	TypeRefreshTitle    = "refresh_title"
 	TypeScanDownloads   = "scan_downloads"
 	TypeDownloadMissing = "download_missing"
+	TypeSyncAniList     = "sync_anilist"
 	TypeVerifySource    = "verify_source"
 	TypeMatchSources    = "match_sources"
 )

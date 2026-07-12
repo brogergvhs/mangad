@@ -47,13 +47,15 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 func requiredPerm(r *http.Request) string {
 	p := r.URL.Path
 	switch {
-	case p == "/logout" || p == "/":
+	case p == "/logout" || p == "/" || strings.HasPrefix(p, "/anilist/") || strings.HasPrefix(p, "/ui/anilist/") || strings.HasPrefix(p, "/ui/account"):
 		return "" // any signed-in user (dashboard sections gate individually)
 	case strings.HasPrefix(p, "/reader/") || strings.HasPrefix(p, "/api/reader/"):
 		return auth.PermReaderUse
 	case p == "/users" || strings.HasPrefix(p, "/ui/users"):
 		return auth.PermUsersManage
-	case p == "/settings" || p == "/ui/settings" || p == "/api/settings":
+	case p == "/api/settings":
+		return auth.PermSettingsManage // the JSON API has no per-section split
+	case p == "/settings" || p == "/ui/settings":
 		return "" // section-level checks in the handlers (appearance vs global)
 	case p == "/sources" || strings.HasPrefix(p, "/ui/sources"):
 		return auth.PermSourcesManage
@@ -63,7 +65,7 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermJobsManage
 	case strings.HasPrefix(p, "/ui/jobs/"):
 		return auth.PermJobsView
-	case p == "/search" || p == "/ui/search" || p == "/ui/library/add":
+	case p == "/search" || strings.HasPrefix(p, "/ui/search") || p == "/ui/library/add":
 		return auth.PermLibraryAdd
 	case p == "/import" || strings.HasPrefix(p, "/ui/import"):
 		return auth.PermImportUse
@@ -83,12 +85,31 @@ func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 		admin, _ := svc.Auth().GetUser(ctx, auth.EnvAdminID)
 		return admin
 	}
+	// Scripted clients: a personal API token via header or bearer.
+	if token := headerToken(r); token != "" {
+		if user, err := svc.Auth().UserByAPIToken(ctx, token); err == nil && user != nil {
+			return user
+		}
+	}
 	if c, err := r.Cookie("mangad_session"); err == nil {
 		if user, err := svc.Auth().UserBySession(ctx, c.Value); err == nil && user != nil {
 			return user
 		}
 	}
 	return nil
+}
+
+func headerToken(r *http.Request) string {
+	if t := r.Header.Get("X-API-Key"); t != "" {
+		return t
+	}
+	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+// secureRequest reports whether the request arrived over https (directly or
+// via a TLS-terminating proxy) so cookies can carry the Secure flag.
+func secureRequest(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 const loginPage = `<!doctype html><html lang="en" data-theme="mocha"><meta charset="utf-8">
@@ -119,6 +140,7 @@ func registerAuthRoutes(mux *http.ServeMux, svc *service.JobService) {
 		http.SetCookie(w, &http.Cookie{
 			Name: "mangad_session", Value: token, Path: "/",
 			HttpOnly: true, SameSite: http.SameSiteLaxMode,
+			Secure: secureRequest(r),
 			MaxAge: 30 * 24 * 3600,
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
