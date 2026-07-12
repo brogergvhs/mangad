@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const AniListProvider = "anilist"
@@ -19,6 +20,7 @@ const AniListProvider = "anilist"
 type AniListClient struct {
 	endpoint string
 	client   *http.Client
+	limiter  *rate.Limiter
 }
 
 // NewAniListClient creates an AniList client.
@@ -26,7 +28,14 @@ func NewAniListClient(client *http.Client) *AniListClient {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	return &AniListClient{endpoint: "https://graphql.anilist.co", client: client}
+	// AniList allows 90 req/min but runs degraded at 30/min: pace sustained
+	// traffic (sync sweeps, mass adds) under that while the burst lets
+	// interactive use (search, related) go through immediately.
+	return &AniListClient{
+		endpoint: "https://graphql.anilist.co",
+		client:   client,
+		limiter:  rate.NewLimiter(rate.Every(2100*time.Millisecond), 5),
+	}
 }
 
 // Search returns manga results for a text query.
@@ -154,31 +163,62 @@ func (c *AniListClient) Get(ctx context.Context, id int) (Manga, error) {
 	return items[0], nil
 }
 
+// send paces the request through the client limiter and, when AniList still
+// answers 429, sits out the advertised Retry-After window before retrying.
+func (c *AniListClient) send(ctx context.Context, body []byte) (*http.Response, error) {
+	const attempts = 3
+	for attempt := 1; ; attempt++ {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if token := TokenFromContext(ctx); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("anilist request: %w", err)
+		}
+		if resp.StatusCode != http.StatusTooManyRequests {
+			return resp, nil
+		}
+		after := anilistRetryAfter(resp)
+		resp.Body.Close()
+		if attempt >= attempts {
+			return nil, fmt.Errorf("anilist rate limited (HTTP 429), retry after %s", after)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(after):
+		}
+	}
+}
+
+// anilistRetryAfter reads the 429 Retry-After header; AniList's window is one
+// minute, so default to that and cap slightly above it.
+func anilistRetryAfter(resp *http.Response) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After")))
+	if err != nil || seconds <= 0 {
+		return time.Minute
+	}
+	return min(time.Duration(seconds)*time.Second, 90*time.Second)
+}
+
 func (c *AniListClient) do(ctx context.Context, query string, variables map[string]any, out any) error {
 	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	resp, err := c.send(ctx, body)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if token := TokenFromContext(ctx); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("anilist request: %w", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusTooManyRequests {
-		msg := "anilist rate limited (HTTP 429)"
-		if after := strings.TrimSpace(resp.Header.Get("Retry-After")); after != "" {
-			msg += ", retry after " + after + "s"
-		}
-		return errors.New(msg)
-	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("anilist HTTP %d", resp.StatusCode)
 	}

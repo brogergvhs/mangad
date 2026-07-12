@@ -692,7 +692,7 @@ func (s *JobService) expandAniListSync(ctx context.Context, parentID int64) erro
 // runAniListSync reconciles the whole library with AniList for one user:
 // remote > local pulls read marks down; local > remote pushes up; tracked
 // titles missing from the remote list are added with their computed status.
-func (s *JobService) runAniListSync(ctx context.Context, userID int64) error {
+func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress ProgressManager) error {
 	ctx = auth.WithUser(ctx, &auth.User{ID: userID})
 	actx, aid, ok := s.aniListIdentity(ctx, userID)
 	if !ok {
@@ -710,8 +710,16 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64) error {
 	if err != nil {
 		return err
 	}
+	// Rate-limit pacing makes a large first sync slow; report each title so
+	// the stall watchdog sees a working job, not a stuck one.
+	handle := progress.Register("anilist sync")
+	handle.SetTotal(len(tracked))
+	defer handle.MarkDone()
 	var errs []error
+	n := 0
 	for pid, titleID := range tracked {
+		n++
+		handle.Update(n, len(tracked), 0)
 		mediaID, err := strconv.Atoi(pid)
 		if err != nil {
 			continue
@@ -849,7 +857,7 @@ func (s *JobService) PushAniListEntry(ctx context.Context, userID, titleID int64
 		return
 	}
 	go func() {
-		pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		pctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancel()
 		if err := s.reconcileAniListEntry(pctx, mediaID, local, status); err != nil {
 			log.Printf("anilist entry push (media %d): %v", mediaID, err)
@@ -918,7 +926,7 @@ func (s *JobService) markAniListDropped(ctx context.Context, mediaID int) {
 	rows.Close()
 	go func() {
 		for _, t := range tokens {
-			tctx, cancel := context.WithTimeout(catalog.WithToken(ctx, t), 20*time.Second)
+			tctx, cancel := context.WithTimeout(catalog.WithToken(ctx, t), 3*time.Minute)
 			if _, _, found, err := s.want.AniList().MediaEntry(tctx, mediaID); err == nil && found {
 				if err := s.want.AniList().SaveEntry(tctx, mediaID, -1, "DROPPED"); err != nil {
 					log.Printf("anilist drop (media %d): %v", mediaID, err)
@@ -1670,7 +1678,7 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return s.expandTitleJob(ctx, jobs.TypeDownloadMissing, job.ID)
 	case jobs.TypeSyncAniList:
 		if payload.UserID > 0 {
-			return s.runAniListSync(ctx, payload.UserID)
+			return s.runAniListSync(ctx, payload.UserID, progress)
 		}
 		return s.expandAniListSync(ctx, job.ID)
 	case jobs.TypeVerifySource:
