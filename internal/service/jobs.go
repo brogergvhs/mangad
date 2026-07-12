@@ -31,6 +31,7 @@ import (
 type JobService struct {
 	db         *sql.DB
 	dbPath     string
+	secrets    *tokenCipher
 	jobTimeout time.Duration
 	jobWorkers int
 	runtime    func() (*config.Config, ui.Log, error)
@@ -85,6 +86,7 @@ const (
 	SettingServicesHealthInterval = "services.health_interval"
 
 	SettingServeAniListSyncEvery = "sync.anilist_every"
+	SettingServeCatalogEvery     = "catalog.refresh_every"
 
 	SettingAniListClientID     = "anilist.client_id"
 	SettingAniListClientSecret = "anilist.client_secret"
@@ -134,6 +136,8 @@ func SettingDefault(key string) string {
 		return "60s"
 	case SettingServeAniListSyncEvery:
 		return "" // disabled until a cadence is set
+	case SettingServeCatalogEvery:
+		return "168h" // stale release status would block AniList Completed pushes
 	case SettingUITheme:
 		return SettingDefaultUITheme
 	default:
@@ -303,6 +307,14 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 
 	svc := newJobService(db)
 	svc.dbPath = dbPath
+	if svc.secrets, err = newTokenCipher(dbPath); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	if err := svc.encryptLegacyTokens(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
 	svc.auth = auth.NewService(db)
 	if err := svc.auth.Bootstrap(ctx, os.Getenv("MANGAD_ADMIN_USER"), os.Getenv("MANGAD_ADMIN_PASSWORD")); err != nil {
 		_ = db.Close()
@@ -599,6 +611,7 @@ func (s *JobService) TitlesByProvider(ctx context.Context, provider string) (map
 func (s *JobService) withAniListToken(ctx context.Context) context.Context {
 	var token string
 	_ = s.db.QueryRowContext(ctx, `SELECT access_token FROM user_anilist WHERE user_id = ?`, auth.UserID(ctx)).Scan(&token)
+	token, _ = s.secrets.Decrypt(token)
 	return catalog.WithToken(ctx, token)
 }
 
@@ -642,6 +655,10 @@ func (s *JobService) ConnectAniList(ctx context.Context, userID int64, redirectU
 	expires := ""
 	if expiresIn > 0 {
 		expires = database.FormatTime(time.Now().Add(time.Duration(expiresIn) * time.Second))
+	}
+	token, err = s.secrets.Encrypt(token)
+	if err != nil {
+		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO user_anilist (user_id, access_token, anilist_user_id, anilist_name, expires_at)
@@ -833,7 +850,86 @@ func (s *JobService) aniListIdentity(ctx context.Context, userID int64) (context
 	if err := s.db.QueryRowContext(ctx, `SELECT access_token, anilist_user_id FROM user_anilist WHERE user_id = ?`, userID).Scan(&token, &aid); err != nil || token == "" {
 		return ctx, 0, false
 	}
+	token, err := s.secrets.Decrypt(token)
+	if err != nil || token == "" {
+		return ctx, 0, false
+	}
 	return catalog.WithToken(ctx, token), aid, true
+}
+
+// runCatalogRefresh re-fetches AniList metadata for every catalog entry a
+// tracked title links to: descriptions, tags, adult flags and — importantly —
+// the release status that gates the AniList Completed push all go stale
+// otherwise. Paced by the AniList client's rate limiter.
+func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressManager) error {
+	// Deliberately unauthenticated: catalog metadata is public, and a stale
+	// or revoked user token must not be able to fail the whole refresh.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT cm.provider_id
+		FROM titles t JOIN catalog_manga cm ON cm.id = t.catalog_manga_id
+		WHERE cm.provider = ?`, catalog.AniListProvider)
+	if err != nil {
+		return err
+	}
+	var pids []string
+	for rows.Next() {
+		var pid string
+		if rows.Scan(&pid) == nil && pid != "" {
+			pids = append(pids, pid)
+		}
+	}
+	rows.Close()
+	handle := progress.Register("catalog refresh")
+	handle.SetTotal(len(pids))
+	defer handle.MarkDone()
+	var errs []error
+	for i, pid := range pids {
+		handle.Update(i+1, len(pids), 0)
+		mediaID, err := strconv.Atoi(pid)
+		if err != nil {
+			continue
+		}
+		m, err := s.want.AniList().Get(ctx, mediaID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("refresh %s: %w", pid, err))
+			continue
+		}
+		if _, err := s.want.catalog.UpsertManga(ctx, m); err != nil {
+			errs = append(errs, fmt.Errorf("store %s: %w", pid, err))
+		}
+	}
+	return errs2err(errs)
+}
+
+// encryptLegacyTokens re-encrypts plaintext AniList tokens left over from
+// before at-rest encryption existed.
+func (s *JobService) encryptLegacyTokens(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT user_id, access_token FROM user_anilist`)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id    int64
+		token string
+	}
+	var legacy []row
+	for rows.Next() {
+		var r row
+		if rows.Scan(&r.id, &r.token) == nil && r.token != "" && !strings.HasPrefix(r.token, encPrefix) {
+			legacy = append(legacy, r)
+		}
+	}
+	rows.Close()
+	for _, r := range legacy {
+		enc, err := s.secrets.Encrypt(r.token)
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE user_anilist SET access_token = ? WHERE user_id = ?`, enc, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // EnqueueAniListSync queues a progress sync for one user right now.
@@ -935,7 +1031,9 @@ func (s *JobService) markAniListDropped(ctx context.Context, mediaID int) {
 	for rows.Next() {
 		var t string
 		if rows.Scan(&t) == nil && t != "" {
-			tokens = append(tokens, t)
+			if t, err := s.secrets.Decrypt(t); err == nil && t != "" {
+				tokens = append(tokens, t)
+			}
 		}
 	}
 	rows.Close()
@@ -1003,6 +1101,68 @@ func (s *JobService) RelatedManga(ctx context.Context, catalogID int64, limit in
 // TrendingManga returns currently trending AniList manga.
 func (s *JobService) TrendingManga(ctx context.Context, limit int) ([]catalog.Manga, error) {
 	return s.want.AniList().Trending(s.withAniListToken(ctx), limit)
+}
+
+// RecommendedManga returns account-aware suggestions when the acting user has
+// a connected AniList account: AniList's recommendations for a handful of
+// their list entries, minus everything already on that list. Falls back to
+// global trending for disconnected users or empty lists.
+func (s *JobService) RecommendedManga(ctx context.Context, limit int) ([]catalog.Manga, error) {
+	actx, aid, ok := s.aniListIdentity(ctx, auth.UserID(ctx))
+	if !ok {
+		return s.TrendingManga(ctx, limit)
+	}
+	entries, err := s.want.AniList().UserList(actx, aid)
+	if err != nil || len(entries) == 0 {
+		return s.TrendingManga(ctx, limit)
+	}
+	onList := make(map[string]bool, len(entries))
+	var seeds []catalog.AniListEntry
+	for _, e := range entries {
+		onList[e.Manga.ProviderID] = true
+		if e.Status == "CURRENT" || e.Status == "COMPLETED" {
+			seeds = append(seeds, e)
+		}
+	}
+	if len(seeds) == 0 {
+		seeds = entries
+	}
+	const maxSeeds = 4
+	if len(seeds) > maxSeeds {
+		// Spread seeds across the list so recommendations vary between titles
+		// rather than always deriving from the same first entries.
+		spread := make([]catalog.AniListEntry, 0, maxSeeds)
+		for i := 0; i < maxSeeds; i++ {
+			spread = append(spread, seeds[i*len(seeds)/maxSeeds])
+		}
+		seeds = spread
+	}
+	var out []catalog.Manga
+	seen := map[string]bool{}
+	for _, seed := range seeds {
+		mediaID, err := strconv.Atoi(seed.Manga.ProviderID)
+		if err != nil {
+			continue
+		}
+		items, err := s.want.AniList().Related(actx, mediaID, limit)
+		if err != nil {
+			continue // one bad seed shouldn't empty the grid
+		}
+		for _, m := range items {
+			if onList[m.ProviderID] || seen[m.ProviderID] {
+				continue
+			}
+			seen[m.ProviderID] = true
+			out = append(out, m)
+		}
+	}
+	if len(out) == 0 {
+		return s.TrendingManga(ctx, limit)
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 // MangaByIDs returns catalog manga keyed by ID in one query.
@@ -1691,6 +1851,8 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 			return s.runAniListSync(ctx, payload.UserID, progress)
 		}
 		return s.expandAniListSync(ctx, job.ID)
+	case jobs.TypeCatalogRefresh:
+		return s.runCatalogRefresh(ctx, progress)
 	case jobs.TypeVerifySource:
 		_, err := s.VerifySource(ctx, cfg, logSvc, payload.SourceID)
 		return err
