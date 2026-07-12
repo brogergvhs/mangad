@@ -770,24 +770,26 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 // localAniListState computes the user's progress and list status for a title:
 // nothing read → PLANNING; everything read AND the series finished releasing
 // → COMPLETED (a caught-up ongoing series stays CURRENT); otherwise CURRENT.
+// Status keys off the read count, not the numeric progress: sub-chapters like
+// 0.1–0.3 carry progress 0 on AniList but still mean the user is reading.
 func (s *JobService) localAniListState(ctx context.Context, userID, titleID int64) (int, string, error) {
-	var progress, unread, total int
+	var progress, read, total int
 	var release string
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE(MAX(CASE WHEN rp.completed = 1 THEN c.number_main END), 0),
-			COUNT(*) - COUNT(CASE WHEN rp.completed = 1 THEN 1 END),
+			COUNT(CASE WHEN rp.completed = 1 THEN 1 END),
 			COUNT(*),
 			COALESCE((SELECT cm.status FROM titles t LEFT JOIN catalog_manga cm ON cm.id = t.catalog_manga_id WHERE t.id = ?), '')
 		FROM chapters c
 		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
-		WHERE c.title_id = ?`, titleID, userID, titleID).Scan(&progress, &unread, &total, &release); err != nil {
+		WHERE c.title_id = ?`, titleID, userID, titleID).Scan(&progress, &read, &total, &release); err != nil {
 		return 0, "", err
 	}
 	switch {
-	case progress <= 0:
+	case read == 0:
 		return progress, "PLANNING", nil
-	case unread == 0 && total > 0 && releaseFinished(release):
+	case read >= total && total > 0 && releaseFinished(release):
 		return progress, "COMPLETED", nil
 	default:
 		return progress, "CURRENT", nil
