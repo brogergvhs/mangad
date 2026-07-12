@@ -768,26 +768,39 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 }
 
 // localAniListState computes the user's progress and list status for a title:
-// nothing read → PLANNING, everything read → COMPLETED, otherwise CURRENT.
+// nothing read → PLANNING; everything read AND the series finished releasing
+// → COMPLETED (a caught-up ongoing series stays CURRENT); otherwise CURRENT.
 func (s *JobService) localAniListState(ctx context.Context, userID, titleID int64) (int, string, error) {
 	var progress, unread, total int
+	var release string
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE(MAX(CASE WHEN rp.completed = 1 THEN c.number_main END), 0),
 			COUNT(*) - COUNT(CASE WHEN rp.completed = 1 THEN 1 END),
-			COUNT(*)
+			COUNT(*),
+			COALESCE((SELECT cm.status FROM titles t LEFT JOIN catalog_manga cm ON cm.id = t.catalog_manga_id WHERE t.id = ?), '')
 		FROM chapters c
 		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
-		WHERE c.title_id = ?`, userID, titleID).Scan(&progress, &unread, &total); err != nil {
+		WHERE c.title_id = ?`, titleID, userID, titleID).Scan(&progress, &unread, &total, &release); err != nil {
 		return 0, "", err
 	}
 	switch {
 	case progress <= 0:
 		return progress, "PLANNING", nil
-	case unread == 0 && total > 0:
+	case unread == 0 && total > 0 && releaseFinished(release):
 		return progress, "COMPLETED", nil
 	default:
 		return progress, "CURRENT", nil
+	}
+}
+
+// releaseFinished mirrors defaultMonitored's reading of catalog status.
+func releaseFinished(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "finished", "completed", "complete":
+		return true
+	default:
+		return false
 	}
 }
 
