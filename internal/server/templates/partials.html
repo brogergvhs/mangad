@@ -49,14 +49,14 @@
 
 {{define "monitorBadge"}}
 <span class="inline-flex h-6 w-6 items-center justify-center" title="{{if .Monitored}}Monitored{{else}}Not monitored{{end}}">
-  {{if .Monitored}}<span class="text-warning leading-none">★</span>{{else}}<span class="text-base-content/40 leading-none">☆</span>{{end}}
+  {{if .Monitored}}<span class="text-warning leading-none">{{template "iconBellRing"}}</span>{{else}}<span class="text-base-content/40 leading-none">{{template "iconBellOff"}}</span>{{end}}
 </span>
 {{end}}
 
 {{define "monitorToggle"}}
 <button class="btn btn-sm btn-ghost btn-square" title="{{if .Monitored}}Monitored — click to stop{{else}}Not monitored — click to monitor{{end}}" aria-label="Toggle monitoring"
   hx-post="/ui/library/{{.ID}}/monitored" hx-vals='{"on":{{not .Monitored}}}' hx-target="this" hx-swap="outerHTML">
-  {{if .Monitored}}<span class="text-warning leading-none">★</span>{{else}}<span class="text-base-content/40 leading-none">☆</span>{{end}}
+  {{if .Monitored}}<span class="text-warning leading-none">{{template "iconBellRing"}}</span>{{else}}<span class="text-base-content/40 leading-none">{{template "iconBellOff"}}</span>{{end}}
 </button>
 {{end}}
 
