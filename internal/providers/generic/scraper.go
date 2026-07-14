@@ -549,13 +549,13 @@ func sameSeriesChapterLink(pageURL, href string) bool {
 
 	baseParts := pathParts(base.Path)
 	candidateParts := pathParts(candidate.Path)
+	if len(baseParts) > 0 && sameSeriesSlug(baseParts, candidateParts) {
+		return true
+	}
 	if len(baseParts) < 2 || len(candidateParts) < 2 {
 		return strings.HasPrefix(candidate.Path, chapterPageBase(base.Path))
 	}
 	if sameSeriesID(baseParts, candidateParts) {
-		return true
-	}
-	if sameSeriesSlug(baseParts, candidateParts) {
 		return true
 	}
 	if candidateParts[0] == "chapters" && !hasNumericPathPart(baseParts) {

@@ -520,3 +520,15 @@ func TestGetChaptersExpandsSmallGapBehindShowAll(t *testing.T) {
 		t.Fatalf("chapters = %d, want 15", len(chapters))
 	}
 }
+
+// Some MangaThemesia sites hang chapters off the site root with the series
+// slug prefixed: /manga/{slug}/ → /{slug}-84/.
+func TestSameSeriesChapterLinkAcceptsRootLevelSlugPrefix(t *testing.T) {
+	page := "https://arenascan.com/manga/wail-of-weakness/"
+	if !sameSeriesChapterLink(page, "https://arenascan.com/wail-of-weakness-84/") {
+		t.Fatal("root-level slug-prefixed chapter link rejected")
+	}
+	if sameSeriesChapterLink(page, "https://arenascan.com/other-series-84/") {
+		t.Fatal("foreign root-level chapter link accepted")
+	}
+}
