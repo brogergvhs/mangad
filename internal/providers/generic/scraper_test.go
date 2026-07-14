@@ -14,7 +14,7 @@ import (
 
 func TestFetchBodyCloudflareUsesBrowserSolver(t *testing.T) {
 	scraper := NewScraper(cfClient(), ui.NewLogger(false), nil, false, fakeBrowserFetcher("<html>solved</html>"))
-	body, fromBrowser, err := scraper.fetchBody(context.Background(), "http://manga.test")
+	body, _, fromBrowser, err := scraper.fetchBody(context.Background(), "http://manga.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestFetchBodyCloudflareUsesBrowserSolver(t *testing.T) {
 
 func TestFetchBodyCloudflareWithoutBrowserSolver(t *testing.T) {
 	scraper := NewScraper(cfClient(), ui.NewLogger(false), nil, false, nil)
-	if _, _, err := scraper.fetchBody(context.Background(), "http://manga.test"); err == nil {
+	if _, _, _, err := scraper.fetchBody(context.Background(), "http://manga.test"); err == nil {
 		t.Fatal("fetchBody() error = nil")
 	} else if !strings.Contains(err.Error(), "browser_solver.enabled") {
 		t.Fatalf("fetchBody() error = %v", err)
@@ -34,7 +34,7 @@ func TestFetchBodyCloudflareWithoutBrowserSolver(t *testing.T) {
 
 func TestFetchBodyCloudflareBlockBodyUsesBrowserSolver(t *testing.T) {
 	scraper := NewScraper(statusClient(http.StatusOK, "Attention Required! | Cloudflare\nSorry, you have been blocked"), ui.NewLogger(false), nil, false, fakeBrowserFetcher("<html>solved</html>"))
-	body, fromBrowser, err := scraper.fetchBody(context.Background(), "http://manga.test")
+	body, _, fromBrowser, err := scraper.fetchBody(context.Background(), "http://manga.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestFetchBodyCloudflareBlockBodyUsesBrowserSolver(t *testing.T) {
 
 func TestFetchBodyHTTPErrorUsesBrowserSolver(t *testing.T) {
 	scraper := NewScraper(statusClient(http.StatusInternalServerError, "500 Internal Server Error"), ui.NewLogger(false), nil, false, fakeBrowserFetcher("<html>solved</html>"))
-	body, fromBrowser, err := scraper.fetchBody(context.Background(), "http://manga.test")
+	body, _, fromBrowser, err := scraper.fetchBody(context.Background(), "http://manga.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestFetchBodyHTTPErrorUsesBrowserSolver(t *testing.T) {
 
 func TestFetchBodyHTTPErrorWithoutBrowserSolver(t *testing.T) {
 	scraper := NewScraper(statusClient(http.StatusInternalServerError, "500 Internal Server Error"), ui.NewLogger(false), nil, false, nil)
-	if _, _, err := scraper.fetchBody(context.Background(), "http://manga.test"); err == nil {
+	if _, _, _, err := scraper.fetchBody(context.Background(), "http://manga.test"); err == nil {
 		t.Fatal("fetchBody() error = nil")
 	} else if !strings.Contains(err.Error(), "HTTP 500") {
 		t.Fatalf("fetchBody() error = %v", err)

@@ -106,7 +106,7 @@ func runDownload(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	allChapters, err := downloadSvc.FetchChapters(ctx, cfg.DefaultURL)
+	allChapters, _, err := downloadSvc.FetchChapters(ctx, cfg.DefaultURL)
 	if err != nil {
 		return err
 	}

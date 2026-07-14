@@ -64,7 +64,7 @@ func (s *sourceService) TestProfile(ctx context.Context, cfg *config.Config, log
 		res.Error = err.Error()
 		return res
 	}
-	list, err := svc.FetchChapters(ctx, profile.SampleMangaURL)
+	list, _, err := svc.FetchChapters(ctx, profile.SampleMangaURL)
 	if err != nil {
 		res.Error = err.Error()
 		return res
@@ -320,7 +320,7 @@ func (s *sourceService) verifyFetch(ctx context.Context, cfg *config.Config, log
 		method = sources.FetchSolver
 	}
 
-	list, err := svc.FetchChapters(ctx, mangaURL)
+	list, _, err := svc.FetchChapters(ctx, mangaURL)
 	if err == nil && len(list) == 0 {
 		err = fmt.Errorf("no chapters found at %s", mangaURL)
 	}

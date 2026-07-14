@@ -272,11 +272,20 @@ func (f flaresolverrFetcher) applySession(ctx context.Context, target string, re
 	}
 }
 
-// FetchChapters fetches and normalizes all chapters for a source URL.
-func (s *DownloadService) FetchChapters(ctx context.Context, sourceURL string) ([]chapters.Chapter, error) {
-	raw, err := s.scraper.GetChapters(ctx, sourceURL)
+// FetchChapters fetches and normalizes all chapters for a source URL. The
+// second return is the URL the page resolved to (sites rotate slugs and
+// redirect old ones); callers can persist it when it differs.
+func (s *DownloadService) FetchChapters(ctx context.Context, sourceURL string) ([]chapters.Chapter, string, error) {
+	var raw []providers.Chapter
+	finalURL := sourceURL
+	var err error
+	if ra, ok := s.scraper.(providers.RedirectAware); ok {
+		raw, finalURL, err = ra.GetChaptersResolved(ctx, sourceURL)
+	} else {
+		raw, err = s.scraper.GetChapters(ctx, sourceURL)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("fetch chapters: %w", err)
+		return nil, "", fmt.Errorf("fetch chapters: %w", err)
 	}
 
 	out := make([]chapters.Chapter, len(raw))
@@ -284,7 +293,7 @@ func (s *DownloadService) FetchChapters(ctx context.Context, sourceURL string) (
 		out[i] = chapters.Chapter{Chapter: ch}
 	}
 
-	return out, nil
+	return out, finalURL, nil
 }
 
 // SelectChapters filters a chapter list according to a selection request.

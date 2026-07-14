@@ -62,18 +62,18 @@ var (
 	reBaseLike  = regexp.MustCompile(`(?:/|^)c?0*([0-9]+)(?:/|$)`)
 )
 
-// fetchDOMBody returns the parsed page, its HTML, and whether the browser
-// solver produced it (so callers can skip a redundant re-solve).
-func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Document, string, bool, error) {
+// fetchDOMBody returns the parsed page, its HTML, the URL it resolved to
+// after redirects, and whether the browser solver produced it.
+func (s *Scraper) fetchDOMBody(ctx context.Context, target string) (*goquery.Document, string, string, bool, error) {
 	s.log.Debugf("Fetching URL: %s\n", target)
 
-	body, fromBrowser, err := s.fetchBody(ctx, target)
+	body, finalURL, fromBrowser, err := s.fetchBody(ctx, target)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", "", false, err
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
-	return doc, body, fromBrowser, err
+	return doc, body, finalURL, fromBrowser, err
 }
 
 func (s *Scraper) fetchHTMXDOMBody(ctx context.Context, target, referer string) (*goquery.Document, string, error) {
@@ -107,8 +107,9 @@ func (s *Scraper) fetchHTMXDOMBody(ctx context.Context, target, referer string) 
 	return doc, body, err
 }
 
-// fetchBody returns the page HTML and whether it came from the browser solver.
-func (s *Scraper) fetchBody(ctx context.Context, target string) (string, bool, error) {
+// fetchBody returns the page HTML, the URL it resolved to after redirects,
+// and whether it came from the browser solver.
+func (s *Scraper) fetchBody(ctx context.Context, target string) (string, string, bool, error) {
 	s.log.Debugf("Fetching body for URL: %s\n", target)
 	if loader, ok := s.browser.(BrowserCacheLoader); ok {
 		loader.LoadCached(ctx, target)
@@ -116,7 +117,7 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, bool, e
 
 	req, err := http.NewRequestWithContext(ctx, "GET", target, nil)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	s.log.Debugf("HTTP Request: %s %s\n", req.Method, req.URL.String())
 
@@ -127,11 +128,11 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, bool, e
 		var statusErr *util.StatusError
 		definitive := errors.As(err, &statusErr) && statusErr.Code < http.StatusInternalServerError
 		if definitive || s.browser == nil {
-			return "", false, err
+			return "", "", false, err
 		}
 		s.log.Infof("Normal HTTP fetch failed for %s: %v\n", target, err)
 		html, berr := s.fetchViaBrowser(ctx, target)
-		return html, true, berr
+		return html, target, true, berr
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
@@ -143,21 +144,28 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, bool, e
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	body := string(data)
+
+	// Sites rotate URL slugs and redirect old ones; the final URL is the one
+	// chapter links resolve against (and worth persisting upstream).
+	finalURL := target
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
 
 	if resp.StatusCode == http.StatusForbidden || isCloudflareBlock(body) {
 		s.log.Infof("Cloudflare protection detected for %s.\n", target)
 		if s.browser != nil {
 			html, berr := s.fetchViaBrowser(ctx, target)
-			return html, true, berr
+			return html, target, true, berr
 		}
 		s.log.Infof("Browser solver is disabled. Enable FlareSolverr with browser_solver.enabled: true and browser_solver.endpoint: http://localhost:8191/v1.\n")
-		return "", false, fmt.Errorf("cloudflare challenge blocked; enable FlareSolverr with browser_solver.enabled: true")
+		return "", "", false, fmt.Errorf("cloudflare challenge blocked; enable FlareSolverr with browser_solver.enabled: true")
 	}
 
-	return body, false, nil
+	return body, finalURL, false, nil
 }
 
 func isCloudflareBlock(body string) bool {
@@ -368,10 +376,21 @@ func looksLikeChapterLink(href, title string) bool {
 }
 
 func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.Chapter, error) {
-	doc, body, fromBrowser, err := s.fetchDOMBody(ctx, pageURL)
+	out, _, err := s.GetChaptersResolved(ctx, pageURL)
+	return out, err
+}
+
+// GetChaptersResolved also reports the URL the page resolved to after
+// redirects, so callers can persist rotated source URLs.
+func (s *Scraper) GetChaptersResolved(ctx context.Context, pageURL string) ([]providers.Chapter, string, error) {
+	doc, body, finalURL, fromBrowser, err := s.fetchDOMBody(ctx, pageURL)
 	if err != nil {
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
-		return nil, err
+		return nil, "", err
+	}
+	if finalURL != "" && finalURL != pageURL {
+		s.log.Infof("%s redirected to %s; matching chapters against the new URL.\n", pageURL, finalURL)
+		pageURL = finalURL
 	}
 
 	out := scanChapterLinks(doc, pageURL, s.log)
@@ -380,20 +399,20 @@ func (s *Scraper) GetChapters(ctx context.Context, pageURL string) ([]providers.
 		s.log.Infof("No static chapter links found for %s; trying browser-rendered HTML.\n", pageURL)
 		body, err = s.fetchViaBrowser(ctx, pageURL)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		doc, err = goquery.NewDocumentFromReader(strings.NewReader(body))
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		out = scanChapterLinks(doc, pageURL, s.log)
 		out = s.expandChapterList(ctx, pageURL, doc, out)
 	}
 	if len(out) == 0 && looksDynamicApp(body) {
-		return nil, fmt.Errorf("no static chapter links found; enable browser_solver.enabled (FlareSolverr) for JS-rendered chapter lists")
+		return nil, "", fmt.Errorf("no static chapter links found; enable browser_solver.enabled (FlareSolverr) for JS-rendered chapter lists")
 	}
 
-	return out, nil
+	return out, pageURL, nil
 }
 
 // ScanChapterLinks extracts chapter links from a parsed page, for scrapers
@@ -406,7 +425,7 @@ func ScanChapterLinks(doc *goquery.Document, pageURL string, log ui.Log) []provi
 func (s *Scraper) expandChapterList(ctx context.Context, pageURL string, doc *goquery.Document, chapters []providers.Chapter) []providers.Chapter {
 	for _, u := range chapterExpansionURLs(doc, pageURL) {
 		s.log.Infof("Chapter list has an expansion control; trying %s.\n", u)
-		nextDoc, _, _, err := s.fetchDOMBody(ctx, u)
+		nextDoc, _, _, _, err := s.fetchDOMBody(ctx, u)
 		if err != nil {
 			s.log.Debugf("Skipping chapter expansion %s: %v\n", u, err)
 			continue
@@ -616,7 +635,7 @@ func pathParts(p string) []string {
 }
 
 func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, error) {
-	doc, body, usedBrowser, err := s.fetchDOMBody(ctx, chapterURL)
+	doc, body, _, usedBrowser, err := s.fetchDOMBody(ctx, chapterURL)
 	if err != nil {
 		s.log.Debugf("Failed to fetch DOM: %v\n", err)
 		return nil, err
@@ -647,7 +666,7 @@ func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, e
 			continue
 		}
 		visited[pageURL] = true
-		nextDoc, nextBody, _, err := s.fetchDOMBody(ctx, pageURL)
+		nextDoc, nextBody, _, _, err := s.fetchDOMBody(ctx, pageURL)
 		if err != nil {
 			s.log.Debugf("Skipping chapter page %s: %v\n", pageURL, err)
 			continue

@@ -33,6 +33,13 @@ type Scraper interface {
 	GetImages(ctx context.Context, chapterURL string) ([]string, error)
 }
 
+// RedirectAware is an optional Scraper capability: chapter fetches also
+// report the URL the page resolved to after redirects, so callers can persist
+// rotated source URLs (AsuraScans rotates a hash suffix on series slugs).
+type RedirectAware interface {
+	GetChaptersResolved(ctx context.Context, url string) ([]Chapter, string, error)
+}
+
 // Searcher is an optional Scraper capability for sources with a native search
 // API (rather than a scrapeable HTML results page). searchURL supplies the
 // host; it returns manga page URLs.

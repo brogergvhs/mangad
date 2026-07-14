@@ -209,6 +209,18 @@ func (r *Repository) ListTitleSources(ctx context.Context, titleID int64) ([]Lin
 
 // UnlinkSource removes a linked source; if it was the active one, another
 // linked source is promoted, or the title reverts to having no source.
+// UpdateSourceURL follows a site's URL rotation: the title's active source
+// URL and its linked-source row move to the redirect target. OR IGNORE keeps
+// a unique-constraint collision (target URL already stored) from failing the
+// refresh that discovered the move.
+func (r *Repository) UpdateSourceURL(ctx context.Context, titleID int64, oldURL, newURL string) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE OR IGNORE title_sources SET url = ? WHERE title_id = ? AND url = ?`, newURL, titleID, oldURL); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE OR IGNORE titles SET source_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND source_url = ?`, newURL, titleID, oldURL)
+	return err
+}
+
 func (r *Repository) UnlinkSource(ctx context.Context, titleID int64, url string) error {
 	url = strings.TrimSpace(url)
 	var primary string
