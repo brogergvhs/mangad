@@ -87,6 +87,9 @@ const (
 
 	SettingServeAniListSyncEvery = "sync.anilist_every"
 	SettingServeCatalogEvery     = "catalog.refresh_every"
+	SettingRateLimitIntervalMS   = "ratelimit.interval_ms"
+	SettingRateLimitBurst        = "ratelimit.burst"
+	SettingRateLimitDisabled     = "ratelimit.disabled"
 
 	SettingAniListClientID     = "anilist.client_id"
 	SettingAniListClientSecret = "anilist.client_secret"
@@ -138,6 +141,12 @@ func SettingDefault(key string) string {
 		return "" // disabled until a cadence is set
 	case SettingServeCatalogEvery:
 		return "168h" // stale release status would block AniList Completed pushes
+	case SettingRateLimitIntervalMS:
+		return "200"
+	case SettingRateLimitBurst:
+		return "2"
+	case SettingRateLimitDisabled:
+		return "false"
 	case SettingUITheme:
 		return SettingDefaultUITheme
 	default:
@@ -196,6 +205,10 @@ func SettingKeys() []string {
 		SettingDownloadsMaxAttempts,
 		SettingServicesHealthInterval,
 		SettingServeAniListSyncEvery,
+		SettingServeCatalogEvery,
+		SettingRateLimitIntervalMS,
+		SettingRateLimitBurst,
+		SettingRateLimitDisabled,
 		SettingAniListClientID,
 		SettingAniListClientSecret,
 		SettingUITheme,
@@ -226,16 +239,20 @@ func ValidateSetting(key, value string) error {
 			}
 		}
 		return fmt.Errorf("unknown theme %q", value)
-	case SettingServeAniListSyncEvery:
+	case SettingServeAniListSyncEvery, SettingServeCatalogEvery:
 		if value == "" {
 			return nil
 		}
 		return validateDurationSetting(key, value)
 	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery, SettingServicesHealthInterval:
 		return validateDurationSetting(key, value)
-	case SettingBrowserSolverEnabled, SettingBrowserDownloaderEnabled:
+	case SettingBrowserSolverEnabled, SettingBrowserDownloaderEnabled, SettingRateLimitDisabled:
 		if _, err := strconv.ParseBool(value); err != nil {
 			return fmt.Errorf("invalid bool for %s", key)
+		}
+	case SettingRateLimitIntervalMS, SettingRateLimitBurst:
+		if n, err := strconv.Atoi(value); err != nil || n < 0 {
+			return fmt.Errorf("%s must be a non-negative number", key)
 		}
 	case SettingBrowserSolverProvider:
 		if value != browserfetch.ProviderFlareSolverr {
@@ -501,6 +518,21 @@ func (s *JobService) ApplySettings(ctx context.Context, cfg *config.Config) {
 	if value := s.Setting(ctx, SettingBrowserDownloaderTimeoutSeconds, ""); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil {
 			cfg.BrowserDownload.TimeoutSeconds = seconds
+		}
+	}
+	if value := s.Setting(ctx, SettingRateLimitIntervalMS, ""); value != "" {
+		if ms, err := strconv.Atoi(value); err == nil {
+			cfg.RateLimit.IntervalMS = ms
+		}
+	}
+	if value := s.Setting(ctx, SettingRateLimitBurst, ""); value != "" {
+		if burst, err := strconv.Atoi(value); err == nil {
+			cfg.RateLimit.Burst = burst
+		}
+	}
+	if value := s.Setting(ctx, SettingRateLimitDisabled, ""); value != "" {
+		if disabled, err := strconv.ParseBool(value); err == nil {
+			cfg.RateLimit.Disabled = disabled
 		}
 	}
 }

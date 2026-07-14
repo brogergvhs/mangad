@@ -41,10 +41,22 @@ func newHostLimiters(cfg HostRateLimit) *hostLimiters {
 	return &hostLimiters{cfg: cfg, limiters: map[string]*rate.Limiter{}}
 }
 
+type rateLimitExemptKey struct{}
+
+// ExemptFromRateLimit marks a request context to skip per-host pacing. Image
+// downloads use it: they're CDN-served, already bounded by the downloader's
+// worker pool, and pacing them makes chapters crawl.
+func ExemptFromRateLimit(ctx context.Context) context.Context {
+	return context.WithValue(ctx, rateLimitExemptKey{}, true)
+}
+
 // Wait blocks until a request to host may proceed or ctx is done.
-// A nil receiver never blocks.
+// A nil receiver never blocks; exempted contexts pass straight through.
 func (h *hostLimiters) Wait(ctx context.Context, host string) error {
 	if h == nil {
+		return nil
+	}
+	if exempt, _ := ctx.Value(rateLimitExemptKey{}).(bool); exempt {
 		return nil
 	}
 	host = rateLimitHost(host)

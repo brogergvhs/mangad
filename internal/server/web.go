@@ -161,6 +161,12 @@ func settingMeta(key string) (label, desc string) {
 		return "AniList sync", "How often connected accounts sync reading progress with AniList (e.g. 12h). Empty disables."
 	case service.SettingServeCatalogEvery:
 		return "Catalog refresh", "How often cached AniList metadata (tags, release status) is re-fetched for tracked titles. Empty disables."
+	case service.SettingRateLimitIntervalMS:
+		return "Request pacing (ms)", "Minimum milliseconds between page requests to the same site. Image downloads are exempt. Lower is faster; too low risks bans."
+	case service.SettingRateLimitBurst:
+		return "Request pacing burst", "How many page requests may go out back-to-back before pacing kicks in."
+	case service.SettingRateLimitDisabled:
+		return "Disable request pacing", "true turns off per-site pacing entirely (not recommended for Cloudflare-fronted sites)."
 	case service.SettingAniListClientID:
 		return "AniList client ID", "From your AniList developer application."
 	case service.SettingAniListClientSecret:
@@ -1814,7 +1820,9 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 				service.SettingServeCatalogEvery)},
 			settingGroup{Title: "Jobs & downloads", Fields: fields(
 				service.SettingJobsMaxAttempts, service.SettingJobsTimeout,
-				service.SettingJobsWorkers, service.SettingDownloadsMaxAttempts)},
+				service.SettingJobsWorkers, service.SettingDownloadsMaxAttempts,
+				service.SettingRateLimitIntervalMS, service.SettingRateLimitBurst,
+				service.SettingRateLimitDisabled)},
 			settingGroup{Title: "Services", Fields: fields(
 				service.SettingBrowserSolverEnabled, service.SettingBrowserSolverProvider,
 				service.SettingBrowserSolverEndpoint, service.SettingBrowserSolverTimeoutSeconds,

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/brogergvhs/mangad/internal/util"
 )
 
 type Downloader struct {
@@ -262,6 +264,8 @@ func (d *Downloader) download(
 ) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	// Page fetches stay paced; image bodies skip the per-host limiter.
+	ctx = util.ExemptFromRateLimit(ctx)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
