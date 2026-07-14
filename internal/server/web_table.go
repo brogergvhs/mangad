@@ -210,6 +210,16 @@ func sortChapters(cs []library.ChapterStatus, key, dir string) {
 		less = func(a, b library.ChapterStatus) bool { return naturalLess(a.Label, b.Label) }
 	case "read":
 		less = func(a, b library.ChapterStatus) bool { return chapterReadPercent(a) < chapterReadPercent(b) }
+	case "missing":
+		less = func(a, b library.ChapterStatus) bool {
+			if a.Downloaded != b.Downloaded {
+				return !a.Downloaded // missing chapters first
+			}
+			if a.NumberMain != b.NumberMain {
+				return a.NumberMain < b.NumberMain
+			}
+			return a.SuffixNum < b.SuffixNum
+		}
 	case "downloaded":
 		less = func(a, b library.ChapterStatus) bool {
 			at, bt := time.Time{}, time.Time{}

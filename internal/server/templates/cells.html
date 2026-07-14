@@ -85,7 +85,9 @@
 {{end}}
 
 {{define "chaptersList"}}
-<div id="chapters-table">
+<div id="chapters-table"
+  hx-get="{{.PageURL .Page}}" hx-swap="outerHTML" hx-sync="this:drop"
+  hx-trigger="{{if .Poll}}load delay:4s, {{end}}title-job-started from:body">
   <div class="divide-y divide-line/25 rounded-xl overflow-hidden">
     {{range .Chapters}}
     <div class="flex items-center gap-3 p-4 {{.Tint}}">

@@ -269,6 +269,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
+	mux.HandleFunc("GET /ui/library/{id}/progress", u.titleProgress)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/read", u.chapterRead(true))
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/unread", u.chapterRead(false))
 	mux.HandleFunc("POST /ui/library/{id}/chapters/range", u.chapterRangeRead)
@@ -910,6 +911,23 @@ func searchableSources(all []sources.Source) []sources.Source {
 
 const chaptersPerPage = 25
 
+// titleProgress re-renders the header progress bar; it polls while a job for
+// the title is active so downloads update the page live.
+func (u *webUI) titleProgress(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	title, err := u.svc.GetTitle(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	running, _, queued, _, _ := titleActivityFrom(u.jobs(r.Context()), title)
+	u.frag(w, "titleProgress", activityView{Title: title, Running: running, Queued: queued})
+}
+
 func (u *webUI) chaptersTable(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -1001,6 +1019,7 @@ type jobActionsView struct {
 type chaptersView struct {
 	tableData
 	Chapters []chapterRowView
+	Poll     bool // a job for this title is active: keep the list fresh
 }
 
 type chapterRowView struct {
@@ -1037,6 +1056,8 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 		Page: page, PerPage: chaptersPerPage, Total: total, Sort: key, Dir: dir, Empty: empty,
 		Params: chapterTableParams(values),
 	}}
+	running, _, queued, _, _ := titleActivityFrom(u.jobs(ctx), title)
+	t.Poll = len(running) > 0 || len(queued) > 0
 	for _, c := range rows {
 		size, when := "—", ""
 		if c.Downloaded {
@@ -1204,6 +1225,8 @@ func (u *webUI) libAction(typ, label string) http.HandlerFunc {
 			return
 		}
 		u.kick()
+		// Wake the title page's idle progress/chapters pollers.
+		w.Header().Set("HX-Trigger", "title-job-started")
 		view := u.titleActivity(r.Context(), id)
 		view.Title = title
 		if view.Running == nil {

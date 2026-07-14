@@ -60,6 +60,14 @@
 </button>
 {{end}}
 
+{{define "titleProgress"}}
+<div id="title-progress"
+  hx-get="/ui/library/{{.Title.ID}}/progress" hx-swap="outerHTML" hx-sync="this:drop"
+  hx-trigger="{{if or .Running .Queued}}load delay:4s, {{end}}title-job-started from:body">
+  {{template "progressBar" .Title}}
+</div>
+{{end}}
+
 {{define "titleActivity"}}
 <div id="act-{{.Title.ID}}" {{if .Running}}hx-get="/ui/library/{{.Title.ID}}/activity" hx-trigger="load delay:1200ms" hx-swap="outerHTML"{{end}}>
   {{if or .ActiveLabel .Queued}}
