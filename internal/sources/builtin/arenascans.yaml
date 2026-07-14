@@ -1,0 +1,15 @@
+id: arenascans
+name: ArenaScans
+domains:
+  - arenascan.com
+base_url: https://arenascan.com/
+sample_manga_url: https://arenascan.com/manga/wail-of-weakness/
+search_url: https://arenascan.com/?s={query}
+scraper: generic
+allowed_extensions:
+  - jpg
+  - webp
+min_chapters: 84
+requires_browser_solver: false
+enabled: true
+version: "2026-07-14"
