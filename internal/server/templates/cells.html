@@ -309,3 +309,27 @@
 </div>
 {{end}}
 {{end}}
+
+{{define "sessionsCard"}}
+<div id="sessions-card" hx-get="/ui/sessions" hx-trigger="every 15s" hx-swap="outerHTML" hx-sync="this:drop">
+  {{if not .}}
+  <p class="py-2 text-sm text-base-content/60">No active sessions.</p>
+  {{else}}
+  <div class="divide-y divide-line/25 overflow-hidden rounded-xl bg-base-100">
+    {{range .}}
+    <div class="flex items-center gap-3 p-3">
+      {{if .Online}}<span class="badge badge-success badge-soft badge-sm shrink-0">online</span>
+      {{else}}<span class="badge badge-ghost badge-sm shrink-0" title="Last seen">{{.LastSeen}}</span>{{end}}
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-baseline gap-x-2 text-sm">
+          <span class="font-medium">{{.Username}}</span>
+          <span class="text-base-content/50">{{.Device}}</span>
+        </div>
+        <div class="truncate text-xs text-base-content/50">{{.IP}} · signed in {{.SignedIn}}{{if .Reading}} · <span class="text-primary">Reading {{.Reading}}</span>{{end}}</div>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}

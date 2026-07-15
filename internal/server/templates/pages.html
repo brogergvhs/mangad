@@ -14,6 +14,12 @@
   <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Checking services…</div>
 </div>
 {{end}}
+{{if .User.Can "sessions.view"}}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Sessions</h2>
+<div id="sessions-card" hx-get="/ui/sessions" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading sessions…</div>
+</div>
+{{end}}
 {{if .User.Can "jobs.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Recent jobs</h2>
 <div hx-get="/ui/jobs/table" hx-trigger="load"></div>
