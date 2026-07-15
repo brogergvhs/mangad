@@ -298,6 +298,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/library/table", u.libraryTable)
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
 	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
+	mux.HandleFunc("GET /ui/sessions", u.sessionsFrag)
 	mux.HandleFunc("GET /ui/health", u.health)
 	mux.HandleFunc("GET /ui/import/candidates", u.importCandidates)
 	mux.HandleFunc("GET /ui/library/{id}/related", u.relatedManga)
@@ -564,6 +565,7 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "adult content is not available for this account", http.StatusForbidden)
 		return
 	}
+	presence.SetTitle(r.Context(), auth.UserID(r.Context()), progress.ID, progress.DisplayTitle)
 	currentID, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64)
 	manifest, prevID, nextID := readerManifestWindow(progress, currentID)
 	data := readerView{Title: progress.Title, Manifest: manifest, PagePosition: initialReaderPosition(manifest)}

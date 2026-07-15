@@ -127,6 +127,7 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		presence.SetPage(r.Context(), auth.UserID(r.Context()), progress.Label, req.Page, req.TotalPages)
 		writeJSON(w, http.StatusOK, progress)
 	})
 
