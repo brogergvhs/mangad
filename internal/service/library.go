@@ -97,6 +97,10 @@ func (s *LibraryService) SetVolumeRead(ctx context.Context, id int64, read bool)
 	return s.repo.SetVolumeRead(ctx, id, read)
 }
 
+func (s *LibraryService) SetVolumeRangeRead(ctx context.Context, titleID int64, from, to float64, read bool) (int, error) {
+	return s.repo.SetVolumeRangeRead(ctx, titleID, from, to, read)
+}
+
 func (s *LibraryService) VolumeCover(ctx context.Context, id int64) ([]byte, string, error) {
 	return s.repo.VolumeCover(ctx, id)
 }

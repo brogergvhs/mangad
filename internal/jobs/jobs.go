@@ -9,6 +9,7 @@ const (
 	TypeDownloadMissing = "download_missing"
 	TypeSyncAniList     = "sync_anilist"
 	TypeCatalogRefresh  = "catalog_refresh"
+	TypeAttachVolumes   = "attach_volumes"
 	TypeVerifySource    = "verify_source"
 	TypeMatchSources    = "match_sources"
 )

@@ -55,6 +55,7 @@ type JobPayload struct {
 	ResetFailed          bool   `json:"reset_failed,omitempty"`
 	UserID               int64  `json:"user_id,omitempty"`
 	DownloadAfterRefresh bool   `json:"download_after_refresh,omitempty"`
+	Folder               string `json:"folder,omitempty"`
 }
 
 // RunSummary describes one queue drain.
@@ -1402,6 +1403,10 @@ func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) err
 	return s.lib.SetVolumeRead(ctx, id, read)
 }
 
+func (s *JobService) SetVolumeRangeRead(ctx context.Context, titleID int64, from, to float64, read bool) (int, error) {
+	return s.lib.SetVolumeRangeRead(ctx, titleID, from, to, read)
+}
+
 func (s *JobService) VolumeCover(ctx context.Context, id int64) ([]byte, string, error) {
 	return s.lib.VolumeCover(ctx, id)
 }
@@ -1425,18 +1430,14 @@ func (s *JobService) ImportVolumesFolder(ctx context.Context, folder string, ani
 	return title, nil
 }
 
-// AttachVolumesFolder moves an untracked folder's volume files into an
-// existing title (Chapters/Volumes split) and records them.
+// AttachVolumesFolder queues a background move of an untracked folder's
+// volume files into an existing title (Chapters/Volumes split).
 func (s *JobService) AttachVolumesFolder(ctx context.Context, folder string, titleID int64) (library.Title, error) {
-	cfg, _, err := s.RuntimeConfig(ctx)
-	if err != nil {
-		return library.Title{}, err
-	}
 	title, err := s.lib.GetTitle(ctx, titleID)
 	if err != nil {
 		return library.Title{}, err
 	}
-	if err := s.lib.AttachVolumesFolder(ctx, cfg, title, folder); err != nil {
+	if _, err := s.enqueueExact(ctx, jobs.TypeAttachVolumes, JobPayload{TitleID: titleID, Folder: folder}, time.Now()); err != nil {
 		return library.Title{}, err
 	}
 	return title, nil
@@ -2032,6 +2033,12 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return s.expandAniListSync(ctx, job.ID)
 	case jobs.TypeCatalogRefresh:
 		return s.runCatalogRefresh(ctx, progress)
+	case jobs.TypeAttachVolumes:
+		title, err := s.lib.GetTitle(ctx, payload.TitleID)
+		if err != nil {
+			return err
+		}
+		return s.lib.AttachVolumesFolder(ctx, cfg, title, payload.Folder)
 	case jobs.TypeVerifySource:
 		_, err := s.VerifySource(ctx, cfg, logSvc, payload.SourceID)
 		return err
@@ -2106,7 +2113,11 @@ func validateJob(typ string, payload JobPayload) error {
 		if payload.TitleID < 0 {
 			return fmt.Errorf("invalid title id %d", payload.TitleID)
 		}
-	case jobs.TypeSyncAniList:
+	case jobs.TypeSyncAniList, jobs.TypeCatalogRefresh:
+	case jobs.TypeAttachVolumes:
+		if payload.TitleID <= 0 || strings.TrimSpace(payload.Folder) == "" {
+			return fmt.Errorf("title id and folder are required")
+		}
 	case jobs.TypeVerifySource:
 		if strings.TrimSpace(payload.SourceID) == "" {
 			return fmt.Errorf("source id is required")
