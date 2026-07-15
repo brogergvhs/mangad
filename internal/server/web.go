@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -85,7 +86,6 @@ type healthView struct {
 type activityView struct {
 	Title         library.Title
 	Manga         catalog.Manga
-	ChaptersTable chaptersView
 	Sources       matchView
 	LinkedSources []linkedSourceView // sources already linked to this title
 	SingleSources []sources.Source   // single-manga sources selectable for linking
@@ -96,9 +96,9 @@ type activityView struct {
 	Queued        []string
 	Failed        bool
 	Error         string
-	ReadLabel     string
 	User          *auth.User
 	AniList       service.AniListConnection
+	Content       titleContentView
 }
 type sourceRowView struct {
 	Source sources.Source
@@ -277,7 +277,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
-	mux.HandleFunc("GET /ui/library/{id}/volumes", u.volumesFrag)
+	mux.HandleFunc("GET /ui/library/{id}/content", u.titleContentFrag)
+	mux.HandleFunc("POST /ui/library/{id}/volumes/range", u.volumesRange)
 	mux.HandleFunc("POST /ui/volumes/{id}/read", u.volumeRead(true))
 	mux.HandleFunc("POST /ui/volumes/{id}/unread", u.volumeRead(false))
 	mux.HandleFunc("GET /ui/volumes/{id}/cover", u.volumeCover)
@@ -890,12 +891,8 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	if title.CatalogMangaID != nil {
 		view.AniList = u.svc.AniListConnectionFor(r.Context(), auth.UserID(r.Context()))
 	}
-	view.ReadLabel = "Read"
-	if progress, err := u.svc.ReaderProgress(r.Context(), id); err == nil && progress.NextChapterID != 0 && progress.ReadPages > 0 {
-		view.ReadLabel = "Continue reading"
-	}
+	view.Content = u.buildTitleContent(r, title, r.URL.Query().Get("tab"))
 	view.RefreshEvery = u.svc.Setting(r.Context(), service.SettingServeRefreshEvery, service.SettingDefault(service.SettingServeRefreshEvery))
-	view.ChaptersTable = u.buildChaptersTable(r.Context(), title, r.URL.Query())
 	linked := u.linkedSourceIDs(r.Context(), id)
 	allSources, _ := u.svc.ListSources(r.Context()) // one fetch for every source-derived section
 	view.LinkedSources = u.linkedSourceViews(r.Context(), title)
@@ -931,6 +928,63 @@ func searchableSources(all []sources.Source) []sources.Source {
 }
 
 const chaptersPerPage = 25
+
+// titleContentView drives the tabbed Chapters/Volumes section.
+type titleContentView struct {
+	Title         library.Title
+	Tab           string // "chapters" or "volumes"
+	ReadLabel     string
+	ChaptersTable chaptersView
+	ChapterCount  int64
+	Volumes       []volumeRowView
+	VolumeCount   int
+	Attaching     bool
+}
+
+func (u *webUI) buildTitleContent(r *http.Request, title library.Title, tab string) titleContentView {
+	ctx := r.Context()
+	vols, _ := u.svc.Volumes(ctx, title.ID)
+	running, _, queued, _, _ := titleActivityFrom(u.jobs(ctx), title)
+	attaching := running[jobs.TypeAttachVolumes] || slices.Contains(queued, "attaching volumes")
+	if tab != "volumes" || (len(vols) == 0 && !attaching) {
+		tab = "chapters"
+	}
+	view := titleContentView{
+		Title:        title,
+		Tab:          tab,
+		ChapterCount: title.DiscoveredCount,
+		Volumes:      volumeRows(vols),
+		VolumeCount:  len(vols),
+		Attaching:    attaching,
+	}
+	view.ReadLabel = "Read"
+	if progress, err := u.svc.ReaderProgress(ctx, title.ID); err == nil && progress.NextChapterID != 0 && progress.ReadPages > 0 {
+		view.ReadLabel = "Continue reading"
+	}
+	if tab == "chapters" {
+		view.ChaptersTable = u.buildChaptersTable(ctx, title, r.URL.Query())
+		view.ChapterCount = int64(view.ChaptersTable.Total)
+	}
+	return view
+}
+
+func (u *webUI) titleContentFrag(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.writeTitleContent(w, r, id, r.URL.Query().Get("tab"))
+}
+
+func (u *webUI) writeTitleContent(w http.ResponseWriter, r *http.Request, titleID int64, tab string) {
+	title, err := u.svc.GetTitle(r.Context(), titleID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	u.frag(w, "titleContent", u.buildTitleContent(r, title, tab))
+}
 
 // titleProgress re-renders the header progress bar; it polls while a job for
 // the title is active so downloads update the page live.
@@ -1974,6 +2028,8 @@ func titleVerb(typ string) string {
 		return "downloading"
 	case jobs.TypeScanDownloads:
 		return "scanning"
+	case jobs.TypeAttachVolumes:
+		return "attaching volumes"
 	}
 	return ""
 }
@@ -2178,6 +2234,8 @@ func jobLabel(typ string) string {
 		return "AniList sync"
 	case jobs.TypeCatalogRefresh:
 		return "Catalog refresh"
+	case jobs.TypeAttachVolumes:
+		return "Attach volumes"
 	case jobs.TypeRefreshTitle:
 		return "Refresh chapters"
 	case jobs.TypeScanDownloads:

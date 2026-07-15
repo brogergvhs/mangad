@@ -17,35 +17,16 @@ type volumeRowView struct {
 	Size  string
 }
 
-type volumesView struct {
-	TitleID int64
-	Rows    []volumeRowView
-}
-
-func (u *webUI) volumesFrag(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		u.fail(w, err)
-		return
-	}
-	vols, err := u.svc.Volumes(r.Context(), id)
-	if err != nil {
-		u.fail(w, err)
-		return
-	}
-	u.frag(w, "volumesSection", volumesViewFrom(id, vols))
-}
-
-func volumesViewFrom(titleID int64, vols []library.Volume) volumesView {
-	view := volumesView{TitleID: titleID}
+func volumeRows(vols []library.Volume) []volumeRowView {
+	out := make([]volumeRowView, 0, len(vols))
 	for _, v := range vols {
 		label := strconv.FormatFloat(v.Number, 'f', -1, 64)
 		if v.Number == 0 && v.Name != "" {
 			label = ""
 		}
-		view.Rows = append(view.Rows, volumeRowView{Volume: v, Label: label, Size: util.Human(v.Bytes)})
+		out = append(out, volumeRowView{Volume: v, Label: label, Size: util.Human(v.Bytes)})
 	}
-	return view
+	return out
 }
 
 func (u *webUI) volumeRead(read bool) http.HandlerFunc {
@@ -64,13 +45,27 @@ func (u *webUI) volumeRead(read bool) http.HandlerFunc {
 			u.fail(w, err)
 			return
 		}
-		vols, err := u.svc.Volumes(r.Context(), vol.TitleID)
-		if err != nil {
-			u.fail(w, err)
-			return
-		}
-		u.frag(w, "volumesSection", volumesViewFrom(vol.TitleID, vols))
+		u.writeTitleContent(w, r, vol.TitleID, "volumes")
 	}
+}
+
+func (u *webUI) volumesRange(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	from, err1 := strconv.ParseFloat(r.FormValue("from"), 64)
+	to, err2 := strconv.ParseFloat(r.FormValue("to"), 64)
+	if err1 != nil || err2 != nil {
+		u.fail(w, fmt.Errorf("enter volume numbers"))
+		return
+	}
+	if _, err := u.svc.SetVolumeRangeRead(r.Context(), id, from, to, r.FormValue("action") == "read"); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.writeTitleContent(w, r, id, "volumes")
 }
 
 // volumeCover serves the custom cover when set, else the volume's first page.
@@ -175,12 +170,7 @@ func (u *webUI) volumeSectionByVolume(w http.ResponseWriter, r *http.Request, vo
 		u.fail(w, err)
 		return
 	}
-	vols, err := u.svc.Volumes(r.Context(), vol.TitleID)
-	if err != nil {
-		u.fail(w, err)
-		return
-	}
-	u.frag(w, "volumesSection", volumesViewFrom(vol.TitleID, vols))
+	u.writeTitleContent(w, r, vol.TitleID, "volumes")
 }
 
 func (u *webUI) importAttachVolumes(w http.ResponseWriter, r *http.Request) {
@@ -194,5 +184,6 @@ func (u *webUI) importAttachVolumes(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	u.kick()
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", title.ID))
 }

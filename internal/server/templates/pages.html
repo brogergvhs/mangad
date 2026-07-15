@@ -263,8 +263,6 @@
 
 {{end}}
 
-<div id="volumes-section" hx-get="/ui/library/{{.Title.ID}}/volumes" hx-trigger="load" hx-swap="outerHTML"></div>
-
 {{if .Title.CatalogMangaID}}
 <div class="collapse collapse-arrow bg-base-100 mt-4">
   <input type="checkbox">
@@ -275,34 +273,7 @@
 </div>
 {{end}}
 
-<div class="flex sm:items-center justify-between gap-2 mt-6 mb-3 max-sm:flex-col">
-  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.ChaptersTable.Total}} Chapters</h2>
-  <div class="flex sm:items-center gap-2 max-sm:flex-col">
-    {{if gt .Title.CompletedCount 0}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
-    <details class="dropdown dropdown-end max-sm:w-full">
-      <summary class="btn btn-outline max-sm:w-full">Bulk mark</summary>
-      <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
-        <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
-        <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
-      </form>
-    </details>
-  </div>
-</div>
-<form class="mb-2 flex items-center gap-2"
-  hx-get="/ui/library/{{.Title.ID}}/chapters" hx-target="#chapters-table" hx-swap="outerHTML"
-  hx-trigger="change, keyup changed delay:300ms from:input[name='q']">
-  <input class="input input-sm w-full" name="q" placeholder="Filter chapters…">
-  <select class="select select-sm shrink-0" name="order" aria-label="Sort chapters">
-    <option value="number-asc">Oldest first</option>
-    <option value="number-desc">Newest first</option>
-    <option value="label-asc">Label ↑</option>
-    <option value="label-desc">Label ↓</option>
-    <option value="read-asc">Least read</option>
-    <option value="read-desc">Most read</option>
-    <option value="missing-asc">Missing first</option>
-  </select>
-</form>
-{{template "chaptersList" .ChaptersTable}}
+{{template "titleContent" .Content}}
 
 {{end}}
 
@@ -334,8 +305,11 @@
   </div>
   <div id="picker-{{$i}}"></div>
   {{if $.Titles}}
-  <details class="mt-1">
-    <summary class="cursor-pointer select-none text-sm text-base-content/60">Add as volumes to an existing manga</summary>
+  <details class="group mt-1">
+    <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium select-none">
+      Add as volumes to an existing manga
+      <span class="text-base-content/50 transition-transform group-open:rotate-90">{{template "iconChevron"}}</span>
+    </summary>
     <form hx-post="/ui/import/attach-volumes" hx-swap="none" class="mt-2 flex flex-wrap items-center gap-2">
       <input type="hidden" name="folder" value="{{$c.Folder}}">
       <select name="title_id" class="select select-sm min-w-48">

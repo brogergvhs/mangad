@@ -337,41 +337,84 @@
 </div>
 {{end}}
 
-{{define "volumesSection"}}
-<div id="volumes-section">
-{{if .Rows}}
-<div class="collapse collapse-arrow bg-base-100 mt-4">
-  <input type="checkbox" checked>
-  <div class="collapse-title font-semibold">Volumes <span class="badge badge-sm badge-ghost">{{len .Rows}}</span></div>
-  <div class="collapse-content">
-    <div class="divide-y divide-line/25">
-      {{range .Rows}}
-      <div class="flex items-center gap-3 py-2">
-        <img class="h-14 w-10 shrink-0 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover" alt="" loading="lazy">
-        <div class="min-w-0 flex-1">
-          <div class="text-sm font-medium">{{if .Label}}Vol. {{.Label}}{{end}}{{if and .Label .Name}} — {{end}}{{.Name}}</div>
-          <div class="text-xs text-base-content/50">{{if .Pages}}{{.Pages}} pages · {{end}}{{.Size}}</div>
-        </div>
-        {{if .Read}}
-        <button class="btn btn-ghost btn-xs btn-square text-success [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/unread" hx-target="#volumes-section" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">{{template "iconEye"}}</button>
-        {{else}}
-        <button class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/read" hx-target="#volumes-section" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">{{template "iconEyeOff"}}</button>
-        {{end}}
-        <details class="dropdown dropdown-end">
-          <summary class="btn btn-ghost btn-xs btn-square" aria-label="Volume actions">{{template "iconDots"}}</summary>
-          <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
-            <li><label class="cursor-pointer">{{template "iconEdit"}}Upload cover
-              <form hx-post="/ui/volumes/{{.ID}}/cover" hx-encoding="multipart/form-data" hx-target="#volumes-section" hx-swap="outerHTML" hx-trigger="change from:find input">
-                <input type="file" name="cover" accept="image/*" class="hidden">
-              </form></label></li>
-            {{if .CustomCover}}<li><button hx-post="/ui/volumes/{{.ID}}/cover/reset" hx-target="#volumes-section" hx-swap="outerHTML">{{template "iconRefresh"}}Use first page as cover</button></li>{{end}}
-          </ul>
-        </details>
-      </div>
+{{define "titleContent"}}
+<div id="title-content" {{if .Attaching}}hx-get="/ui/library/{{.Title.ID}}/content?tab=volumes" hx-trigger="load delay:3s" hx-swap="outerHTML" hx-sync="this:drop"{{end}}>
+  <div class="flex sm:items-center justify-between gap-2 mt-6 mb-3 max-sm:flex-col">
+    <div class="flex items-center gap-4">
+      <button class="text-sm font-semibold uppercase tracking-wide {{if eq .Tab "chapters"}}text-base-content{{else}}text-base-content/40 hover:text-base-content/70{{end}}"
+        hx-get="/ui/library/{{.Title.ID}}/content?tab=chapters" hx-target="#title-content" hx-swap="outerHTML">{{.ChapterCount}} Chapters</button>
+      {{if or .VolumeCount .Attaching}}
+      <button class="text-sm font-semibold uppercase tracking-wide {{if eq .Tab "volumes"}}text-base-content{{else}}text-base-content/40 hover:text-base-content/70{{end}}"
+        hx-get="/ui/library/{{.Title.ID}}/content?tab=volumes" hx-target="#title-content" hx-swap="outerHTML">{{.VolumeCount}} Volumes</button>
       {{end}}
     </div>
+    <div class="flex sm:items-center gap-2 max-sm:flex-col">
+      {{if gt .Title.CompletedCount 0}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+      <details class="dropdown dropdown-end max-sm:w-full">
+        <summary class="btn btn-outline max-sm:w-full">Bulk mark</summary>
+        {{if eq .Tab "volumes"}}
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/volumes/range" hx-target="#title-content" hx-swap="outerHTML">
+        {{else}}
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
+        {{end}}
+          <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
+          <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
+        </form>
+      </details>
+    </div>
   </div>
-</div>
-{{end}}
+
+  {{if eq .Tab "volumes"}}
+  {{if .Attaching}}
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Attaching volumes…</div>
+  {{end}}
+  {{if .Volumes}}
+  <div class="divide-y divide-line/25 rounded-xl bg-base-100 px-4">
+    {{range .Volumes}}
+    <div class="flex items-center gap-3 py-2">
+      <img class="h-14 w-10 shrink-0 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover" alt="" loading="lazy">
+      <div class="min-w-0 flex-1">
+        <div class="text-sm font-medium">{{if .Label}}Vol. {{.Label}}{{end}}{{if and .Label .Name}} — {{end}}{{.Name}}</div>
+        <div class="text-xs text-base-content/50">{{if .Pages}}{{.Pages}} pages · {{end}}{{.Size}}</div>
+      </div>
+      {{if .Read}}
+      <button class="btn btn-ghost btn-xs btn-square text-success [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/unread" hx-target="#title-content" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">{{template "iconEye"}}</button>
+      {{else}}
+      <button class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/read" hx-target="#title-content" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">{{template "iconEyeOff"}}</button>
+      {{end}}
+      <details class="dropdown dropdown-end">
+        <summary class="btn btn-ghost btn-xs btn-square" aria-label="Volume actions">{{template "iconDots"}}</summary>
+        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
+          <li><label class="cursor-pointer">{{template "iconEdit"}}Upload cover
+            <form hx-post="/ui/volumes/{{.ID}}/cover" hx-encoding="multipart/form-data" hx-target="#title-content" hx-swap="outerHTML" hx-trigger="change from:find input">
+              <input type="file" name="cover" accept="image/*" class="hidden">
+            </form></label></li>
+          {{if .CustomCover}}<li><button hx-post="/ui/volumes/{{.ID}}/cover/reset" hx-target="#title-content" hx-swap="outerHTML">{{template "iconRefresh"}}Use first page as cover</button></li>{{end}}
+        </ul>
+      </details>
+    </div>
+    {{end}}
+  </div>
+  {{else if not .Attaching}}
+  <p class="py-3 text-base-content/60">No volumes yet — attach a folder from the Import page.</p>
+  {{end}}
+
+  {{else}}
+  <form class="mb-2 flex items-center gap-2"
+    hx-get="/ui/library/{{.Title.ID}}/chapters" hx-target="#chapters-table" hx-swap="outerHTML"
+    hx-trigger="change, keyup changed delay:300ms from:input[name='q']">
+    <input class="input input-sm w-full" name="q" placeholder="Filter chapters…">
+    <select class="select select-sm shrink-0" name="order" aria-label="Sort chapters">
+      <option value="number-asc">Oldest first</option>
+      <option value="number-desc">Newest first</option>
+      <option value="label-asc">Label ↑</option>
+      <option value="label-desc">Label ↓</option>
+      <option value="read-asc">Least read</option>
+      <option value="read-desc">Most read</option>
+      <option value="missing-asc">Missing first</option>
+    </select>
+  </form>
+  {{template "chaptersList" .ChaptersTable}}
+  {{end}}
 </div>
 {{end}}
