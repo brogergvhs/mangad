@@ -47,6 +47,13 @@
 </div>
 {{end}}
 
+{{define "favToggle"}}
+<button class="btn btn-sm btn-ghost btn-square" title="{{if .Favourite}}Favourite — click to remove{{else}}Add to favourites{{end}}" aria-label="Toggle favourite"
+  hx-post="/ui/library/{{.ID}}/favourite" hx-target="this" hx-swap="outerHTML">
+  {{if .Favourite}}<span class="text-error leading-none">{{template "iconHeartFilled"}}</span>{{else}}<span class="text-base-content/40 leading-none">{{template "iconHeart"}}</span>{{end}}
+</button>
+{{end}}
+
 {{define "monitorBadge"}}
 <span class="inline-flex h-6 w-6 items-center justify-center" title="{{if .Monitored}}Monitored{{else}}Not monitored{{end}}">
   {{if .Monitored}}<span class="text-warning leading-none">{{template "iconBellRing"}}</span>{{else}}<span class="text-base-content/40 leading-none">{{template "iconBellOff"}}</span>{{end}}

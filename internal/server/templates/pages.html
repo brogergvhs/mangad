@@ -85,6 +85,11 @@
       <option value="unlinked" {{if eq .Controls.Source "unlinked"}}selected{{end}}>Unlinked</option>
       <option value="imported" {{if eq .Controls.Source "imported"}}selected{{end}}>Imported</option>
     </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Favourites</span>
+    <select name="fav" class="select select-sm w-full">
+      <option value="all" {{if eq .Controls.Fav "all"}}selected{{end}}>All</option>
+      <option value="only" {{if eq .Controls.Fav "only"}}selected{{end}}>Favourites</option>
+    </select></label>
   <label class="fieldset"><span class="fieldset-legend">Progress</span>
     <select name="progress" class="select select-sm w-full">
       <option value="all" {{if eq .Controls.Progress "all"}}selected{{end}}>All</option>
@@ -126,6 +131,7 @@
     <div class="flex items-start justify-between gap-3">
       <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
       <div class="flex items-center gap-1 shrink-0">
+        {{template "favToggle" .Title}}
         {{if .User.Can "library.manage"}}{{template "monitorToggle" .Title}}{{else}}{{template "monitorBadge" .Title}}{{end}}
         {{if .User.Can "library.manage"}}
         <details class="dropdown dropdown-end">

@@ -71,6 +71,7 @@ type libraryView struct {
 type libraryControls struct {
 	Q        string
 	Monitor  string
+	Fav      string
 	Source   string
 	Progress string
 	Sort     string
@@ -270,6 +271,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/scan", u.libAction(jobs.TypeScanDownloads, "scanning"))
 	mux.HandleFunc("GET /ui/library/{id}/activity", u.libActivity)
 	mux.HandleFunc("POST /ui/library/{id}/monitored", u.libMonitored)
+	mux.HandleFunc("POST /ui/library/{id}/favourite", u.libFavourite)
 	mux.HandleFunc("POST /ui/library/{id}/refresh-interval", u.libRefreshInterval)
 	mux.HandleFunc("POST /ui/library/{id}/remove", u.libRemove)
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
@@ -664,6 +666,7 @@ func libraryControlsFrom(values url.Values) libraryControls {
 	c := libraryControls{
 		Q:        strings.TrimSpace(values.Get("q")),
 		Monitor:  values.Get("monitor"),
+		Fav:      values.Get("fav"),
 		Source:   values.Get("source"),
 		Progress: values.Get("progress"),
 		Sort:     values.Get("sort"),
@@ -675,6 +678,9 @@ func libraryControlsFrom(values url.Values) libraryControls {
 	}
 	if c.Monitor == "" {
 		c.Monitor = "all"
+	}
+	if c.Fav != "only" {
+		c.Fav = "all"
 	}
 	if c.Source == "" {
 		c.Source = "all"
@@ -720,6 +726,9 @@ func filterTitles(titles []library.Title, c libraryControls) []library.Title {
 			if title.Monitored {
 				continue
 			}
+		}
+		if c.Fav == "only" && !title.Favourite {
+			continue
 		}
 		switch c.Source {
 		case "linked":
@@ -918,6 +927,25 @@ const chaptersPerPage = 25
 
 // titleProgress re-renders the header progress bar; it polls while a job for
 // the title is active so downloads update the page live.
+type favView struct {
+	ID        int64
+	Favourite bool
+}
+
+func (u *webUI) libFavourite(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	fav, err := u.svc.ToggleFavourite(r.Context(), id)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "favToggle", favView{ID: id, Favourite: fav})
+}
+
 func (u *webUI) titleProgress(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

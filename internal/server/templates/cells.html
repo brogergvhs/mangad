@@ -142,7 +142,7 @@
 <div class="min-w-0">
   <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
     <a href="/library/{{.Title.ID}}"><img id="card-cover-{{.Title.ID}}" hx-preserve class="h-full w-full object-cover" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a>
-    {{if .CanManage}}<div class="absolute right-1 top-1 rounded-lg bg-base-300/70">{{template "monitorToggle" .Title}}</div>{{end}}
+    <div class="absolute right-1 top-1 flex rounded-lg bg-base-300/70">{{template "favToggle" .Title}}{{if .CanManage}}{{template "monitorToggle" .Title}}{{end}}</div>
   </div>
   <a href="/library/{{.Title.ID}}" class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Title.DisplayTitle}}</a>
   <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
@@ -190,7 +190,7 @@
         <div class="flex min-w-0 flex-1 flex-col gap-2">
           <div class="flex items-start justify-between gap-3">
             <a href="/library/{{.Title.ID}}" class="text-lg font-semibold text-balance">{{.Title.DisplayTitle}}</a>
-            <div class="shrink-0">{{if $.CanManage}}{{template "monitorToggle" .Title}}{{else}}{{template "monitorBadge" .Title}}{{end}}</div>
+            <div class="flex shrink-0 items-center">{{template "favToggle" .Title}}{{if $.CanManage}}{{template "monitorToggle" .Title}}{{else}}{{template "monitorBadge" .Title}}{{end}}</div>
           </div>
           {{template "progressBar" .Title}}
           {{template "mangaSummary" .Manga}}

@@ -82,6 +82,8 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermReaderUse
 	case strings.HasSuffix(p, "/anilist-sync"): // personal list reconcile
 		return auth.PermReaderUse
+	case strings.HasSuffix(p, "/favourite"): // personal curation
+		return auth.PermLibraryView
 	default:
 		return auth.PermLibraryManage
 	}
