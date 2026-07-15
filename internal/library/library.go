@@ -29,6 +29,7 @@ type Title struct {
 	ReleaseStatus   string
 	IsAdult         bool
 	ContentTags     []string // catalog tags+genres, for per-user content guards
+	Favourite       bool     // acting user's favourite mark
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
