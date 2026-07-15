@@ -39,6 +39,8 @@ func permMeta(perm string) (label, desc string) {
 		return "Manage settings", "Change global scheduling, job and service settings."
 	case auth.PermUsersManage:
 		return "Manage users", "Create users and roles and assign permissions."
+	case auth.PermSessionsView:
+		return "View sessions", "See who is signed in, from which device, and what they are reading."
 	default:
 		return perm, ""
 	}
@@ -52,7 +54,7 @@ type permGroup struct {
 
 func permGroups() []permGroup {
 	return []permGroup{
-		{Title: "Dashboard", Perms: []string{auth.PermStatsView, auth.PermServicesView, auth.PermJobsView}},
+		{Title: "Dashboard", Perms: []string{auth.PermStatsView, auth.PermServicesView, auth.PermJobsView, auth.PermSessionsView}},
 		{Title: "Library", Perms: []string{auth.PermLibraryView, auth.PermLibraryAdd, auth.PermLibraryManage, auth.PermImportUse}},
 		{Title: "Reading", Perms: []string{auth.PermReaderUse}},
 		{Title: "Personal", Perms: []string{auth.PermSettingsAppearance}},

@@ -11,6 +11,7 @@ const (
 	PermLibraryView        = "library.view"        // library, title pages, chapter lists
 	PermStatsView          = "stats.view"          // dashboard statistics
 	PermServicesView       = "services.view"       // dashboard services health
+	PermSessionsView       = "sessions.view"       // who is signed in / presence
 	PermJobsView           = "jobs.view"           // dashboard jobs list
 	PermReaderUse          = "reader.use"          // reader + own read marking
 	PermLibraryAdd         = "library.add"         // search page + adding titles
@@ -26,7 +27,7 @@ const (
 // Permissions lists every known permission (stable order, for UIs).
 func Permissions() []string {
 	return []string{
-		PermLibraryView, PermStatsView, PermServicesView, PermJobsView,
+		PermLibraryView, PermStatsView, PermServicesView, PermSessionsView, PermJobsView,
 		PermReaderUse, PermLibraryAdd, PermLibraryManage, PermImportUse,
 		PermSourcesManage, PermJobsManage,
 		PermSettingsAppearance, PermSettingsManage, PermUsersManage,
