@@ -1390,6 +1390,58 @@ func (s *JobService) ImportFolder(ctx context.Context, folder string, anilistID 
 	return title, nil
 }
 
+func (s *JobService) Volumes(ctx context.Context, titleID int64) ([]library.Volume, error) {
+	return s.lib.Volumes(ctx, titleID)
+}
+
+func (s *JobService) GetVolume(ctx context.Context, id int64) (library.Volume, error) {
+	return s.lib.GetVolume(ctx, id)
+}
+
+func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) error {
+	return s.lib.SetVolumeRead(ctx, id, read)
+}
+
+func (s *JobService) VolumeCover(ctx context.Context, id int64) ([]byte, string, error) {
+	return s.lib.VolumeCover(ctx, id)
+}
+
+func (s *JobService) SetVolumeCover(ctx context.Context, id int64, blob []byte, mime string) error {
+	return s.lib.SetVolumeCover(ctx, id, blob, mime)
+}
+
+// ImportVolumesFolder tracks a folder of volume files as a new title.
+// Volumes are disk-only: no source search is enqueued.
+func (s *JobService) ImportVolumesFolder(ctx context.Context, folder string, anilistID int) (library.Title, error) {
+	cfg, _, err := s.RuntimeConfig(ctx)
+	if err != nil {
+		return library.Title{}, err
+	}
+	title, err := s.want.ImportVolumesFolder(ctx, cfg.DownloadDir, folder, anilistID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	s.PushAniListEntry(ctx, auth.UserID(ctx), title.ID)
+	return title, nil
+}
+
+// AttachVolumesFolder moves an untracked folder's volume files into an
+// existing title (Chapters/Volumes split) and records them.
+func (s *JobService) AttachVolumesFolder(ctx context.Context, folder string, titleID int64) (library.Title, error) {
+	cfg, _, err := s.RuntimeConfig(ctx)
+	if err != nil {
+		return library.Title{}, err
+	}
+	title, err := s.lib.GetTitle(ctx, titleID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.lib.AttachVolumesFolder(ctx, cfg, title, folder); err != nil {
+		return library.Title{}, err
+	}
+	return title, nil
+}
+
 // LinkTitleSource links a tracked title to a matched source.
 func (s *JobService) LinkTitleSource(ctx context.Context, titleID, matchID int64) (library.Title, error) {
 	title, err := s.want.LinkTitleSource(ctx, titleID, matchID)

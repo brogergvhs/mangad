@@ -77,6 +77,34 @@ func (s *LibraryService) SetRefreshInterval(ctx context.Context, id int64, inter
 }
 
 // SetMonitored toggles monitoring for a tracked title.
+func (s *LibraryService) SyncVolumeFiles(ctx context.Context, titleID int64, dir string, pageCount func(string) int) (int, error) {
+	return s.repo.SyncVolumeFiles(ctx, titleID, dir, pageCount)
+}
+
+func (s *LibraryService) Volumes(ctx context.Context, titleID int64) ([]library.Volume, error) {
+	return s.repo.Volumes(ctx, titleID)
+}
+
+func (s *LibraryService) HasVolumes(ctx context.Context, titleID int64) (bool, error) {
+	return s.repo.HasVolumes(ctx, titleID)
+}
+
+func (s *LibraryService) GetVolume(ctx context.Context, id int64) (library.Volume, error) {
+	return s.repo.GetVolume(ctx, id)
+}
+
+func (s *LibraryService) SetVolumeRead(ctx context.Context, id int64, read bool) error {
+	return s.repo.SetVolumeRead(ctx, id, read)
+}
+
+func (s *LibraryService) VolumeCover(ctx context.Context, id int64) ([]byte, string, error) {
+	return s.repo.VolumeCover(ctx, id)
+}
+
+func (s *LibraryService) SetVolumeCover(ctx context.Context, id int64, blob []byte, mime string) error {
+	return s.repo.SetVolumeCover(ctx, id, blob, mime)
+}
+
 func (s *LibraryService) ToggleFavourite(ctx context.Context, titleID int64) (bool, error) {
 	return s.repo.ToggleFavourite(ctx, titleID)
 }
@@ -318,6 +346,13 @@ func (s *LibraryService) DownloadMissing(
 	cfg, err = configForTitle(cfg, title)
 	if err != nil {
 		return nil, err
+	}
+	if has, err := s.repo.HasVolumes(ctx, titleID); err == nil && has {
+		chaptersDir, _, err := s.EnsureVolumeChapterSplit(ctx, cfg, title)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Output = chaptersDir
 	}
 	downloadSvc, err := s.downloadServiceForTitle(ctx, cfg, logSvc, progress, title)
 	if err != nil {
