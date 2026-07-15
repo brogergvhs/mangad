@@ -77,6 +77,14 @@ func (s *LibraryService) SetRefreshInterval(ctx context.Context, id int64, inter
 }
 
 // SetMonitored toggles monitoring for a tracked title.
+func (s *LibraryService) ToggleFavourite(ctx context.Context, titleID int64) (bool, error) {
+	return s.repo.ToggleFavourite(ctx, titleID)
+}
+
+func (s *LibraryService) SetFavourite(ctx context.Context, userID, titleID int64) error {
+	return s.repo.SetFavourite(ctx, userID, titleID)
+}
+
 func (s *LibraryService) SetMonitored(ctx context.Context, id int64, monitored bool) error {
 	return s.repo.SetMonitored(ctx, id, monitored)
 }

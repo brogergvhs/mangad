@@ -750,6 +750,18 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 	if err != nil {
 		return err
 	}
+	remoteFav := map[string]bool{}
+	favFetched := false
+	if ids, err := s.want.AniList().FavouriteManga(actx, aid); err == nil {
+		favFetched = true
+		for _, id := range ids {
+			remoteFav[strconv.Itoa(id)] = true
+		}
+	}
+	localFav, err := s.localFavouriteIDs(ctx, userID)
+	if err != nil {
+		return err
+	}
 	// Rate-limit pacing makes a large first sync slow; report each title so
 	// the stall watchdog sees a working job, not a stuck one.
 	handle := progress.Register("anilist sync")
@@ -763,6 +775,15 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 		mediaID, err := strconv.Atoi(pid)
 		if err != nil {
 			continue
+		}
+		if remoteFav[pid] && !localFav[pid] {
+			if err := s.lib.SetFavourite(ctx, userID, titleID); err != nil {
+				errs = append(errs, err)
+			}
+		} else if favFetched && localFav[pid] && !remoteFav[pid] {
+			if err := s.want.AniList().ToggleFavourite(actx, mediaID); err != nil {
+				errs = append(errs, fmt.Errorf("favourite %s: %w", pid, err))
+			}
 		}
 		e, listed := remote[pid]
 		if listed && e.Progress > 0 {
@@ -1091,6 +1112,67 @@ func (s *JobService) markAniListDropped(ctx context.Context, mediaID int) {
 			cancel()
 		}
 	}()
+}
+
+// ToggleFavourite flips the acting user's favourite and mirrors it to their
+// AniList account in the background.
+func (s *JobService) ToggleFavourite(ctx context.Context, titleID int64) (bool, error) {
+	fav, err := s.lib.ToggleFavourite(ctx, titleID)
+	if err != nil {
+		return false, err
+	}
+	s.pushAniListFavourite(ctx, auth.UserID(ctx), titleID, fav)
+	return fav, nil
+}
+
+// pushAniListFavourite reconciles the remote favourite state to want. AniList
+// only offers a toggle, so the current state is read first.
+func (s *JobService) pushAniListFavourite(ctx context.Context, userID, titleID int64, want bool) {
+	ctx = context.WithoutCancel(ctx)
+	actx, _, ok := s.aniListIdentity(ctx, userID)
+	if !ok {
+		return
+	}
+	mediaID, ok := s.aniListMediaID(ctx, titleID)
+	if !ok {
+		return
+	}
+	go func() {
+		pctx, cancel := context.WithTimeout(actx, 3*time.Minute)
+		defer cancel()
+		remote, err := s.want.AniList().IsFavourite(pctx, mediaID)
+		if err != nil {
+			log.Printf("anilist favourite read (media %d): %v", mediaID, err)
+			return
+		}
+		if remote != want {
+			if err := s.want.AniList().ToggleFavourite(pctx, mediaID); err != nil {
+				log.Printf("anilist favourite toggle (media %d): %v", mediaID, err)
+			}
+		}
+	}()
+}
+
+// localFavouriteIDs maps AniList provider ids of the user's favourites.
+func (s *JobService) localFavouriteIDs(ctx context.Context, userID int64) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT cm.provider_id
+		FROM user_favourites uf
+		JOIN titles t ON t.id = uf.title_id
+		JOIN catalog_manga cm ON cm.id = t.catalog_manga_id
+		WHERE uf.user_id = ? AND cm.provider = ?`, userID, catalog.AniListProvider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var pid string
+		if rows.Scan(&pid) == nil {
+			out[pid] = true
+		}
+	}
+	return out, rows.Err()
 }
 
 // SyncAniListTitle reconciles a single title with the acting user's AniList

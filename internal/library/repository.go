@@ -94,7 +94,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 
 // GetTitle returns a tracked title by ID.
 func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ?`, auth.UserID(ctx), id)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ?`, auth.UserID(ctx), auth.UserID(ctx), id)
 
 	title, err := scanTitle(row)
 	if err != nil {
@@ -109,7 +109,7 @@ func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
 
 // ListTitles returns all tracked titles with chapter counts.
 func (r *Repository) ListTitles(ctx context.Context) ([]Title, error) {
-	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` ORDER BY t.display_title COLLATE NOCASE, t.id`, auth.UserID(ctx))
+	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` ORDER BY t.display_title COLLATE NOCASE, t.id`, auth.UserID(ctx), auth.UserID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list titles: %w", err)
 	}
@@ -209,6 +209,27 @@ func (r *Repository) ListTitleSources(ctx context.Context, titleID int64) ([]Lin
 
 // UnlinkSource removes a linked source; if it was the active one, another
 // linked source is promoted, or the title reverts to having no source.
+// ToggleFavourite flips the acting user's favourite mark for a title and
+// returns the new state.
+func (r *Repository) ToggleFavourite(ctx context.Context, titleID int64) (bool, error) {
+	userID := auth.UserID(ctx)
+	res, err := r.db.ExecContext(ctx, `DELETE FROM user_favourites WHERE user_id = ? AND title_id = ?`, userID, titleID)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return false, nil
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO user_favourites (user_id, title_id) VALUES (?, ?)`, userID, titleID)
+	return true, err
+}
+
+// SetFavourite marks a title favourite without toggling (AniList pull merge).
+func (r *Repository) SetFavourite(ctx context.Context, userID, titleID int64) error {
+	_, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO user_favourites (user_id, title_id) VALUES (?, ?)`, userID, titleID)
+	return err
+}
+
 // UpdateSourceURL follows a site's URL rotation: the title's active source
 // URL and its linked-source row move to the redirect target. OR IGNORE keeps
 // a unique-constraint collision (target URL already stored) from failing the
@@ -949,7 +970,7 @@ func (r *Repository) TitlesByProvider(ctx context.Context, provider string) (map
 
 // FindByCatalog returns the tracked title for a catalog manga, if any.
 func (r *Repository) FindByCatalog(ctx context.Context, catalogID int64) (Title, bool, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? LIMIT 1`, auth.UserID(ctx), catalogID)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? LIMIT 1`, auth.UserID(ctx), auth.UserID(ctx), catalogID)
 	title, err := scanTitle(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Title{}, false, nil
@@ -1277,8 +1298,10 @@ func (r *Repository) titleSelectQuery() string {
 			COALESCE(m.status, ''),
 			COALESCE(m.is_adult, 0),
 			COALESCE(m.tags_json, '[]'),
-			COALESCE(m.genres_json, '[]')
+			COALESCE(m.genres_json, '[]'),
+			uf.title_id IS NOT NULL
 		FROM titles t
+		LEFT JOIN user_favourites uf ON uf.title_id = t.id AND uf.user_id = ?
 		LEFT JOIN (
 			SELECT
 				c.title_id,
@@ -1301,7 +1324,7 @@ func (r *Repository) titleSelectQuery() string {
 
 func scanTitle(row database.Scanner) (Title, error) {
 	var title Title
-	var isAdult int
+	var isAdult, favourite int
 	var tagsJSON, genresJSON string
 	var catalogID sql.NullInt64
 	var monitored int
@@ -1333,6 +1356,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&isAdult,
 		&tagsJSON,
 		&genresJSON,
+		&favourite,
 	); err != nil {
 		return Title{}, err
 	}
@@ -1346,6 +1370,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 	}
 	title.Monitored = monitored != 0
 	title.IsAdult = isAdult != 0
+	title.Favourite = favourite != 0
 	if lastRefreshed.Valid {
 		t, err := database.ParseTime(lastRefreshed.String)
 		if err != nil {
