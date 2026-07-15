@@ -147,6 +147,74 @@ func (c *AniListClient) UserList(ctx context.Context, anilistUserID int) ([]AniL
 	return out, nil
 }
 
+// FavouriteManga returns the AniList ids of a user's favourite manga.
+func (c *AniListClient) FavouriteManga(ctx context.Context, anilistUserID int) ([]int, error) {
+	var out []int
+	for page := 1; page <= 20; page++ {
+		var resp struct {
+			Data struct {
+				User struct {
+					Favourites struct {
+						Manga struct {
+							Nodes []struct {
+								ID int `json:"id"`
+							} `json:"nodes"`
+							PageInfo struct {
+								HasNextPage bool `json:"hasNextPage"`
+							} `json:"pageInfo"`
+						} `json:"manga"`
+					} `json:"favourites"`
+				} `json:"User"`
+			} `json:"data"`
+		}
+		if err := c.do(ctx, `
+			query ($id: Int, $page: Int) {
+				User(id: $id) { favourites { manga(page: $page, perPage: 50) { nodes { id } pageInfo { hasNextPage } } } }
+			}`, map[string]any{"id": anilistUserID, "page": page}, &resp); err != nil {
+			return nil, err
+		}
+		for _, n := range resp.Data.User.Favourites.Manga.Nodes {
+			out = append(out, n.ID)
+		}
+		if !resp.Data.User.Favourites.Manga.PageInfo.HasNextPage {
+			break
+		}
+	}
+	return out, nil
+}
+
+// IsFavourite reports whether the authenticated user favourited a media.
+func (c *AniListClient) IsFavourite(ctx context.Context, mediaID int) (bool, error) {
+	var resp struct {
+		Data struct {
+			Media struct {
+				IsFavourite bool `json:"isFavourite"`
+			} `json:"Media"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, `query ($id: Int) { Media(id: $id, type: MANGA) { isFavourite } }`, map[string]any{"id": mediaID}, &resp); err != nil {
+		return false, err
+	}
+	return resp.Data.Media.IsFavourite, nil
+}
+
+// ToggleFavourite flips the authenticated user's favourite state for a manga
+// (AniList only offers a toggle; callers check IsFavourite first).
+func (c *AniListClient) ToggleFavourite(ctx context.Context, mediaID int) error {
+	var resp struct {
+		Data struct {
+			ToggleFavourite struct {
+				Manga struct {
+					Nodes []struct {
+						ID int `json:"id"`
+					} `json:"nodes"`
+				} `json:"manga"`
+			} `json:"ToggleFavourite"`
+		} `json:"data"`
+	}
+	return c.do(ctx, `mutation ($id: Int) { ToggleFavourite(mangaId: $id) { manga { nodes { id } } } }`, map[string]any{"id": mediaID}, &resp)
+}
+
 // MediaEntry returns the authenticated user's list entry for a media.
 func (c *AniListClient) MediaEntry(ctx context.Context, mediaID int) (progress int, status string, found bool, err error) {
 	var resp struct {
