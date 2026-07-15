@@ -325,7 +325,10 @@
           <span class="font-medium">{{.Username}}</span>
           <span class="text-base-content/50">{{.Device}}</span>
         </div>
-        <div class="truncate text-xs text-base-content/50">{{.IP}} · signed in {{.SignedIn}}{{if .Reading}} · <span class="text-primary">Reading {{.Reading}}</span>{{end}}</div>
+        <div class="flex max-sm:flex-col truncate text-xs text-base-content/50">
+          <span>{{.IP}} · signed in {{.SignedIn}}</span>
+          {{if .Reading}}<span class="max-sm:hidden"> · </span><span class="text-primary">Reading {{.Reading}}</span>{{end}}
+        </div>
       </div>
     </div>
     {{end}}
