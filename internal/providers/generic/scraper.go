@@ -148,8 +148,6 @@ func (s *Scraper) fetchBody(ctx context.Context, target string) (string, string,
 	}
 	body := string(data)
 
-	// Sites rotate URL slugs and redirect old ones; the final URL is the one
-	// chapter links resolve against (and worth persisting upstream).
 	finalURL := target
 	if resp.Request != nil && resp.Request.URL != nil {
 		finalURL = resp.Request.URL.String()

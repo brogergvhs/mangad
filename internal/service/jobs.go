@@ -638,14 +638,6 @@ func (s *JobService) TitlesByProvider(ctx context.Context, provider string) (map
 }
 
 // GetManga returns stored catalog metadata for a manga.
-// withAniListToken carries the acting user's AniList token (if connected)
-// so downstream AniList requests are authenticated.
-func (s *JobService) withAniListToken(ctx context.Context) context.Context {
-	var token string
-	_ = s.db.QueryRowContext(ctx, `SELECT access_token FROM user_anilist WHERE user_id = ?`, auth.UserID(ctx)).Scan(&token)
-	token, _ = s.secrets.Decrypt(token)
-	return catalog.WithToken(ctx, token)
-}
 
 // AniListConnection describes a user's linked AniList account.
 type AniListConnection struct {
@@ -712,8 +704,7 @@ func (s *JobService) DisconnectAniList(ctx context.Context, userID int64) error 
 
 // expandAniListSync spawns one child sync job per connected user.
 func (s *JobService) expandAniListSync(ctx context.Context, parentID int64) error {
-	// Collect first: enqueueing while the rows cursor is open deadlocks on
-	// SQLite's connection limits.
+	// Collect-then-enqueue: an open rows cursor holds SQLite's only connection.
 	rows, err := s.db.QueryContext(ctx, `SELECT user_id FROM user_anilist`)
 	if err != nil {
 		return err
@@ -775,7 +766,6 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 		}
 		e, listed := remote[pid]
 		if listed && e.Progress > 0 {
-			// Pull first so pushed state reflects chapters read elsewhere.
 			local, _, err := s.localAniListState(ctx, userID, titleID)
 			if err != nil {
 				errs = append(errs, err)
@@ -894,11 +884,9 @@ func (s *JobService) aniListIdentity(ctx context.Context, userID int64) (context
 // the release status that gates the AniList Completed push all go stale
 // otherwise. Paced by the AniList client's rate limiter.
 func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressManager) error {
-	// Deliberately unauthenticated: catalog metadata is public, and a stale
-	// or revoked user token must not be able to fail the whole refresh.
 	var errs []error
 	if err := s.refreshTagVocabulary(ctx); err != nil {
-		errs = append(errs, err) // the per-title refresh is still worth running
+		errs = append(errs, err)
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT cm.provider_id
@@ -1078,8 +1066,6 @@ func (s *JobService) aniListMediaID(ctx context.Context, titleID int64) (int, bo
 // user's AniList list that actually has an entry for it. Background-only.
 func (s *JobService) markAniListDropped(ctx context.Context, mediaID int) {
 	ctx = context.WithoutCancel(ctx)
-	// Collect first: acting on AniList while the rows cursor is open would
-	// hold SQLite's single connection hostage.
 	rows, err := s.db.QueryContext(ctx, `SELECT access_token FROM user_anilist`)
 	if err != nil {
 		return
@@ -1143,7 +1129,7 @@ func (s *JobService) SyncAniListTitle(ctx context.Context, titleID int64) error 
 
 // RelatedManga returns AniList relations/recommendations for a catalog entry.
 func (s *JobService) RelatedManga(ctx context.Context, catalogID int64, limit int) ([]catalog.Manga, error) {
-	ctx = s.withAniListToken(ctx)
+	// Unauthenticated: see SearchAniList.
 	m, err := s.want.GetManga(ctx, catalogID)
 	if err != nil {
 		return nil, err
@@ -1157,7 +1143,7 @@ func (s *JobService) RelatedManga(ctx context.Context, catalogID int64, limit in
 
 // TrendingManga returns currently trending AniList manga.
 func (s *JobService) TrendingManga(ctx context.Context, limit int) ([]catalog.Manga, error) {
-	return s.want.AniList().Trending(s.withAniListToken(ctx), limit)
+	return s.want.AniList().Trending(ctx, limit) // unauthenticated: see SearchAniList
 }
 
 // RecommendedManga returns account-aware suggestions when the acting user has
@@ -1201,7 +1187,7 @@ func (s *JobService) RecommendedManga(ctx context.Context, limit int) ([]catalog
 		if err != nil {
 			continue
 		}
-		items, err := s.want.AniList().Related(actx, mediaID, limit)
+		items, err := s.want.AniList().Related(ctx, mediaID, limit) // unauthenticated: see SearchAniList
 		if err != nil {
 			continue // one bad seed shouldn't empty the grid
 		}
@@ -1281,7 +1267,9 @@ func (s *JobService) SetMonitored(ctx context.Context, id int64, monitored bool)
 
 // SearchAniList searches AniList and stores returned metadata locally.
 func (s *JobService) SearchAniList(ctx context.Context, query string, limit int) ([]catalog.Manga, error) {
-	return s.want.SearchAniList(s.withAniListToken(ctx), query, limit)
+	// Unauthenticated: a token makes AniList pre-filter adult entries by the
+	// account's own 18+ setting, bypassing mangaD's per-user content guard.
+	return s.want.SearchAniList(ctx, query, limit)
 }
 
 // AddAniListWanted adds an AniList title to wanted.

@@ -1228,8 +1228,7 @@ func (u *webUI) libAction(typ, label string) http.HandlerFunc {
 			return
 		}
 		u.kick()
-		// Wake the title page's idle progress/chapters pollers.
-		w.Header().Set("HX-Trigger", "title-job-started")
+		w.Header().Set("HX-Trigger", "title-job-started") // wakes the title page's idle pollers
 		view := u.titleActivity(r.Context(), id)
 		view.Title = title
 		if view.Running == nil {
@@ -1789,6 +1788,8 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 			f.Kind, f.Options = "select", service.UIThemes()
 		case strings.HasPrefix(key, "ui.custom."):
 			f.Kind = "color"
+		case key == service.SettingAniListClientID, key == service.SettingAniListClientSecret:
+			f.Kind = "secret"
 		}
 		return f
 	}

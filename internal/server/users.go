@@ -70,7 +70,7 @@ type usersView struct {
 func (u *webUI) usersData(r *http.Request) usersView {
 	users, _ := u.svc.Auth().ListUsers(r.Context())
 	roles, _ := u.svc.Auth().ListRoles(r.Context())
-	opts, _ := u.svc.ContentTagOptions(r.Context()) // empty on AniList failure: picker falls back to text
+	opts, _ := u.svc.ContentTagOptions(r.Context())
 	return usersView{Users: users, Roles: roles, Groups: permGroups(), TagOptions: opts}
 }
 

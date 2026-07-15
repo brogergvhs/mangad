@@ -213,8 +213,6 @@ func (s *LibraryService) RefreshTitle(
 		return RefreshResult{}, err
 	}
 	if finalURL != "" && finalURL != title.SourceURL && strings.HasPrefix(finalURL, "http") {
-		// The site rotated the series URL and redirected us; persist the new
-		// one so future refreshes (and downloads) skip the stale link.
 		if err := s.repo.UpdateSourceURL(ctx, title.ID, title.SourceURL, finalURL); err != nil {
 			logSvc.Infof("Could not persist moved source URL for %q: %v\n", title.DisplayTitle, err)
 		} else {

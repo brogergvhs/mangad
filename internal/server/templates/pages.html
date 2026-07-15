@@ -480,7 +480,7 @@
         <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
         {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
       </div>
-      <input class="input input-sm max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}">
+      <input class="input input-sm max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}"{{if eq .Kind "secret"}} type="password" autocomplete="off"{{end}}>
     </div>
     {{end}}
   </div>
