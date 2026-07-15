@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -38,7 +39,11 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 			writeError(w, http.StatusForbidden, "missing permission: "+p)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), user)))
+		ctx := auth.WithUser(r.Context(), user)
+		if c, err := r.Cookie("mangad_session"); err == nil {
+			ctx = withSessionKey(ctx, c.Value)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -61,6 +66,8 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermSourcesManage
 	case p == "/ui/health":
 		return auth.PermServicesView
+	case p == "/ui/sessions":
+		return auth.PermSessionsView
 	case strings.HasPrefix(p, "/ui/jobs/") && r.Method != http.MethodGet:
 		return auth.PermJobsManage
 	case strings.HasPrefix(p, "/ui/jobs/"):
@@ -101,6 +108,18 @@ func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 	return nil
 }
 
+// clientIP prefers the proxy-forwarded address over the socket peer.
+func clientIP(r *http.Request) string {
+	if fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); fwd != "" {
+		return fwd
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 func headerToken(r *http.Request) string {
 	if t := r.Header.Get("X-API-Key"); t != "" {
 		return t
@@ -132,7 +151,7 @@ func registerAuthRoutes(mux *http.ServeMux, svc *service.JobService) {
 		_, _ = w.Write([]byte(strings.Replace(loginPage, "%s", "", 1)))
 	})
 	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
-		token, err := svc.Auth().Login(r.Context(), r.FormValue("username"), r.FormValue("password"))
+		token, err := svc.Auth().Login(r.Context(), r.FormValue("username"), r.FormValue("password"), r.UserAgent(), clientIP(r))
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)

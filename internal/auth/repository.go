@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -28,7 +29,8 @@ func boolInt(b bool) int {
 
 // Service manages users, roles and sessions.
 type Service struct {
-	db *sql.DB
+	db      *sql.DB
+	touched sync.Map // session token hash -> last_seen_at write
 }
 
 func NewService(db *sql.DB) *Service { return &Service{db: db} }
@@ -78,7 +80,7 @@ func (s *Service) Bootstrap(ctx context.Context, adminUser, adminPassword string
 }
 
 // Login verifies credentials and returns a new session token.
-func (s *Service) Login(ctx context.Context, username, password string) (string, error) {
+func (s *Service) Login(ctx context.Context, username, password, userAgent, ip string) (string, error) {
 	var id int64
 	var hash string
 	err := s.db.QueryRowContext(ctx, `SELECT id, password_hash FROM users WHERE username = ?`, strings.TrimSpace(username)).Scan(&id, &hash)
@@ -99,23 +101,26 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 	sum := sha256.Sum256([]byte(token))
 	expires := time.Now().Add(sessionTTL)
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)
-	`, hex.EncodeToString(sum[:]), id, database.FormatTime(expires)); err != nil {
+		INSERT INTO sessions (token_hash, user_id, expires_at, user_agent, ip, last_seen_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	`, hex.EncodeToString(sum[:]), id, database.FormatTime(expires), userAgent, ip); err != nil {
 		return "", fmt.Errorf("store session: %w", err)
 	}
 	return token, nil
 }
 
 // UserBySession resolves a session token to its user, or nil when invalid.
+// Successful resolves touch last_seen_at, throttled to one write per minute
+// per session (SQLite runs on a single connection).
 func (s *Service) UserBySession(ctx context.Context, token string) (*User, error) {
 	if token == "" {
 		return nil, nil
 	}
 	sum := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(sum[:])
 	var id int64
 	var expires string
 	err := s.db.QueryRowContext(ctx, `SELECT user_id, expires_at FROM sessions WHERE token_hash = ?`,
-		hex.EncodeToString(sum[:])).Scan(&id, &expires)
+		tokenHash).Scan(&id, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -123,10 +128,55 @@ func (s *Service) UserBySession(ctx context.Context, token string) (*User, error
 		return nil, err
 	}
 	if t, err := database.ParseTime(expires); err != nil || time.Now().After(t) {
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, hex.EncodeToString(sum[:]))
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, tokenHash)
 		return nil, nil
 	}
+	s.touchSession(ctx, tokenHash)
 	return s.GetUser(ctx, id)
+}
+
+func (s *Service) touchSession(ctx context.Context, tokenHash string) {
+	if last, ok := s.touched.Load(tokenHash); ok && time.Since(last.(time.Time)) < time.Minute {
+		return
+	}
+	s.touched.Store(tokenHash, time.Now())
+	_, _ = s.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE token_hash = ?`, tokenHash)
+}
+
+// ActiveSession is one unexpired login for the global session viewer.
+type ActiveSession struct {
+	TokenHash  string
+	UserID     int64
+	Username   string
+	UserAgent  string
+	IP         string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+}
+
+// ActiveSessions lists all unexpired sessions, most recently seen first.
+func (s *Service) ActiveSessions(ctx context.Context) ([]ActiveSession, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT se.token_hash, se.user_id, u.username, se.user_agent, se.ip, se.created_at, COALESCE(se.last_seen_at, se.created_at)
+		FROM sessions se JOIN users u ON u.id = se.user_id
+		WHERE se.expires_at > ?
+		ORDER BY COALESCE(se.last_seen_at, se.created_at) DESC`, database.FormatTime(time.Now()))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ActiveSession
+	for rows.Next() {
+		var a ActiveSession
+		var created, seen string
+		if err := rows.Scan(&a.TokenHash, &a.UserID, &a.Username, &a.UserAgent, &a.IP, &created, &seen); err != nil {
+			return nil, err
+		}
+		a.CreatedAt, _ = database.ParseTime(created)
+		a.LastSeenAt, _ = database.ParseTime(seen)
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // Logout deletes the session for a token.
