@@ -510,17 +510,15 @@
         <div class="min-w-0 flex-1">
           <span class="text-sm font-medium">{{.Username}}</span>
           <span class="badge badge-ghost badge-sm">{{.RoleName}}</span>
-          {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; cannot be edited or deleted">env</span>{{end}}
+          {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; role and password are env-owned, content preferences editable">env</span>{{end}}
         </div>
-        {{if not .IsEnvAdmin}}
         <details class="dropdown dropdown-end">
           <summary class="btn btn-sm btn-ghost btn-square" aria-label="User actions">{{template "iconDots"}}</summary>
           <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
             <li><button hx-get="/ui/users/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
-            <li><button class="text-error" hx-post="/ui/users/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this user? Their reading progress is kept but orphaned.">{{template "iconTrash"}}Delete</button></li>
+            {{if not .IsEnvAdmin}}<li><button class="text-error" hx-post="/ui/users/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this user? Their reading progress is kept but orphaned.">{{template "iconTrash"}}Delete</button></li>{{end}}
           </ul>
         </details>
-        {{end}}
       </div>
       {{end}}
     </div>
@@ -658,12 +656,16 @@
       <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="document.getElementById('user-edit-modal').remove()">✕</button>
     </div>
     <form class="mt-3 grid gap-3" hx-post="/ui/users/{{.User.ID}}" hx-swap="none">
+      {{if .User.IsEnvAdmin}}
+      <p class="text-sm text-base-content/60">Role and password come from the environment (MANGAD_ADMIN_USER / MANGAD_ADMIN_PASSWORD); only content preferences are editable here.</p>
+      {{else}}
       <label class="fieldset"><span class="fieldset-legend">Role</span>
         <select name="role_id" class="select w-full">
           {{$rid := .User.RoleID}}{{range .Roles}}<option value="{{.ID}}" {{if eq .ID $rid}}selected{{end}}>{{.Name}}</option>{{end}}
         </select></label>
       <label class="fieldset"><span class="fieldset-legend">New password</span>
         <input class="input w-full" type="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
+      {{end}}
       <label class="label cursor-pointer justify-start gap-2">
         <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult"{{if .User.AllowAdult}} checked{{end}}>
         <span><span class="text-sm font-medium">Allow adult content</span>

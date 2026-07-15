@@ -409,9 +409,6 @@ func contentAllowed(ctx context.Context, isAdult bool, tags []string) bool {
 	if u == nil {
 		return false
 	}
-	if u.IsEnvAdmin() {
-		return true
-	}
 	if isAdult && !u.AllowAdult {
 		return false
 	}

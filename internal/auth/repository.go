@@ -70,8 +70,7 @@ func (s *Service) Bootstrap(ctx context.Context, adminUser, adminPassword string
 			username = excluded.username,
 			password_hash = excluded.password_hash,
 			role_id = excluded.role_id,
-			origin = 'env',
-			allow_adult = 1
+			origin = 'env'
 	`, EnvAdminID, adminUser, hash, adminRole); err != nil {
 		return fmt.Errorf("bootstrap env admin: %w", err)
 	}
@@ -216,13 +215,13 @@ func (s *Service) CreateUser(ctx context.Context, username, password string, rol
 	return nil
 }
 
-// UpdateUser changes a local user's role and optionally password. The env
-// admin is immutable.
+// UpdateUser changes a local user's role and optionally password.
 func (s *Service) UpdateUser(ctx context.Context, id int64, roleID int64, password string, allowAdult bool, blockedTags []string) error {
-	if id == EnvAdminID {
-		return fmt.Errorf("the environment admin cannot be edited")
-	}
 	blocked, _ := json.Marshal(blockedTags)
+	if id == EnvAdminID {
+		_, err := s.db.ExecContext(ctx, `UPDATE users SET allow_adult = ?, blocked_tags = ? WHERE id = ?`, boolInt(allowAdult), string(blocked), id)
+		return err
+	}
 	if password != "" {
 		if len(password) < 4 {
 			return fmt.Errorf("password must be at least 4 characters")

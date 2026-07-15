@@ -62,8 +62,9 @@ func (u *User) Can(perm string) bool {
 	return u.Perms[perm]
 }
 
-// IsEnvAdmin reports whether this is the immutable env-provisioned admin.
-func (u *User) IsEnvAdmin() bool { return u != nil && u.ID == EnvAdminID && u.Origin == OriginEnv }
+func IsEnvAdminID(id int64) bool { return id == EnvAdminID }
+
+func (u User) IsEnvAdmin() bool { return u.ID == EnvAdminID && u.Origin == OriginEnv }
 
 type Role struct {
 	ID     int64
