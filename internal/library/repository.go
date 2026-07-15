@@ -209,6 +209,13 @@ func (r *Repository) ListTitleSources(ctx context.Context, titleID int64) ([]Lin
 
 // UnlinkSource removes a linked source; if it was the active one, another
 // linked source is promoted, or the title reverts to having no source.
+// UpdateDownloadFile rewrites a completed download's stored path after a
+// physical move (metadata untouched).
+func (r *Repository) UpdateDownloadFile(ctx context.Context, chapterID int64, file string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE downloads SET output_file = ? WHERE chapter_id = ? AND status = 'completed'`, file, chapterID)
+	return err
+}
+
 // ToggleFavourite flips the acting user's favourite mark for a title and
 // returns the new state.
 func (r *Repository) ToggleFavourite(ctx context.Context, titleID int64) (bool, error) {
