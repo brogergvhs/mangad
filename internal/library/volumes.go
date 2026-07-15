@@ -196,3 +196,29 @@ func (r *Repository) MoveVolumeFiles(ctx context.Context, titleID int64, oldDir,
 	}
 	return nil
 }
+
+// SetVolumeRangeRead marks volumes numbered from..to read or unread for the
+// acting user.
+func (r *Repository) SetVolumeRangeRead(ctx context.Context, titleID int64, from, to float64, read bool) (int, error) {
+	if to < from {
+		from, to = to, from
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM volumes WHERE title_id = ? AND number BETWEEN ? AND ?`, titleID, from, to)
+	if err != nil {
+		return 0, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		if err := r.SetVolumeRead(ctx, id, read); err != nil {
+			return 0, err
+		}
+	}
+	return len(ids), nil
+}
