@@ -336,3 +336,42 @@
   {{end}}
 </div>
 {{end}}
+
+{{define "volumesSection"}}
+<div id="volumes-section">
+{{if .Rows}}
+<div class="collapse collapse-arrow bg-base-100 mt-4">
+  <input type="checkbox" checked>
+  <div class="collapse-title font-semibold">Volumes <span class="badge badge-sm badge-ghost">{{len .Rows}}</span></div>
+  <div class="collapse-content">
+    <div class="divide-y divide-line/25">
+      {{range .Rows}}
+      <div class="flex items-center gap-3 py-2">
+        <img class="h-14 w-10 shrink-0 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover" alt="" loading="lazy">
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-medium">{{if .Label}}Vol. {{.Label}}{{end}}{{if and .Label .Name}} — {{end}}{{.Name}}</div>
+          <div class="text-xs text-base-content/50">{{if .Pages}}{{.Pages}} pages · {{end}}{{.Size}}</div>
+        </div>
+        {{if .Read}}
+        <button class="btn btn-ghost btn-xs btn-square text-success [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/unread" hx-target="#volumes-section" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">{{template "iconEye"}}</button>
+        {{else}}
+        <button class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/read" hx-target="#volumes-section" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">{{template "iconEyeOff"}}</button>
+        {{end}}
+        <details class="dropdown dropdown-end">
+          <summary class="btn btn-ghost btn-xs btn-square" aria-label="Volume actions">{{template "iconDots"}}</summary>
+          <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
+            <li><label class="cursor-pointer">{{template "iconEdit"}}Upload cover
+              <form hx-post="/ui/volumes/{{.ID}}/cover" hx-encoding="multipart/form-data" hx-target="#volumes-section" hx-swap="outerHTML" hx-trigger="change from:find input">
+                <input type="file" name="cover" accept="image/*" class="hidden">
+              </form></label></li>
+            {{if .CustomCover}}<li><button hx-post="/ui/volumes/{{.ID}}/cover/reset" hx-target="#volumes-section" hx-swap="outerHTML">{{template "iconRefresh"}}Use first page as cover</button></li>{{end}}
+          </ul>
+        </details>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+</div>
+{{end}}

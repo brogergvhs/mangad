@@ -263,6 +263,8 @@
 
 {{end}}
 
+<div id="volumes-section" hx-get="/ui/library/{{.Title.ID}}/volumes" hx-trigger="load" hx-swap="outerHTML"></div>
+
 {{if .Title.CatalogMangaID}}
 <div class="collapse collapse-arrow bg-base-100 mt-4">
   <input type="checkbox">
@@ -324,13 +326,25 @@
 {{end}}
 
 {{define "importCandidates"}}
-{{range $i, $c := .}}
+{{range $i, $c := .Candidates}}
 <div class="card bg-base-100 mb-3"><div class="card-body p-4">
   <div class="flex items-center justify-between gap-2 flex-wrap">
     <div><strong>{{$c.Folder}}</strong> <span class="text-sm text-base-content/50">· {{$c.ChapterFiles}} chapter files</span></div>
     <button class="btn btn-sm" hx-post="/ui/import/{{pathEscape $c.Folder}}/search" hx-target="#picker-{{$i}}" hx-swap="innerHTML">Match on AniList</button>
   </div>
   <div id="picker-{{$i}}"></div>
+  {{if $.Titles}}
+  <details class="mt-1">
+    <summary class="cursor-pointer select-none text-sm text-base-content/60">Add as volumes to an existing manga</summary>
+    <form hx-post="/ui/import/attach-volumes" hx-swap="none" class="mt-2 flex flex-wrap items-center gap-2">
+      <input type="hidden" name="folder" value="{{$c.Folder}}">
+      <select name="title_id" class="select select-sm min-w-48">
+        {{range $.Titles}}<option value="{{.ID}}">{{.DisplayTitle}}</option>{{end}}
+      </select>
+      <button class="btn btn-sm btn-outline">Attach volumes</button>
+    </form>
+  </details>
+  {{end}}
 </div></div>
 {{else}}<p class="text-base-content/60">No untracked folders with chapter files found in the download directory.</p>{{end}}
 {{end}}
@@ -349,7 +363,16 @@
     </label>
     {{else}}<p class="text-sm text-base-content/50">No AniList results — refine the search above.</p>{{end}}
   </div>
-  {{if .Results}}<button class="btn btn-primary btn-sm justify-self-start">Import this folder</button>{{end}}
+  {{if .Results}}
+  <div class="flex flex-wrap items-center gap-2">
+    <select name="kind" class="select select-sm w-36" aria-label="Import as">
+      <option value="chapters">Chapters</option>
+      <option value="volumes">Volumes</option>
+    </select>
+    <button class="btn btn-primary btn-sm">Import this folder</button>
+    <span class="text-xs text-base-content/50">Volumes are disk-only: no source search is started.</span>
+  </div>
+  {{end}}
 </form>
 {{end}}
 

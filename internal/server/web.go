@@ -277,6 +277,13 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
+	mux.HandleFunc("GET /ui/library/{id}/volumes", u.volumesFrag)
+	mux.HandleFunc("POST /ui/volumes/{id}/read", u.volumeRead(true))
+	mux.HandleFunc("POST /ui/volumes/{id}/unread", u.volumeRead(false))
+	mux.HandleFunc("GET /ui/volumes/{id}/cover", u.volumeCover)
+	mux.HandleFunc("POST /ui/volumes/{id}/cover", u.volumeCoverUpload)
+	mux.HandleFunc("POST /ui/volumes/{id}/cover/reset", u.volumeCoverReset)
+	mux.HandleFunc("POST /ui/import/attach-volumes", u.importAttachVolumes)
 	mux.HandleFunc("GET /ui/library/{id}/progress", u.titleProgress)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/read", u.chapterRead(true))
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/unread", u.chapterRead(false))
@@ -1344,13 +1351,20 @@ func (u *webUI) importPage(w http.ResponseWriter, r *http.Request) {
 	u.page(w, r, "import", "Import", nil) // candidates post-load: the dir scan can be slow
 }
 
+type importCandidatesView struct {
+	Candidates []service.ImportCandidate
+	Titles     []library.Title // attach targets for volume folders
+}
+
 func (u *webUI) importCandidates(w http.ResponseWriter, r *http.Request) {
 	cands, err := u.svc.ExploreDownloads(r.Context())
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "importCandidates", cands)
+	titles, _ := u.svc.ListTitles(r.Context())
+	titles = filterRestrictedTitles(r.Context(), titles)
+	u.frag(w, "importCandidates", importCandidatesView{Candidates: cands, Titles: titles})
 }
 
 func (u *webUI) importSearch(w http.ResponseWriter, r *http.Request) {
@@ -1373,7 +1387,12 @@ func (u *webUI) importDo(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, fmt.Errorf("select an AniList match first"))
 		return
 	}
-	title, err := u.svc.ImportFolder(r.Context(), r.FormValue("folder"), anilistID)
+	var title library.Title
+	if r.FormValue("kind") == "volumes" {
+		title, err = u.svc.ImportVolumesFolder(r.Context(), r.FormValue("folder"), anilistID)
+	} else {
+		title, err = u.svc.ImportFolder(r.Context(), r.FormValue("folder"), anilistID)
+	}
 	if err != nil {
 		u.fail(w, err)
 		return
