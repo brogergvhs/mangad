@@ -63,6 +63,7 @@ type dashData struct {
 	TotalBytes int64
 	TotalPages int64
 	TotalChaps int64
+	TotalVols  int64
 	User       *auth.User
 }
 type libraryView struct {
@@ -519,6 +520,7 @@ func (u *webUI) management(w http.ResponseWriter, r *http.Request) {
 		data.TotalBytes += t.SizeBytes + t.VolumeBytes
 		data.TotalPages += t.Pages + t.VolumePages
 		data.TotalChaps += t.DiscoveredCount
+		data.TotalVols += t.VolumeCount
 	}
 	u.page(w, r, "dashboard", "Management", data)
 }
