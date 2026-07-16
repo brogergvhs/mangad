@@ -80,11 +80,11 @@ func builtinRoles() []Role {
 	return []Role{
 		{Name: "admin", Origin: OriginBuiltin, Perms: Permissions()},
 		{Name: "member", Origin: OriginBuiltin, Perms: []string{
-			PermLibraryView, PermStatsView, PermJobsView, PermReaderUse,
+			PermLibraryView, PermJobsView, PermReaderUse,
 			PermLibraryAdd, PermLibraryManage, PermImportUse, PermSettingsAppearance,
 		}},
 		{Name: "viewer", Origin: OriginBuiltin, Perms: []string{
-			PermLibraryView, PermStatsView, PermReaderUse, PermSettingsAppearance,
+			PermLibraryView, PermReaderUse, PermSettingsAppearance,
 		}},
 	}
 }
