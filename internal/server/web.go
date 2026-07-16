@@ -46,6 +46,8 @@ type pageData struct {
 	User       *auth.User
 	Theme      string
 	ThemeCSS   template.CSS // custom-theme variable overrides
+	Screens    []library.Screen
+	ActiveID   int64 // active screen id, from ?screen=
 	Content    template.HTML
 }
 type readerView struct {
@@ -67,8 +69,15 @@ type dashData struct {
 	User       *auth.User
 }
 type libraryView struct {
-	Controls libraryControls
-	Table    libraryResults
+	Controls    libraryControls
+	Table       libraryResults
+	Screen      *library.Screen
+	ShowEditor  bool
+	OpenEditor  bool
+	TagOptions  []catalog.ContentTag
+	IncludeTags []string
+	ExcludeTags []string
+	Cfg         library.ScreenConfig
 }
 type libraryControls struct {
 	Q        string
@@ -281,6 +290,9 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
+	mux.HandleFunc("POST /ui/screens", u.screenSave)
+	mux.HandleFunc("POST /ui/screens/{id}", u.screenSave)
+	mux.HandleFunc("POST /ui/screens/{id}/delete", u.screenDelete)
 	mux.HandleFunc("GET /ui/library/{id}/content", u.titleContentFrag)
 	mux.HandleFunc("POST /ui/library/{id}/volumes/range", u.volumesRange)
 	mux.HandleFunc("POST /ui/volumes/{id}/read", u.volumeRead(true))
@@ -350,7 +362,12 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 		return
 	}
 	theme, css := u.theme(r.Context())
-	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), User: userFrom(r.Context()), Theme: theme, ThemeCSS: css, Content: template.HTML(buf.String())}); err != nil {
+	var screens []library.Screen
+	if userFrom(r.Context()).Can(auth.PermLibraryView) {
+		screens, _ = u.svc.Screens(r.Context())
+	}
+	activeID, _ := strconv.ParseInt(r.URL.Query().Get("screen"), 10, 64)
+	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), User: userFrom(r.Context()), Theme: theme, ThemeCSS: css, Screens: screens, ActiveID: activeID, Content: template.HTML(buf.String())}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -561,10 +578,83 @@ const (
 
 func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 	values := r.URL.Query()
-	u.page(w, r, "library", "Library", libraryView{
-		Controls: libraryControlsFrom(values),
-		Table:    u.buildLibraryTable(r.Context(), values),
-	})
+	view := libraryView{Table: u.buildLibraryTable(r.Context(), values)}
+	if id, _ := strconv.ParseInt(values.Get("screen"), 10, 64); id > 0 {
+		if sc, err := u.svc.GetScreen(r.Context(), id); err == nil {
+			view.Screen = &sc
+			view.Cfg = sc.Config
+			view.IncludeTags = sc.Config.IncludeTags
+			view.ExcludeTags = sc.Config.ExcludeTags
+		}
+	}
+	view.OpenEditor = values.Get("new-screen") == "1"
+	view.ShowEditor = view.Screen != nil || view.OpenEditor
+	if view.ShowEditor {
+		view.TagOptions, _ = u.svc.ContentTagOptions(r.Context())
+	}
+	view.Controls = libraryControlsFrom(screenDefaults(values, view.Screen))
+	title := "Library"
+	if view.Screen != nil {
+		title = view.Screen.Name
+	}
+	u.page(w, r, "library", title, view)
+}
+
+func screenFromForm(r *http.Request) library.Screen {
+	_ = r.ParseForm()
+	tags := func(key string) []string {
+		var out []string
+		for _, v := range r.Form[key] {
+			out = append(out, splitCommaList(v)...)
+		}
+		return out
+	}
+	return library.Screen{
+		Name: r.FormValue("name"),
+		Config: library.ScreenConfig{
+			IncludeTags: tags("include_tags"),
+			ExcludeTags: tags("exclude_tags"),
+			Adult:       r.FormValue("adult"),
+			Monitor:     r.FormValue("monitor"),
+			Fav:         r.FormValue("fav"),
+			Progress:    r.FormValue("progress"),
+			Content:     r.FormValue("content"),
+			Sort:        r.FormValue("sort"),
+			Dir:         r.FormValue("dir"),
+			View:        r.FormValue("view"),
+		},
+	}
+}
+
+func (u *webUI) screenSave(w http.ResponseWriter, r *http.Request) {
+	sc := screenFromForm(r)
+	if raw := r.PathValue("id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			u.fail(w, err)
+			return
+		}
+		sc.ID = id
+	}
+	id, err := u.svc.SaveScreen(r.Context(), sc)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/library?screen=%d", id))
+}
+
+func (u *webUI) screenDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.DeleteScreen(r.Context(), id); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", "/library")
 }
 
 func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
@@ -645,10 +735,25 @@ func initialReaderPosition(manifest readerManifestResponse) string {
 
 func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) libraryResults {
 	page, _, _ := tableParams(values, libraryPerPage)
-	controls := libraryControlsFrom(values)
+	var screen *library.Screen
+	if id, _ := strconv.ParseInt(values.Get("screen"), 10, 64); id > 0 {
+		if sc, err := u.svc.GetScreen(ctx, id); err == nil {
+			screen = &sc
+		}
+	}
+	controls := libraryControlsFrom(screenDefaults(values, screen))
 	titles, _ := u.svc.ListTitles(ctx)
 	titles = filterRestrictedTitles(ctx, titles)
 	allCount := len(titles)
+	if screen != nil {
+		kept := titles[:0]
+		for _, t := range titles {
+			if screen.Config.Matches(t) {
+				kept = append(kept, t)
+			}
+		}
+		titles = kept
+	}
 	titles = filterTitles(titles, controls)
 	sortTitles(titles, controls.Sort, controls.Dir)
 	pageTitles, total := paginate(titles, page, libraryPerPage)
@@ -756,9 +861,31 @@ func libraryControlsFrom(values url.Values) libraryControls {
 	return c
 }
 
+// screenDefaults fills unset filter controls from a screen's saved defaults.
+func screenDefaults(values url.Values, screen *library.Screen) url.Values {
+	if screen == nil {
+		return values
+	}
+	out := url.Values{}
+	for k, v := range values {
+		out[k] = v
+	}
+	for key, def := range map[string]string{
+		"monitor": screen.Config.Monitor, "fav": screen.Config.Fav,
+		"source": screen.Config.Source, "progress": screen.Config.Progress,
+		"content": screen.Config.Content, "sort": screen.Config.Sort,
+		"dir": screen.Config.Dir, "view": screen.Config.View,
+	} {
+		if def != "" && out.Get(key) == "" {
+			out.Set(key, def)
+		}
+	}
+	return out
+}
+
 func libraryTableParams(values url.Values) url.Values {
 	out := url.Values{}
-	for _, key := range []string{"q", "monitor", "fav", "source", "progress", "content", "sort", "dir", "view"} {
+	for _, key := range []string{"q", "monitor", "fav", "source", "progress", "content", "sort", "dir", "view", "screen"} {
 		if value := strings.TrimSpace(values.Get(key)); value != "" {
 			out.Set(key, value)
 		}
@@ -2202,12 +2329,12 @@ func (u *webUI) funcs() template.FuncMap {
 			return false
 		},
 		"mangaTitle": mangaTitle,
-		"tagPicker": func(options []catalog.ContentTag, values []string) map[string]any {
+		"tagPicker": func(options []catalog.ContentTag, values []string, name, label string) map[string]any {
 			selected := make(map[string]bool, len(values))
 			for _, v := range values {
 				selected[v] = true
 			}
-			return map[string]any{"Options": options, "Selected": selected, "Values": values}
+			return map[string]any{"Options": options, "Selected": selected, "Values": values, "Name": name, "Label": label}
 		},
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },

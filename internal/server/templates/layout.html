@@ -27,7 +27,21 @@
       <ul class="menu w-full grow px-4">
         <li><a href="/" class="{{if eq .Nav "home"}}menu-active{{end}}">{{template "iconHome"}}Home</a></li>
         {{if .User.Can "library.add"}}<li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>{{end}}
-        <li><a href="/library" class="{{if eq .Nav "library"}}menu-active{{end}}">{{template "iconLibrary"}}Library</a></li>
+        <li>
+          <details class="group/screens" {{if eq .Nav "library"}}open{{end}}>
+            <summary class="flex cursor-pointer list-none items-center gap-[0.6rem] rounded-lg px-3 py-2 transition-colors hover:bg-neutral {{if and (eq .Nav "library") (not .ActiveID)}}menu-active{{end}}">
+              {{template "iconLibrary"}}Library
+              <span class="ml-auto text-base-content/50 transition-transform group-open/screens:rotate-90">{{template "iconChevron"}}</span>
+            </summary>
+            <ul class="mt-0.5 flex flex-col gap-0.5 pl-6">
+              <li><a href="/library" class="{{if and (eq .Nav "library") (not .ActiveID)}}menu-active{{end}}">All</a></li>
+              {{$active := .ActiveID}}{{range .Screens}}
+              <li><a href="/library?screen={{.ID}}" class="{{if eq .ID $active}}menu-active{{end}}">{{.Name}}</a></li>
+              {{end}}
+              <li><a href="/library?new-screen=1" class="text-base-content/60">+ New screen</a></li>
+            </ul>
+          </details>
+        </li>
         {{if .User.Can "import.use"}}<li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>{{end}}
         {{if .User.Can "sources.manage"}}<li><a href="/sources" class="{{if eq .Nav "sources"}}menu-active{{end}}">{{template "iconSources"}}Sources</a></li>{{end}}
         {{if .User.Can "users.manage"}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users</a></li>{{end}}

@@ -100,7 +100,89 @@
 {{end}}
 
 {{define "library"}}
+{{if .Screen}}
+<div class="mb-3 flex items-center justify-between gap-2">
+  <h1 class="text-lg font-semibold">{{.Screen.Name}}</h1>
+  <div class="flex gap-2">
+    <button class="btn btn-sm btn-outline" onclick="screen_modal.showModal()">{{template "iconEdit"}}Edit screen</button>
+    <button class="btn btn-sm btn-ghost text-error" hx-post="/ui/screens/{{.Screen.ID}}/delete" hx-swap="none" hx-confirm="Delete this screen? Titles are not affected.">{{template "iconTrash"}}Delete</button>
+  </div>
+</div>
+{{end}}
+{{if .ShowEditor}}
+<dialog id="screen_modal" class="modal" {{if .OpenEditor}}open{{end}}>
+  <div class="modal-box max-w-xl">
+    <h3 class="text-lg font-bold mb-3">{{if .Screen}}Edit screen{{else}}New screen{{end}}</h3>
+    <form class="grid gap-3" hx-post="/ui/screens{{if .Screen}}/{{.Screen.ID}}{{end}}" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Name</span>
+        <input class="input w-full" name="name" value="{{if .Screen}}{{.Screen.Name}}{{end}}" required placeholder="e.g. Seinen shelf"></label>
+      {{template "tagPicker" tagPicker .TagOptions .IncludeTags "include_tags" "Include tags/genres (any of)"}}
+      {{template "tagPicker" tagPicker .TagOptions .ExcludeTags "exclude_tags" "Exclude tags/genres"}}
+      <div class="grid grid-cols-2 gap-3">
+        <label class="fieldset"><span class="fieldset-legend">Adult</span>
+          <select name="adult" class="select w-full">
+            <option value="" {{if eq .Cfg.Adult ""}}selected{{end}}>Any</option>
+            <option value="only" {{if eq .Cfg.Adult "only"}}selected{{end}}>Only adult</option>
+            <option value="exclude" {{if eq .Cfg.Adult "exclude"}}selected{{end}}>Exclude adult</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Favourites</span>
+          <select name="fav" class="select w-full">
+            <option value="" {{if eq .Cfg.Fav ""}}selected{{end}}>Any</option>
+            <option value="only" {{if eq .Cfg.Fav "only"}}selected{{end}}>Favourites only</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Monitored</span>
+          <select name="monitor" class="select w-full">
+            <option value="" {{if eq .Cfg.Monitor ""}}selected{{end}}>Any</option>
+            <option value="on" {{if eq .Cfg.Monitor "on"}}selected{{end}}>Monitored</option>
+            <option value="off" {{if eq .Cfg.Monitor "off"}}selected{{end}}>Not monitored</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Content</span>
+          <select name="content" class="select w-full">
+            <option value="" {{if eq .Cfg.Content ""}}selected{{end}}>Any</option>
+            <option value="chapters" {{if eq .Cfg.Content "chapters"}}selected{{end}}>With chapters</option>
+            <option value="no-chapters" {{if eq .Cfg.Content "no-chapters"}}selected{{end}}>Without chapters</option>
+            <option value="volumes" {{if eq .Cfg.Content "volumes"}}selected{{end}}>With volumes</option>
+            <option value="no-volumes" {{if eq .Cfg.Content "no-volumes"}}selected{{end}}>Without volumes</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Progress</span>
+          <select name="progress" class="select w-full">
+            <option value="" {{if eq .Cfg.Progress ""}}selected{{end}}>Any</option>
+            <option value="missing" {{if eq .Cfg.Progress "missing"}}selected{{end}}>Missing chapters</option>
+            <option value="complete" {{if eq .Cfg.Progress "complete"}}selected{{end}}>Complete</option>
+            <option value="empty" {{if eq .Cfg.Progress "empty"}}selected{{end}}>No chapters yet</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Default view</span>
+          <select name="view" class="select w-full">
+            <option value="" {{if eq .Cfg.View ""}}selected{{end}}>Auto</option>
+            <option value="table" {{if eq .Cfg.View "table"}}selected{{end}}>Table</option>
+            <option value="cards" {{if eq .Cfg.View "cards"}}selected{{end}}>Cards</option>
+            <option value="full" {{if eq .Cfg.View "full"}}selected{{end}}>Full</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Default sort</span>
+          <select name="sort" class="select w-full">
+            <option value="" {{if eq .Cfg.Sort ""}}selected{{end}}>Last added</option>
+            <option value="title" {{if eq .Cfg.Sort "title"}}selected{{end}}>Title</option>
+            <option value="missing" {{if eq .Cfg.Sort "missing"}}selected{{end}}>Missing chapters</option>
+            <option value="updated" {{if eq .Cfg.Sort "updated"}}selected{{end}}>Updated</option>
+            <option value="size" {{if eq .Cfg.Sort "size"}}selected{{end}}>Size</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Direction</span>
+          <select name="dir" class="select w-full">
+            <option value="" {{if eq .Cfg.Dir ""}}selected{{end}}>Ascending</option>
+            <option value="desc" {{if eq .Cfg.Dir "desc"}}selected{{end}}>Descending</option>
+          </select></label>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="screen_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
 <form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change from:select, keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
+  {{if .Screen}}<input type="hidden" name="screen" value="{{.Screen.ID}}">{{end}}
   <input type="checkbox" id="lib-filters" class="peer sr-only">
   <div class="flex items-center gap-2">
     <input name="q" class="input input-sm w-full" value="{{.Controls.Q}}" placeholder="Search library…" hx-trigger="keyup changed delay:300ms">
@@ -652,7 +734,7 @@
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
       </label>
-      {{template "tagPicker" tagPicker .TagOptions nil}}
+      {{template "tagPicker" tagPicker .TagOptions nil "blocked_tags" "Blocked tags/genres"}}
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="user_add_modal.close()">Cancel</button>
         <button class="btn btn-primary">Create user</button>
@@ -696,7 +778,7 @@
 {{end}}
 
 {{define "tagPicker"}}
-<div class="fieldset"><span class="fieldset-legend">Blocked tags/genres</span>
+<div class="fieldset"><span class="fieldset-legend">{{.Label}}</span>
   {{if .Options}}
   <details class="group rounded-lg border border-base-300">
     <summary class="flex cursor-pointer select-none items-center justify-between p-2 text-sm">
@@ -708,7 +790,7 @@
       <div class="grid max-h-52 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto" data-tag-list>
         {{$sel := .Selected}}{{range .Options}}
         <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
-          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="blocked_tags" value="{{.Name}}" {{if index $sel .Name}}checked{{end}}>
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" SHOULDNOTHAPPEN {{if index $sel .Name}}checked{{end}}>
           <span class="truncate">{{.Name}}</span>
           {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
         </label>
@@ -718,7 +800,7 @@
   </details>
   <span class="label">Matching manga are hidden from this user everywhere.</span>
   {{else}}
-  <input class="input w-full" name="blocked_tags" value="{{range $i, $t := .Values}}{{if $i}}, {{end}}{{$t}}{{end}}" placeholder="Gore, Horror, …">
+  <input class="input w-full" name="{{.Name}}" value="{{range $i, $t := .Values}}{{if $i}}, {{end}}{{$t}}{{end}}" placeholder="Gore, Horror, …">
   <span class="label">Comma-separated (AniList tag list unavailable); matching manga are hidden from this user everywhere.</span>
   {{end}}
 </div>
@@ -747,7 +829,7 @@
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
       </label>
-      {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags}}
+      {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags "blocked_tags" "Blocked tags/genres"}}
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-edit-modal').remove()">Cancel</button>
         <button class="btn btn-primary">Save</button>
