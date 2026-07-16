@@ -25,7 +25,9 @@
 {{end}}
 {{end}}
 <h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-base-content/60">Suggested for you</h2>
-<div hx-get="/ui/search/trending" hx-trigger="load" hx-swap="outerHTML"></div>
+<div hx-get="/ui/search/trending" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading suggestions…</div>
+</div>
 {{end}}
 
 {{define "dashboard"}}
@@ -92,7 +94,9 @@
 </form>
 <div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
 <div hx-get="/ui/anilist/suggestions" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div>
-<div id="search-results"><div hx-get="/ui/search/trending" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div></div>
+<div id="search-results"><div hx-get="/ui/search/trending" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading suggestions…</div>
+</div></div>
 {{end}}
 
 {{define "library"}}
