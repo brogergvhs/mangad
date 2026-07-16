@@ -200,7 +200,7 @@ func chaptersFromRows(pageURL, slug string, rows []chapterRow) []providers.Chapt
 		if hid == "" || chap == "" || lang == "" {
 			continue
 		}
-		main, suffixType, suffixNum, label, ok := parseChapter(chap)
+		main, suffixType, suffixNum, label, ok := providers.ParseChapterNumber(chap)
 		if !ok {
 			continue
 		}
@@ -218,38 +218,6 @@ func chaptersFromRows(pageURL, slug string, rows []chapterRow) []providers.Chapt
 		})
 	}
 	return out
-}
-
-func parseChapter(raw string) (int, string, int, string, bool) {
-	raw = strings.TrimSpace(raw)
-	separator := ""
-	if strings.Contains(raw, ".") {
-		separator = "."
-	} else if strings.Contains(raw, "-") {
-		separator = "-"
-	}
-	if separator == "" {
-		main, err := strconv.Atoi(normalizeNumberPart(raw))
-		return main, "", 0, strconv.Itoa(main), err == nil
-	}
-	parts := strings.SplitN(raw, separator, 2)
-	main, errMain := strconv.Atoi(normalizeNumberPart(parts[0]))
-	// Keep the suffix text verbatim in the label: stripping zeros would
-	// collapse "10.05" into "10.5". The int form is only a sort key.
-	suffixText := strings.TrimSpace(parts[1])
-	suffix, errSuffix := strconv.Atoi(normalizeNumberPart(suffixText))
-	if errMain != nil || errSuffix != nil {
-		return 0, "", 0, "", false
-	}
-	return main, separator, suffix, fmt.Sprintf("%d%s%s", main, separator, suffixText), true
-}
-
-func normalizeNumberPart(value string) string {
-	value = strings.TrimLeft(strings.TrimSpace(value), "0")
-	if value == "" {
-		return "0"
-	}
-	return value
 }
 
 func dedupeAndSort(chapters []providers.Chapter) []providers.Chapter {

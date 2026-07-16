@@ -30,6 +30,8 @@ type Title struct {
 	IsAdult         bool
 	ContentTags     []string // catalog tags+genres, for per-user content guards
 	Favourite       bool     // acting user's favourite mark
+	LanguageMode    string   // '' ask, 'preferred', 'all', 'off'
+	LanguageGap     int64    // chapters existing only outside preferred languages
 	VolumeCount     int64
 	VolumeReadCount int64
 	VolumeBytes     int64

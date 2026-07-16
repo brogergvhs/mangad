@@ -142,6 +142,15 @@ func (s *LibraryService) SetFavourite(ctx context.Context, userID, titleID int64
 	return s.repo.SetFavourite(ctx, userID, titleID)
 }
 
+func (s *LibraryService) SetLanguageMode(ctx context.Context, id int64, mode string) error {
+	switch mode {
+	case "preferred", "all", "off":
+	default:
+		return fmt.Errorf("unknown language mode %q", mode)
+	}
+	return s.repo.SetLanguageMode(ctx, id, mode)
+}
+
 func (s *LibraryService) SetMonitored(ctx context.Context, id int64, monitored bool) error {
 	return s.repo.SetMonitored(ctx, id, monitored)
 }
@@ -273,9 +282,14 @@ func (s *LibraryService) RefreshTitle(
 		return RefreshResult{}, err
 	}
 
-	chapters, finalURL, err := downloadSvc.FetchChapters(ctx, title.SourceURL)
+	chapters, finalURL, languageGap, err := downloadSvc.FetchChapters(ctx, title.SourceURL)
 	if err != nil {
 		return RefreshResult{}, err
+	}
+	if int64(languageGap) != title.LanguageGap {
+		if err := s.repo.SetLanguageGap(ctx, title.ID, languageGap); err != nil {
+			return RefreshResult{}, err
+		}
 	}
 	if finalURL != "" && finalURL != title.SourceURL && strings.HasPrefix(finalURL, "http") {
 		if err := s.repo.UpdateSourceURL(ctx, title.ID, title.SourceURL, finalURL); err != nil {
@@ -463,6 +477,10 @@ func (s *LibraryService) DownloadMissing(
 	if err != nil {
 		return nil, err
 	}
+	if title.LanguageMode == "off" {
+		logSvc.Infof("Downloads for %q are turned off (language choice).\n", title.DisplayTitle)
+		return nil, nil
+	}
 
 	cfg, err = configForTitle(cfg, title)
 	if err != nil {
@@ -596,6 +614,7 @@ func (s *LibraryService) downloadServiceForTitle(
 ) (*DownloadService, error) {
 	if src, ok := s.sourceForTitle(ctx, title); ok {
 		next := ConfigForSource(*cfg, src, SourceConfigOptions{})
+		next.LanguageMode = title.LanguageMode
 		return NewSourceDownloadService(&next, logSvc, progress, src.Scraper)
 	}
 	return NewDefaultDownloadService(cfg, logSvc, progress)

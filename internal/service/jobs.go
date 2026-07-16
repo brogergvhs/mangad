@@ -1344,6 +1344,20 @@ func (s *JobService) SetRefreshInterval(ctx context.Context, id int64, interval 
 	return s.lib.SetRefreshInterval(ctx, id, interval)
 }
 
+// SetLanguageMode stores the language decision; choosing "all" refreshes so
+// the newly eligible chapters get discovered.
+func (s *JobService) SetLanguageMode(ctx context.Context, id int64, mode string) error {
+	if err := s.lib.SetLanguageMode(ctx, id, mode); err != nil {
+		return err
+	}
+	if mode == "all" {
+		if _, err := s.Enqueue(ctx, jobs.TypeRefreshTitle, id, time.Now()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *JobService) SetMonitored(ctx context.Context, id int64, monitored bool) error {
 	return s.lib.SetMonitored(ctx, id, monitored)
 }

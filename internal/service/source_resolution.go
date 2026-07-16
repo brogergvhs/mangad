@@ -22,6 +22,9 @@ func ConfigForSource(cfg config.Config, src sources.Source, opts SourceConfigOpt
 	if len(src.AllowedExtensions) > 0 && !opts.PreserveAllowedExtensions {
 		cfg.AllowExt = src.AllowedExtensions
 	}
+	if len(src.Languages) > 0 {
+		cfg.Languages = src.Languages
+	}
 	// A learned method wins over the runtime default; a hard profile
 	// requirement is always honored, even over a learned "http".
 	switch src.ChapterFetch {

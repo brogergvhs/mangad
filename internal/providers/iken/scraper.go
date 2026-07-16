@@ -8,12 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/providers/generic"
@@ -71,7 +68,7 @@ func (s *Scraper) SearchManga(ctx context.Context, searchURL, query string) ([]s
 			Slug string `json:"slug"`
 		} `json:"posts"`
 	}
-	if err := s.getJSON(ctx, u.String(), &out); err != nil {
+	if err := util.GetJSON(ctx, s.client, u.String(), &out); err != nil {
 		return nil, err
 	}
 	site := strings.TrimPrefix(u.Host, "api.")
@@ -108,7 +105,7 @@ func (s *Scraper) fetchAPIChapters(ctx context.Context, pageURL string) ([]provi
 			TotalChapterCount int `json:"totalChapterCount"`
 		}
 		listURL := fmt.Sprintf("%s/api/chapters?postId=%d&skip=%d&take=%d&order=desc", api, postID, pageNum*chapterPageSize, chapterPageSize)
-		if err := s.getJSON(ctx, listURL, &resp); err != nil {
+		if err := util.GetJSON(ctx, s.client, listURL, &resp); err != nil {
 			return nil, err
 		}
 		if resp.TotalChapterCount > total {
@@ -125,7 +122,7 @@ func (s *Scraper) fetchAPIChapters(ctx context.Context, pageURL string) ([]provi
 				skipped++ // paid/locked chapter: listing it would only fail downloads
 				continue
 			}
-			main, suffixType, suffixNum, label, ok := parseNumber(row.Number)
+			main, suffixType, suffixNum, label, ok := providers.ParseChapterNumber(row.Number.String())
 			if !ok {
 				continue
 			}
@@ -177,7 +174,7 @@ func (s *Scraper) resolvePost(ctx context.Context, page *url.URL, slug string) (
 				ID int `json:"id"`
 			} `json:"post"`
 		}
-		if err := s.getJSON(ctx, base+"/api/post?postSlug="+url.QueryEscape(slug), &resp); err != nil {
+		if err := util.GetJSON(ctx, s.client, base+"/api/post?postSlug="+url.QueryEscape(slug), &resp); err != nil {
 			lastErr = err
 			continue
 		}
@@ -189,47 +186,10 @@ func (s *Scraper) resolvePost(ctx context.Context, page *url.URL, slug string) (
 	return "", 0, 0, lastErr
 }
 
-func (s *Scraper) getJSON(ctx context.Context, target string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := util.DoWithRetry(s.client, req, 2, 500*time.Millisecond)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
-}
-
 func seriesSlug(page *url.URL) (string, error) {
 	parts := strings.Split(strings.Trim(page.Path, "/"), "/")
 	if len(parts) < 2 || parts[0] != "series" {
 		return "", fmt.Errorf("not an Iken series URL")
 	}
 	return parts[1], nil
-}
-
-// parseNumber splits an API chapter number ("145", "9.5") into the sort key
-// parts used across scrapers; the label keeps the raw fraction text.
-func parseNumber(n json.Number) (int, string, int, string, bool) {
-	raw := strings.TrimSpace(n.String())
-	if raw == "" {
-		return 0, "", 0, "", false
-	}
-	if !strings.Contains(raw, ".") {
-		main, err := strconv.Atoi(raw)
-		return main, "", 0, raw, err == nil
-	}
-	parts := strings.SplitN(raw, ".", 2)
-	main, errMain := strconv.Atoi(parts[0])
-	suffix, errSuffix := strconv.Atoi(parts[1])
-	if errMain != nil || errSuffix != nil {
-		return 0, "", 0, "", false
-	}
-	return main, ".", suffix, raw, true
 }

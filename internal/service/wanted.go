@@ -349,7 +349,7 @@ func (s *WantedService) TrackMatch(ctx context.Context, matchID int64, outputPat
 }
 
 func (s *WantedService) verifyCandidate(ctx context.Context, downloadSvc *DownloadService, logSvc ui.Log, manga catalog.Manga, src sources.Source, sourceURL, method string) (catalog.Match, bool) {
-	chapters, _, err := downloadSvc.FetchChapters(ctx, sourceURL)
+	chapters, _, _, err := downloadSvc.FetchChapters(ctx, sourceURL)
 	if err != nil {
 		if logSvc != nil {
 			logSvc.Debugf("Candidate %s failed chapter fetch: %v\n", sourceURL, err)

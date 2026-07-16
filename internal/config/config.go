@@ -21,6 +21,8 @@ type Config struct {
 	KeepFolders    bool     `yaml:"keep_folders"`
 	Debug          bool     `yaml:"debug"`
 	AllowExt       []string `yaml:"allow_ext"`
+	Languages      []string `yaml:"languages"`
+	LanguageMode   string   `yaml:"-"`
 
 	DefaultURL          string `yaml:"default_url"`
 	DefaultRange        string `yaml:"default_range"`

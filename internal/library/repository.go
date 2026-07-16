@@ -216,6 +216,19 @@ func (r *Repository) UpdateDownloadFile(ctx context.Context, chapterID int64, fi
 	return err
 }
 
+// SetLanguageMode stores the user's decision for language-gapped titles.
+func (r *Repository) SetLanguageMode(ctx context.Context, titleID int64, mode string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE titles SET language_mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, mode, titleID)
+	return err
+}
+
+// SetLanguageGap records how many chapters exist only outside the preferred
+// languages (refresh keeps it current).
+func (r *Repository) SetLanguageGap(ctx context.Context, titleID int64, gap int) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE titles SET language_gap = ? WHERE id = ?`, gap, titleID)
+	return err
+}
+
 // ToggleFavourite flips the acting user's favourite mark for a title and
 // returns the new state.
 func (r *Repository) ToggleFavourite(ctx context.Context, titleID int64) (bool, error) {
@@ -1309,6 +1322,8 @@ func (r *Repository) titleSelectQuery() string {
 			COALESCE(agg.read, 0) AS read_count,
 			COALESCE(agg.bytes, 0) AS size_bytes,
 			COALESCE(agg.pages, 0) AS pages,
+			t.language_mode,
+			t.language_gap,
 			t.created_at,
 			t.updated_at,
 			COALESCE(m.cover_image, ''),
@@ -1380,6 +1395,8 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&title.ReadCount,
 		&title.SizeBytes,
 		&title.Pages,
+		&title.LanguageMode,
+		&title.LanguageGap,
 		&createdAt,
 		&updatedAt,
 		&title.CoverImage,

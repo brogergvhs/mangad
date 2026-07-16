@@ -275,25 +275,28 @@ func (f flaresolverrFetcher) applySession(ctx context.Context, target string, re
 // FetchChapters fetches and normalizes all chapters for a source URL. The
 // second return is the URL the page resolved to (sites rotate slugs and
 // redirect old ones); callers can persist it when it differs.
-func (s *DownloadService) FetchChapters(ctx context.Context, sourceURL string) ([]chapters.Chapter, string, error) {
+// languageGap reports chapters existing only outside the preferred languages
+// after the last FetchChapters (LanguageAware scrapers only).
+func (s *DownloadService) FetchChapters(ctx context.Context, sourceURL string) (list []chapters.Chapter, finalURL string, languageGap int, err error) {
 	var raw []providers.Chapter
-	finalURL := sourceURL
-	var err error
-	if ra, ok := s.scraper.(providers.RedirectAware); ok {
-		raw, finalURL, err = ra.GetChaptersResolved(ctx, sourceURL)
-	} else {
+	finalURL = sourceURL
+	switch scraper := s.scraper.(type) {
+	case providers.LanguageAware:
+		raw, languageGap, err = scraper.GetChaptersByLanguage(ctx, sourceURL, s.cfg.Languages, s.cfg.LanguageMode == "all")
+	case providers.RedirectAware:
+		raw, finalURL, err = scraper.GetChaptersResolved(ctx, sourceURL)
+	default:
 		raw, err = s.scraper.GetChapters(ctx, sourceURL)
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("fetch chapters: %w", err)
+		return nil, "", 0, fmt.Errorf("fetch chapters: %w", err)
 	}
 
 	out := make([]chapters.Chapter, len(raw))
 	for i, ch := range raw {
 		out[i] = chapters.Chapter{Chapter: ch}
 	}
-
-	return out, finalURL, nil
+	return out, finalURL, languageGap, nil
 }
 
 // SelectChapters filters a chapter list according to a selection request.

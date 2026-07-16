@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/brogergvhs/mangad/internal/providers"
 	"github.com/brogergvhs/mangad/internal/providers/comickz"
 	"github.com/brogergvhs/mangad/internal/providers/generic"
 	"github.com/brogergvhs/mangad/internal/providers/iken"
 	"github.com/brogergvhs/mangad/internal/providers/madara"
+	"github.com/brogergvhs/mangad/internal/providers/mangadex"
 	"github.com/brogergvhs/mangad/internal/ui"
 )
 
@@ -30,6 +32,13 @@ var constructors = map[string]Constructor{
 	},
 	"iken": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
 		return iken.NewScraper(client, log, allowExt, checkJS, browser)
+	},
+	"mangadex": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
+		timeout := 30 * time.Second
+		if client != nil && client.Timeout > 0 {
+			timeout = client.Timeout
+		}
+		return mangadex.NewScraper(&http.Client{Timeout: timeout}, log, allowExt, checkJS, browser)
 	},
 }
 
