@@ -98,6 +98,22 @@ func (s *LibraryService) SetVolumeRead(ctx context.Context, id int64, read bool)
 	return s.repo.SetVolumeRead(ctx, id, read)
 }
 
+func (s *LibraryService) Screens(ctx context.Context) ([]library.Screen, error) {
+	return s.repo.Screens(ctx)
+}
+
+func (s *LibraryService) GetScreen(ctx context.Context, id int64) (library.Screen, error) {
+	return s.repo.GetScreen(ctx, id)
+}
+
+func (s *LibraryService) SaveScreen(ctx context.Context, sc library.Screen) (int64, error) {
+	return s.repo.SaveScreen(ctx, sc)
+}
+
+func (s *LibraryService) DeleteScreen(ctx context.Context, id int64) error {
+	return s.repo.DeleteScreen(ctx, id)
+}
+
 func (s *LibraryService) LastReadAt(ctx context.Context) (map[int64]time.Time, error) {
 	return s.repo.LastReadAt(ctx)
 }

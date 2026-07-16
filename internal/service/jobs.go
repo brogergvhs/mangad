@@ -1403,6 +1403,22 @@ func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) err
 	return s.lib.SetVolumeRead(ctx, id, read)
 }
 
+func (s *JobService) Screens(ctx context.Context) ([]library.Screen, error) {
+	return s.lib.Screens(ctx)
+}
+
+func (s *JobService) GetScreen(ctx context.Context, id int64) (library.Screen, error) {
+	return s.lib.GetScreen(ctx, id)
+}
+
+func (s *JobService) SaveScreen(ctx context.Context, sc library.Screen) (int64, error) {
+	return s.lib.SaveScreen(ctx, sc)
+}
+
+func (s *JobService) DeleteScreen(ctx context.Context, id int64) error {
+	return s.lib.DeleteScreen(ctx, id)
+}
+
 func (s *JobService) LastReadAt(ctx context.Context) (map[int64]time.Time, error) {
 	return s.lib.LastReadAt(ctx)
 }

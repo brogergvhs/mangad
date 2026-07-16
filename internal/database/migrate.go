@@ -67,6 +67,15 @@ CREATE TABLE IF NOT EXISTS volume_read_progress (
 	PRIMARY KEY (user_id, volume_id)
 );
 
+CREATE TABLE IF NOT EXISTS library_screens (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL DEFAULT 1,
+	name TEXT NOT NULL,
+	config_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_library_screens_user ON library_screens(user_id);
+
 CREATE TABLE IF NOT EXISTS user_favourites (
 	user_id INTEGER NOT NULL DEFAULT 1,
 	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
