@@ -22,6 +22,7 @@ const (
 	apiBase  = "https://api.mangadex.org"
 	feedPage = 500
 	maxFeeds = 40 // 20k chapters
+	allRatings = "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic"
 )
 
 type Scraper struct {
@@ -79,7 +80,7 @@ func (s *Scraper) GetChaptersByLanguage(ctx context.Context, pageURL string, pre
 			} `json:"data"`
 			Total int `json:"total"`
 		}
-		feed := fmt.Sprintf("%s/manga/%s/feed?order[chapter]=asc&limit=%d&offset=%d%s", apiBase, id, feedPage, offset, langFilter)
+		feed := fmt.Sprintf("%s/manga/%s/feed?order[chapter]=asc&limit=%d&offset=%d%s%s", apiBase, id, feedPage, offset, langFilter, allRatings)
 		if err := util.GetJSON(ctx, s.client, feed, &resp); err != nil {
 			return nil, 0, err
 		}
@@ -232,6 +233,7 @@ func (s *Scraper) SearchManga(ctx context.Context, searchURL, query string) ([]s
 	if !strings.Contains(searchURL, "{query}") {
 		target = apiBase + "/manga?limit=10&title=" + url.QueryEscape(query)
 	}
+	target += allRatings
 	var resp struct {
 		Data []struct {
 			ID string `json:"id"`
