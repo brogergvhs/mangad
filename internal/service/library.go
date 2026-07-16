@@ -78,16 +78,8 @@ func (s *LibraryService) SetRefreshInterval(ctx context.Context, id int64, inter
 }
 
 // SetMonitored toggles monitoring for a tracked title.
-func (s *LibraryService) SyncVolumeFiles(ctx context.Context, titleID int64, dir string, pageCount func(string) int) (int, error) {
-	return s.repo.SyncVolumeFiles(ctx, titleID, dir, pageCount)
-}
-
 func (s *LibraryService) Volumes(ctx context.Context, titleID int64) ([]library.Volume, error) {
 	return s.repo.Volumes(ctx, titleID)
-}
-
-func (s *LibraryService) HasVolumes(ctx context.Context, titleID int64) (bool, error) {
-	return s.repo.HasVolumes(ctx, titleID)
 }
 
 func (s *LibraryService) GetVolume(ctx context.Context, id int64) (library.Volume, error) {

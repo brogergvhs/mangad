@@ -61,7 +61,7 @@ func TestReaderManifestWindow(t *testing.T) {
 
 	// Hard cutoff: the strip starts at the current chapter (no previous
 	// chapters above it); prev remains reachable via navigation only.
-	manifest, prevID, nextID := readerManifestWindow(progress, 0)
+	manifest, prevID, nextID := readerManifestWindowMode(progress, 0, false)
 	if prevID != 1 || nextID != 3 {
 		t.Fatalf("prev/next = %d/%d, want 1/3", prevID, nextID)
 	}
@@ -70,7 +70,7 @@ func TestReaderManifestWindow(t *testing.T) {
 		t.Fatalf("manifest = %+v, want chapters [2 3] resuming at 2/2", manifest)
 	}
 
-	manifest, prevID, nextID = readerManifestWindow(progress, 4)
+	manifest, prevID, nextID = readerManifestWindowMode(progress, 4, false)
 	if prevID != 3 || nextID != 0 || len(manifest.Chapters) != 1 || manifest.Chapters[0].ID != 4 {
 		t.Fatalf("requested tail manifest = %+v prev=%d next=%d", manifest, prevID, nextID)
 	}

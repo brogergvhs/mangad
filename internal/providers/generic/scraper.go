@@ -564,8 +564,8 @@ func sameSeriesChapterLink(pageURL, href string) bool {
 		return false
 	}
 
-	baseParts := pathParts(base.Path)
-	candidateParts := pathParts(candidate.Path)
+	baseParts := util.PathSegments(base.Path)
+	candidateParts := util.PathSegments(candidate.Path)
 	if len(baseParts) > 0 && sameSeriesSlug(baseParts, candidateParts) {
 		return true
 	}
@@ -619,17 +619,6 @@ func sameSeriesID(baseParts, candidateParts []string) bool {
 		}
 	}
 	return false
-}
-
-func pathParts(p string) []string {
-	parts := strings.Split(strings.Trim(p, "/"), "/")
-	out := parts[:0]
-	for _, part := range parts {
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
 }
 
 func (s *Scraper) GetImages(ctx context.Context, chapterURL string) ([]string, error) {

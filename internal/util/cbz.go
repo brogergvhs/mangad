@@ -27,6 +27,18 @@ func CBZImageEntries(files []*zip.File) []*zip.File {
 	return out
 }
 
+// PathSegments splits a URL path into non-empty segments.
+func PathSegments(p string) []string {
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	out := parts[:0]
+	for _, part := range parts {
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // NaturalLess compares full paths with embedded numbers numerically, so
 // "2.jpg" < "10.jpg" and nested archives keep folder order
 // ("001/02.jpg" < "002/01.jpg").

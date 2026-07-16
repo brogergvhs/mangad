@@ -736,10 +736,6 @@ func readerManifest(progress library.TitleReadProgress) readerManifestResponse {
 	return readerManifestFor(progress, progress.Chapters, progress.NextChapterID, progress.NextPage, false)
 }
 
-func readerManifestWindow(progress library.TitleReadProgress, requestedChapterID int64) (readerManifestResponse, int64, int64) {
-	return readerManifestWindowMode(progress, requestedChapterID, false)
-}
-
 func readerManifestWindowMode(progress library.TitleReadProgress, requestedChapterID int64, volumes bool) (readerManifestResponse, int64, int64) {
 	if len(progress.Chapters) == 0 {
 		return readerManifestFor(progress, nil, 0, 0, volumes), 0, 0

@@ -63,8 +63,8 @@ func (u *User) Can(perm string) bool {
 	return u.Perms[perm]
 }
 
-func IsEnvAdminID(id int64) bool { return id == EnvAdminID }
-
+// IsEnvAdmin reports whether this is the env-provisioned admin (undeletable,
+// env-owned credentials). Value receiver: templates call it on []User values.
 func (u User) IsEnvAdmin() bool { return u.ID == EnvAdminID && u.Origin == OriginEnv }
 
 type Role struct {

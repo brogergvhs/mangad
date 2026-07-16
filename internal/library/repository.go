@@ -50,7 +50,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 	// The download root is only known at download time; reject traversal
 	// segments here so escapes are never even stored.
 	if hasDotDot(params.OutputPath) {
-		return Title{}, fmt.Errorf("output path %q must not contain ..", params.OutputPath)
+		return Title{}, fmt.Errorf(`output path %q must not contain ".."`, params.OutputPath)
 	}
 
 	var catalogID any

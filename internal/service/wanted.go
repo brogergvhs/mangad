@@ -604,7 +604,7 @@ func sourceURLFromSlug(src sources.Source, slug string) string {
 	if err != nil {
 		return ""
 	}
-	parts := pathParts(sample.Path)
+	parts := util.PathSegments(sample.Path)
 	if len(parts) == 0 {
 		return ""
 	}
@@ -626,7 +626,7 @@ func looksLikeMangaResult(src sources.Source, manga catalog.Manga, href, text st
 	if err != nil {
 		return true
 	}
-	candidateParts, sampleParts := pathParts(u.Path), pathParts(sample.Path)
+	candidateParts, sampleParts := util.PathSegments(u.Path), util.PathSegments(sample.Path)
 	if len(candidateParts) == 0 || len(sampleParts) == 0 {
 		return false
 	}
@@ -638,7 +638,7 @@ func candidateSourceURLs(src sources.Source, manga catalog.Manga) []string {
 	if err != nil || u.Host == "" {
 		return nil
 	}
-	parts := pathParts(u.Path)
+	parts := util.PathSegments(u.Path)
 	if len(parts) == 0 || hasNumericOrOpaqueNeighbor(parts) {
 		return nil
 	}
@@ -801,17 +801,6 @@ func matchConfidence(m catalog.Manga, sourceURL string, chapters int) float64 {
 		return 1
 	}
 	return score
-}
-
-func pathParts(p string) []string {
-	raw := strings.Split(strings.Trim(p, "/"), "/")
-	out := raw[:0]
-	for _, part := range raw {
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
 }
 
 func sameHostURL(a, b *url.URL) bool {

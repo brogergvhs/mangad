@@ -2334,8 +2334,8 @@ func (u *webUI) funcs() template.FuncMap {
 		"assetVer":  func() string { return u.assetVer },
 		"jobLabel":  jobLabel,
 		"permLabel": func(p string) string { l, _ := permMeta(p); return l },
-		"cardView": func(t library.Title, canManage bool) map[string]any {
-			return map[string]any{"Title": t, "CanManage": canManage}
+		"cardView": func(t library.Title, canManage bool, screen int64) map[string]any {
+			return map[string]any{"Title": t, "CanManage": canManage, "Screen": screen}
 		},
 		"permDesc": func(p string) string { _, d := permMeta(p); return d },
 		"has": func(list []string, v string) bool {
