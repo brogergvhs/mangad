@@ -36,7 +36,10 @@ func (u *webUI) sessionsFrag(w http.ResponseWriter, r *http.Request) {
 		if a, ok := presence.Get(s.TokenHash, 3*time.Minute); ok {
 			row.Reading = a.Title
 			if a.ChapterLabel != "" {
-				row.Reading += " Ch " + a.ChapterLabel
+				if row.Reading != "" {
+					row.Reading += ": "
+				}
+				row.Reading += a.ChapterLabel
 			}
 			if a.Total > 0 {
 				row.Reading += fmt.Sprintf(" · p %d/%d", a.Page, a.Total)

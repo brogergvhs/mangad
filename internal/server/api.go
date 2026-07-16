@@ -135,7 +135,8 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		presence.SetPage(r.Context(), auth.UserID(r.Context()), "Vol "+strconv.FormatFloat(vol.Number, 'f', -1, 64), req.Page, req.TotalPages)
+		title, _ := svc.GetTitle(r.Context(), vol.TitleID)
+		presence.SetPage(r.Context(), auth.UserID(r.Context()), title.DisplayTitle, "Vol "+strconv.FormatFloat(vol.Number, 'f', -1, 64), req.Page, req.TotalPages)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 
@@ -185,7 +186,8 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		presence.SetPage(r.Context(), auth.UserID(r.Context()), progress.Label, req.Page, req.TotalPages)
+		title, _ := svc.GetTitle(r.Context(), progress.TitleID)
+		presence.SetPage(r.Context(), auth.UserID(r.Context()), title.DisplayTitle, "Ch "+progress.Label, req.Page, req.TotalPages)
 		writeJSON(w, http.StatusOK, progress)
 	})
 

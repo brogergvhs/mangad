@@ -53,8 +53,9 @@ func (p *presenceTracker) SetTitle(ctx context.Context, userID, titleID int64, t
 	p.reading[key] = readingActivity{UserID: userID, TitleID: titleID, Title: title, UpdatedAt: time.Now()}
 }
 
-// SetPage updates the session's reading position, keeping the title info.
-func (p *presenceTracker) SetPage(ctx context.Context, userID int64, chapterLabel string, page, total int) {
+// SetPage updates the session's reading position. label carries its kind
+// prefix ("Ch 5", "Vol 3").
+func (p *presenceTracker) SetPage(ctx context.Context, userID int64, title, label string, page, total int) {
 	key := sessionKey(ctx)
 	if key == "" {
 		return
@@ -63,7 +64,10 @@ func (p *presenceTracker) SetPage(ctx context.Context, userID int64, chapterLabe
 	defer p.mu.Unlock()
 	a := p.reading[key]
 	a.UserID = userID
-	a.ChapterLabel = chapterLabel
+	if title != "" {
+		a.Title = title
+	}
+	a.ChapterLabel = label
 	a.Page = page
 	a.Total = total
 	a.UpdatedAt = time.Now()
