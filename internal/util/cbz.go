@@ -27,10 +27,11 @@ func CBZImageEntries(files []*zip.File) []*zip.File {
 	return out
 }
 
-// NaturalLess compares strings with embedded numbers numerically, so
-// "2.jpg" < "10.jpg".
+// NaturalLess compares full paths with embedded numbers numerically, so
+// "2.jpg" < "10.jpg" and nested archives keep folder order
+// ("001/02.jpg" < "002/01.jpg").
 func NaturalLess(a, b string) bool {
-	as, bs := []rune(strings.ToLower(filepath.Base(a))), []rune(strings.ToLower(filepath.Base(b)))
+	as, bs := []rune(strings.ToLower(a)), []rune(strings.ToLower(b))
 	for len(as) > 0 && len(bs) > 0 {
 		ac, ar := nextNaturalChunk(as)
 		bc, br := nextNaturalChunk(bs)

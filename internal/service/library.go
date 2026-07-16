@@ -55,7 +55,7 @@ func OpenLibrary(ctx context.Context, dbPath string) (*LibraryService, func(), e
 		_ = db.Close()
 		return nil, nil, err
 	}
-	if _, err := svc.ScanDownloads(ctx, 0); err != nil {
+	if _, err := svc.ScanDownloads(ctx, nil, 0); err != nil {
 		_ = db.Close()
 		return nil, nil, err
 	}
@@ -322,10 +322,41 @@ func (s *LibraryService) RefreshMonitored(
 }
 
 // ScanDownloads verifies completed download files still exist.
-func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (ScanResult, error) {
+func (s *LibraryService) ScanDownloads(ctx context.Context, cfg *config.Config, titleID int64) (ScanResult, error) {
 	downloads, err := s.repo.ListScannableDownloads(ctx, titleID)
 	if err != nil {
 		return ScanResult{}, err
+	}
+
+	// Per-title index of files under the title's CURRENT directory, so stale
+	// recorded paths (moved library, changed download root, Chapters/ split)
+	// heal by basename. Built lazily; nil cfg skips this resolution.
+	titleFiles := map[int64]map[string]string{}
+	resolve := func(titleID int64, base string) string {
+		if cfg == nil {
+			return ""
+		}
+		files, ok := titleFiles[titleID]
+		if !ok {
+			files = map[string]string{}
+			titleFiles[titleID] = files
+			if title, err := s.repo.GetTitle(ctx, titleID); err == nil {
+				if dir, err := s.TitleFilesDir(cfg, title); err == nil {
+					for _, sub := range []string{dir, filepath.Join(dir, chaptersSubdir)} {
+						entries, err := os.ReadDir(sub)
+						if err != nil {
+							continue
+						}
+						for _, e := range entries {
+							if !e.IsDir() {
+								files[e.Name()] = filepath.Join(sub, e.Name())
+							}
+						}
+					}
+				}
+			}
+		}
+		return files[base]
 	}
 
 	var result ScanResult
@@ -339,6 +370,10 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (Scan
 			alt := filepath.Join(filepath.Dir(file), chaptersSubdir, filepath.Base(file))
 			if altInfo, altErr := os.Stat(alt); altErr == nil {
 				file, info, err = alt, altInfo, nil
+			} else if found := resolve(download.TitleID, filepath.Base(file)); found != "" {
+				if fInfo, fErr := os.Stat(found); fErr == nil {
+					file, info, err = found, fInfo, nil
+				}
 			}
 		}
 		if err == nil {

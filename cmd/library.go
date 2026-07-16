@@ -158,7 +158,7 @@ func runLibraryRefresh(_ *cobra.Command, args []string) error {
 			}
 			printRefresh(result)
 			if flagLibraryRefreshScan {
-				scan, err := lib.ScanDownloads(ctx, id)
+				scan, err := lib.ScanDownloads(ctx, cfg, id)
 				if err != nil {
 					return err
 				}
@@ -175,7 +175,7 @@ func runLibraryRefresh(_ *cobra.Command, args []string) error {
 			return err
 		}
 		if flagLibraryRefreshScan {
-			scan, err := lib.ScanDownloads(ctx, 0)
+			scan, err := lib.ScanDownloads(ctx, cfg, 0)
 			if err != nil {
 				return err
 			}
@@ -281,7 +281,11 @@ func runLibraryScan(_ *cobra.Command, args []string) error {
 				return err
 			}
 		}
-		result, err := lib.ScanDownloads(ctx, id)
+		cfg, _, err := runtimeConfig()
+		if err != nil {
+			return err
+		}
+		result, err := lib.ScanDownloads(ctx, cfg, id)
 		if err != nil {
 			return err
 		}

@@ -348,7 +348,7 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 	}
 	svc.applyLimits(ctx)
 	go func() {
-		if _, err := svc.lib.ScanDownloads(ctx, 0); err != nil && ctx.Err() == nil {
+		if _, err := svc.lib.ScanDownloads(ctx, nil, 0); err != nil && ctx.Err() == nil {
 			log.Printf("startup download stats scan failed: %v", err)
 		}
 	}()
@@ -2012,7 +2012,7 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return s.expandTitleJob(ctx, jobs.TypeRefreshTitle, job.ID)
 	case jobs.TypeScanDownloads:
 		if payload.TitleID > 0 {
-			_, err := s.lib.ScanDownloads(ctx, payload.TitleID)
+			_, err := s.lib.ScanDownloads(ctx, cfg, payload.TitleID)
 			return err
 		}
 		return s.expandTitleJob(ctx, jobs.TypeScanDownloads, job.ID)

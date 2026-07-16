@@ -200,7 +200,7 @@ func TestScanDownloadsMarksMissingFilesFailed(t *testing.T) {
 	}
 
 	svc := &LibraryService{repo: repo}
-	result, err := svc.ScanDownloads(ctx, title.ID)
+	result, err := svc.ScanDownloads(ctx, nil, title.ID)
 	if err != nil {
 		t.Fatalf("ScanDownloads() existing file error = %v", err)
 	}
@@ -211,7 +211,7 @@ func TestScanDownloadsMarksMissingFilesFailed(t *testing.T) {
 	if err := os.Remove(out); err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
-	result, err = svc.ScanDownloads(ctx, title.ID)
+	result, err = svc.ScanDownloads(ctx, nil, title.ID)
 	if err != nil {
 		t.Fatalf("ScanDownloads() missing file error = %v", err)
 	}
