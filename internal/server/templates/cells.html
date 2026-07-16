@@ -146,12 +146,22 @@
   </div>
   <a href="/library/{{.Title.ID}}" class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Title.DisplayTitle}}</a>
   <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
+    {{if and (eq .Title.DiscoveredCount 0) (gt .Title.VolumeCount 0)}}
+    <span class="truncate">{{.Title.VolumeReadCount}}/{{.Title.VolumeCount}} vols</span>
+    <span class="shrink-0">{{humanBytes .Title.VolumeBytes}}</span>
+    {{else}}
     <span class="truncate">{{.Title.CompletedCount}}/{{.Title.DiscoveredCount}}</span>
     <span class="shrink-0">{{if gt .Title.MissingCount 0}}{{.Title.MissingCount}} missing · {{end}}{{humanBytes .Title.SizeBytes}}</span>
+    {{end}}
   </div>
   <div class="relative mt-1 h-1 w-full overflow-hidden rounded-full bg-base-300">
+    {{if and (eq .Title.DiscoveredCount 0) (gt .Title.VolumeCount 0)}}
+    <div class="absolute inset-y-0 left-0 bg-primary" style="width: 100%"></div>
+    <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .Title.VolumeReadCount .Title.VolumeCount}}%"></div>
+    {{else}}
     <div class="absolute inset-y-0 left-0 bg-primary" style="width: {{pct .Title.CompletedCount .Title.DiscoveredCount}}%"></div>
     <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .Title.ReadCount .Title.DiscoveredCount}}%"></div>
+    {{end}}
   </div>
 </div>
 {{end}}
@@ -374,11 +384,12 @@
   <div class="divide-y divide-line/25 rounded-xl bg-base-100 px-4">
     {{range .Volumes}}
     <div class="flex items-center gap-3 py-2">
-      <img class="h-14 w-10 shrink-0 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover?v={{if .CustomCover}}c{{else}}t{{end}}" alt="" loading="lazy">
+      <a href="/reader/{{.TitleID}}?mode=volumes&chapter={{.ID}}" class="shrink-0"><img class="h-14 w-10 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover?v={{if .CustomCover}}c{{else}}t{{end}}" alt="" loading="lazy"></a>
       <div class="min-w-0 flex-1">
-        <div class="text-sm font-medium">{{if .Label}}Vol. {{.Label}}{{end}}{{if and .Label .Name}} — {{end}}{{.Name}}</div>
+        <a class="link link-hover text-sm font-medium" href="/reader/{{.TitleID}}?mode=volumes&chapter={{.ID}}">{{if .Label}}Vol. {{.Label}}{{end}}{{if and .Label .Name}} — {{end}}{{.Name}}</a>
         <div class="text-xs text-base-content/50">{{if .Pages}}{{.Pages}} pages · {{end}}{{.Size}}</div>
       </div>
+      <span class="w-10 shrink-0 text-right text-sm tabular-nums text-base-content/60 cursor-help" {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
       {{if .Read}}
       <button class="btn btn-ghost btn-xs btn-square text-success [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/unread" hx-target="#title-content" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">{{template "iconEye"}}</button>
       {{else}}
@@ -387,10 +398,10 @@
       <details class="dropdown dropdown-end">
         <summary class="btn btn-ghost btn-xs btn-square" aria-label="Volume actions">{{template "iconDots"}}</summary>
         <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
-          <li><label class="cursor-pointer">{{template "iconEdit"}}Upload cover
-            <form hx-post="/ui/volumes/{{.ID}}/cover" hx-encoding="multipart/form-data" hx-target="#title-content" hx-swap="outerHTML" hx-trigger="change from:find input">
-              <input type="file" name="cover" accept="image/*" class="hidden">
-            </form></label></li>
+          <li><label>{{template "iconEdit"}}Upload cover
+            <input type="file" name="cover" accept="image/*" class="hidden"
+              hx-post="/ui/volumes/{{.ID}}/cover" hx-encoding="multipart/form-data" hx-target="#title-content" hx-swap="outerHTML" hx-trigger="change">
+          </label></li>
           {{if .CustomCover}}<li><button hx-post="/ui/volumes/{{.ID}}/cover/reset" hx-target="#title-content" hx-swap="outerHTML">{{template "iconRefresh"}}Use first page as cover</button></li>{{end}}
         </ul>
       </details>

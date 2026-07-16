@@ -13,8 +13,10 @@ import (
 
 type volumeRowView struct {
 	library.Volume
-	Label string
-	Size  string
+	Label   string
+	Size    string
+	Percent int
+	ReadTip string
 }
 
 func volumeRows(vols []library.Volume) []volumeRowView {
@@ -24,7 +26,20 @@ func volumeRows(vols []library.Volume) []volumeRowView {
 		if v.Number == 0 && v.Name != "" {
 			label = ""
 		}
-		out = append(out, volumeRowView{Volume: v, Label: label, Size: util.Human(v.Bytes)})
+		row := volumeRowView{Volume: v, Label: label, Size: util.Human(v.Bytes)}
+		switch {
+		case v.Read:
+			row.Percent = 100
+		case v.Pages > 0:
+			row.Percent = v.ReadPages * 100 / v.Pages
+		}
+		if v.Pages > 0 {
+			row.ReadTip = fmt.Sprintf("%d/%d pages read", v.ReadPages, v.Pages)
+			if v.Read {
+				row.ReadTip = fmt.Sprintf("%d/%d pages read", v.Pages, v.Pages)
+			}
+		}
+		out = append(out, row)
 	}
 	return out
 }

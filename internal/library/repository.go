@@ -94,7 +94,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 
 // GetTitle returns a tracked title by ID.
 func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ?`, auth.UserID(ctx), auth.UserID(ctx), id)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.id = ?`, auth.UserID(ctx), auth.UserID(ctx), auth.UserID(ctx), id)
 
 	title, err := scanTitle(row)
 	if err != nil {
@@ -109,7 +109,7 @@ func (r *Repository) GetTitle(ctx context.Context, id int64) (Title, error) {
 
 // ListTitles returns all tracked titles with chapter counts.
 func (r *Repository) ListTitles(ctx context.Context) ([]Title, error) {
-	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` ORDER BY t.display_title COLLATE NOCASE, t.id`, auth.UserID(ctx), auth.UserID(ctx))
+	rows, err := r.db.QueryContext(ctx, r.titleSelectQuery()+` ORDER BY t.display_title COLLATE NOCASE, t.id`, auth.UserID(ctx), auth.UserID(ctx), auth.UserID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list titles: %w", err)
 	}
@@ -977,7 +977,7 @@ func (r *Repository) TitlesByProvider(ctx context.Context, provider string) (map
 
 // FindByCatalog returns the tracked title for a catalog manga, if any.
 func (r *Repository) FindByCatalog(ctx context.Context, catalogID int64) (Title, bool, error) {
-	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? LIMIT 1`, auth.UserID(ctx), auth.UserID(ctx), catalogID)
+	row := r.db.QueryRowContext(ctx, r.titleSelectQuery()+` WHERE t.catalog_manga_id = ? LIMIT 1`, auth.UserID(ctx), auth.UserID(ctx), auth.UserID(ctx), catalogID)
 	title, err := scanTitle(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Title{}, false, nil
@@ -1316,9 +1316,23 @@ func (r *Repository) titleSelectQuery() string {
 			COALESCE(m.is_adult, 0),
 			COALESCE(m.tags_json, '[]'),
 			COALESCE(m.genres_json, '[]'),
-			uf.title_id IS NOT NULL
+			uf.title_id IS NOT NULL,
+			COALESCE(vagg.count, 0),
+			COALESCE(vagg.read, 0),
+			COALESCE(vagg.bytes, 0),
+			COALESCE(vagg.pages, 0)
 		FROM titles t
 		LEFT JOIN user_favourites uf ON uf.title_id = t.id AND uf.user_id = ?
+		LEFT JOIN (
+			SELECT v.title_id,
+				COUNT(*) AS count,
+				COUNT(CASE WHEN vr.completed = 1 THEN 1 END) AS read,
+				SUM(v.bytes) AS bytes,
+				SUM(v.pages) AS pages
+			FROM volumes v
+			LEFT JOIN volume_read_progress vr ON vr.volume_id = v.id AND vr.user_id = ?
+			GROUP BY v.title_id
+		) vagg ON vagg.title_id = t.id
 		LEFT JOIN (
 			SELECT
 				c.title_id,
@@ -1374,6 +1388,10 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&tagsJSON,
 		&genresJSON,
 		&favourite,
+		&title.VolumeCount,
+		&title.VolumeReadCount,
+		&title.VolumeBytes,
+		&title.VolumePages,
 	); err != nil {
 		return Title{}, err
 	}

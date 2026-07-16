@@ -21,7 +21,7 @@ type Title struct {
 	LastRefreshedAt *time.Time
 	DiscoveredCount int64
 	MissingCount    int64
-	FailedCount     int64 // chapters that gave up after the attempt cap
+	FailedCount     int64
 	ReadCount       int64 // chapters fully read
 	CompletedCount  int64
 	SizeBytes       int64
@@ -30,6 +30,10 @@ type Title struct {
 	IsAdult         bool
 	ContentTags     []string // catalog tags+genres, for per-user content guards
 	Favourite       bool     // acting user's favourite mark
+	VolumeCount     int64
+	VolumeReadCount int64
+	VolumeBytes     int64
+	VolumePages     int64
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

@@ -510,8 +510,8 @@ func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
 	srcs, _ := u.svc.ListSources(r.Context())
 	data := dashData{Titles: titles, Sources: srcs, User: userFrom(r.Context())} // services health post-loads via /ui/health
 	for _, t := range titles {
-		data.TotalBytes += t.SizeBytes
-		data.TotalPages += t.Pages
+		data.TotalBytes += t.SizeBytes + t.VolumeBytes
+		data.TotalPages += t.Pages + t.VolumePages
 		data.TotalChaps += t.DiscoveredCount
 	}
 	u.page(w, r, "dashboard", "Dashboard", data)

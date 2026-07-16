@@ -489,6 +489,7 @@
     font-size: 0.875rem;
   }
   .menu li > a,
+  .menu li > label,
   .menu li > button {
     display: flex;
     align-items: center;
@@ -502,6 +503,7 @@
     transition: background 0.15s;
   }
   .menu li > a:hover,
+  .menu li > label:hover,
   .menu li > button:hover {
     background: var(--color-neutral);
     text-decoration: none;
