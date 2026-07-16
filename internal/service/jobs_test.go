@@ -280,7 +280,7 @@ func TestRemoveTitleCancelsTitleJobs(t *testing.T) {
 		t.Fatalf("enqueueExact() error = %v", err)
 	}
 
-	if _, err := svc.RemoveTitleFiles(ctx, title.ID, false); err != nil {
+	if _, err := svc.RemoveTitleFiles(ctx, title.ID, false, false); err != nil {
 		t.Fatalf("RemoveTitle() error = %v", err)
 	}
 	job, err = svc.jobs.Get(ctx, job.ID)

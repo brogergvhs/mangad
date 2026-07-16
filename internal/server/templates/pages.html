@@ -230,6 +230,13 @@
         <span><span class="text-sm font-medium">Also delete downloaded files from disk</span>
         <span class="block text-xs text-base-content/50">Leave unchecked to keep the folder — it will show up on the Import page for re-importing later.</span></span>
       </label>
+      {{if .AniList.Connected}}
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="drop_anilist">
+        <span><span class="text-sm font-medium">Also mark as Dropped on my AniList</span>
+        <span class="block text-xs text-base-content/50">Sets this manga to Dropped on your connected AniList list.</span></span>
+      </label>
+      {{end}}
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="remove_title_modal.close()">Cancel</button>
         <button class="btn btn-error">Remove title</button>

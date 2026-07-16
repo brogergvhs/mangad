@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	apiBase  = "https://api.mangadex.org"
-	feedPage = 500
-	maxFeeds = 40 // 20k chapters
+	apiBase    = "https://api.mangadex.org"
+	feedPage   = 500
+	maxFeeds   = 40 // 20k chapters
 	allRatings = "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic"
 )
 

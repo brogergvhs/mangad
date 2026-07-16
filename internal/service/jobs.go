@@ -1084,33 +1084,19 @@ func (s *JobService) aniListMediaID(ctx context.Context, titleID int64) (int, bo
 	return mediaID, true
 }
 
-// markAniListDropped sets a removed title to DROPPED on every connected
-// user's AniList list that actually has an entry for it. Background-only.
-func (s *JobService) markAniListDropped(ctx context.Context, mediaID int) {
+// markAniListDropped sets a removed title to DROPPED on the acting user's
+// AniList list, in the background and only on explicit request.
+func (s *JobService) markAniListDropped(ctx context.Context, userID int64, mediaID int) {
 	ctx = context.WithoutCancel(ctx)
-	rows, err := s.db.QueryContext(ctx, `SELECT access_token FROM user_anilist`)
-	if err != nil {
+	actx, _, ok := s.aniListIdentity(ctx, userID)
+	if !ok {
 		return
 	}
-	var tokens []string
-	for rows.Next() {
-		var t string
-		if rows.Scan(&t) == nil && t != "" {
-			if t, err := s.secrets.Decrypt(t); err == nil && t != "" {
-				tokens = append(tokens, t)
-			}
-		}
-	}
-	rows.Close()
 	go func() {
-		for _, t := range tokens {
-			tctx, cancel := context.WithTimeout(catalog.WithToken(ctx, t), 3*time.Minute)
-			if _, _, found, err := s.want.AniList().MediaEntry(tctx, mediaID); err == nil && found {
-				if err := s.want.AniList().SaveEntry(tctx, mediaID, -1, "DROPPED"); err != nil {
-					log.Printf("anilist drop (media %d): %v", mediaID, err)
-				}
-			}
-			cancel()
+		pctx, cancel := context.WithTimeout(actx, 3*time.Minute)
+		defer cancel()
+		if err := s.want.AniList().SaveEntry(pctx, mediaID, -1, "DROPPED"); err != nil {
+			log.Printf("anilist drop (media %d): %v", mediaID, err)
 		}
 	}()
 }
@@ -1303,7 +1289,7 @@ func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Man
 // RemoveTitleFiles removes a title and, when deleteFiles is set, its
 // downloaded folder on disk. Without deletion the folder reappears on the
 // Import page as an untracked candidate.
-func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles bool) (library.Title, error) {
+func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles, dropAniList bool) (library.Title, error) {
 	title, err := s.lib.GetTitle(ctx, id)
 	if err != nil {
 		return library.Title{}, err
@@ -1327,8 +1313,8 @@ func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles
 	if _, err := s.lib.RemoveTitle(ctx, id); err != nil {
 		return library.Title{}, err
 	}
-	if hasAniList {
-		s.markAniListDropped(ctx, mediaID)
+	if dropAniList && hasAniList {
+		s.markAniListDropped(ctx, auth.UserID(ctx), mediaID)
 	}
 	if filesDir != "" {
 		if err := os.RemoveAll(filesDir); err != nil {
