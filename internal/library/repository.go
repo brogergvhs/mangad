@@ -1044,11 +1044,21 @@ func (r *Repository) ReconcileStartedDownloads(ctx context.Context) (int64, erro
 
 // ListCompletedDownloads returns completed downloads, optionally scoped to a title.
 func (r *Repository) ListCompletedDownloads(ctx context.Context, titleID int64) ([]CompletedDownload, error) {
+	return r.listDownloadsByStatus(ctx, titleID, `d.status = 'completed'`)
+}
+
+// ListScannableDownloads also includes failed rows whose files may exist
+// again (moved by the Chapters/Volumes split, restored from backup, ...).
+func (r *Repository) ListScannableDownloads(ctx context.Context, titleID int64) ([]CompletedDownload, error) {
+	return r.listDownloadsByStatus(ctx, titleID, `d.status IN ('completed', 'failed')`)
+}
+
+func (r *Repository) listDownloadsByStatus(ctx context.Context, titleID int64, where string) ([]CompletedDownload, error) {
 	q := `
 		SELECT c.id, c.title_id, c.label, d.output_file
 		FROM downloads d
 		JOIN chapters c ON c.id = d.chapter_id
-		WHERE d.status = 'completed'
+		WHERE ` + where + `
 	`
 	args := []any{}
 	if titleID > 0 {

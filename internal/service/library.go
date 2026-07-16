@@ -97,8 +97,24 @@ func (s *LibraryService) SetVolumeRead(ctx context.Context, id int64, read bool)
 	return s.repo.SetVolumeRead(ctx, id, read)
 }
 
+func (s *LibraryService) MarkVolumePageRead(ctx context.Context, volumeID int64, page, totalPages int) (library.Volume, error) {
+	return s.repo.MarkVolumePageRead(ctx, volumeID, page, totalPages)
+}
+
+func (s *LibraryService) VolumesReaderProgress(ctx context.Context, titleID int64) (library.TitleReadProgress, error) {
+	title, err := s.repo.GetTitle(ctx, titleID)
+	if err != nil {
+		return library.TitleReadProgress{}, err
+	}
+	return s.repo.VolumesReaderProgress(ctx, title)
+}
+
 func (s *LibraryService) SetVolumeRangeRead(ctx context.Context, titleID int64, from, to float64, read bool) (int, error) {
 	return s.repo.SetVolumeRangeRead(ctx, titleID, from, to, read)
+}
+
+func (s *LibraryService) VolumeThumb(ctx context.Context, id int64) ([]byte, string, error) {
+	return s.repo.VolumeThumb(ctx, id)
 }
 
 func (s *LibraryService) VolumeCover(ctx context.Context, id int64) ([]byte, string, error) {
@@ -307,7 +323,7 @@ func (s *LibraryService) RefreshMonitored(
 
 // ScanDownloads verifies completed download files still exist.
 func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (ScanResult, error) {
-	downloads, err := s.repo.ListCompletedDownloads(ctx, titleID)
+	downloads, err := s.repo.ListScannableDownloads(ctx, titleID)
 	if err != nil {
 		return ScanResult{}, err
 	}
@@ -315,14 +331,23 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (Scan
 	var result ScanResult
 	for _, download := range downloads {
 		result.Checked++
-		info, err := os.Stat(download.OutputFile)
+		file := download.OutputFile
+		info, err := os.Stat(file)
+		if os.IsNotExist(err) {
+			// The Chapters/Volumes split moves files into a subdirectory;
+			// heal the stored path instead of failing the download.
+			alt := filepath.Join(filepath.Dir(file), chaptersSubdir, filepath.Base(file))
+			if altInfo, altErr := os.Stat(alt); altErr == nil {
+				file, info, err = alt, altInfo, nil
+			}
+		}
 		if err == nil {
-			if err := s.repo.MarkDownloadCompleted(ctx, download.ChapterID, download.OutputFile, info.Size(), cbzPageCount(download.OutputFile)); err != nil {
+			if err := s.repo.MarkDownloadCompleted(ctx, download.ChapterID, file, info.Size(), cbzPageCount(file)); err != nil {
 				return result, err
 			}
 			continue
 		} else if !os.IsNotExist(err) {
-			return result, fmt.Errorf("check %s: %w", download.OutputFile, err)
+			return result, fmt.Errorf("check %s: %w", file, err)
 		}
 
 		result.Missing++
@@ -330,7 +355,6 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, titleID int64) (Scan
 			return result, err
 		}
 	}
-
 	return result, nil
 }
 
