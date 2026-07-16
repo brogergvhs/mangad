@@ -94,3 +94,21 @@ func TestMatchesWantedTitleAllowsPartialTitleOverlap(t *testing.T) {
 		t.Fatalf("unrelated title matched")
 	}
 }
+
+// Sample URLs whose identifying segment is an opaque id (UUIDs included) must
+// not produce slug-probe guesses: the site ignores the slug, so a swapped
+// slug resolves to the SAME manga under a wrong name.
+func TestCandidateSourceURLsRejectsOpaqueIDs(t *testing.T) {
+	manga := catalog.Manga{TitleRomaji: "Dr. STONE"}
+	cases := map[string]int{
+		"https://mangadex.org/title/30196491-8fc2-4961-8886-a58f898b1b3e/berserk-of-gluttony": 0,
+		"https://site.test/comics/12345/berserk":                                              0,
+		"https://site.test/manga/berserk-of-gluttony":                                         1,
+	}
+	for sample, want := range cases {
+		src := sources.Source{Profile: sources.Profile{SampleMangaURL: sample}}
+		if got := len(candidateSourceURLs(src, manga)); got != want {
+			t.Errorf("candidateSourceURLs(%s) = %d guesses, want %d", sample, got, want)
+		}
+	}
+}

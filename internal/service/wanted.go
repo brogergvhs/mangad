@@ -263,7 +263,10 @@ func (s *WantedService) matchSource(ctx context.Context, cfg *config.Config, log
 		return catalog.Match{}, false
 	}
 
-	candidates, searched := searchSourceURLs(ctx, probeCfg, logSvc, src, manga)
+	candidates, searched := nativeSearchURLs(ctx, downloadSvc, logSvc, src, manga)
+	if !searched {
+		candidates, searched = searchSourceURLs(ctx, probeCfg, logSvc, src, manga)
+	}
 	method := "search"
 	if !searched {
 		method = "slug_probe"
@@ -373,6 +376,31 @@ func (s *WantedService) verifyCandidate(ctx context.Context, downloadSvc *Downlo
 	}, true
 }
 
+// nativeSearchURLs uses the scraper's own search API when it has one 
+// generic HTML search scrape can't read JSON APIs and its slug-probe fallback
+// fabricates wrong URLs on sites where the path carries an id.
+func nativeSearchURLs(ctx context.Context, downloadSvc *DownloadService, logSvc ui.Log, src sources.Source, manga catalog.Manga) ([]string, bool) {
+	if strings.TrimSpace(src.SearchURL) == "" {
+		return nil, false
+	}
+	for _, title := range mangaTitleVariants(manga) {
+		urls, handled, err := downloadSvc.SearchManga(ctx, src.SearchURL, title)
+		if !handled {
+			return nil, false
+		}
+		if err != nil {
+			if logSvc != nil {
+				logSvc.Debugf("Native search failed for %s %q: %v\n", src.ID, title, err)
+			}
+			continue
+		}
+		if len(urls) > 0 {
+			return urls, true
+		}
+	}
+	return nil, true
+}
+
 func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src sources.Source, manga catalog.Manga) ([]string, bool) {
 	if strings.TrimSpace(src.SearchURL) == "" {
 		if logSvc != nil {
@@ -421,10 +449,9 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 	return out, searched
 }
 
-// fetchSearchPage fetches a source search page over plain HTTP only; a
+// fetchSearchPage fetches a source search page over HTTP only; 
 // solver-only source falls through to slug probing rather than paying the
-// slow browser path for search. finalURL reports where redirects landed —
-// some sites send a single-result search straight to the manga page.
+// slow browser path for search. 
 func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (body, finalURL string, err error) {
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
 		Timeout:    30 * time.Second,
@@ -729,6 +756,13 @@ func slugify(value string) string {
 	return strings.Trim(b.String(), "-")
 }
 
+var (
+	reOpaqueSegment = regexp.MustCompile(`^[0-9A-Za-z]{12,}$`)
+	reUUIDSegment   = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+)
+
+// hasNumericOrOpaqueNeighbor rejects sample URLs whose identifying segment is
+// an id rather than a slug
 func hasNumericOrOpaqueNeighbor(parts []string) bool {
 	if len(parts) < 2 {
 		return false
@@ -737,7 +771,7 @@ func hasNumericOrOpaqueNeighbor(parts []string) bool {
 	if _, err := strconv.Atoi(prev); err == nil {
 		return true
 	}
-	return regexp.MustCompile(`^[0-9A-Za-z]{12,}$`).MatchString(prev)
+	return reOpaqueSegment.MatchString(prev) || reUUIDSegment.MatchString(prev)
 }
 
 func matchConfidence(m catalog.Manga, sourceURL string, chapters int) float64 {
