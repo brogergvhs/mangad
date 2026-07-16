@@ -36,6 +36,7 @@ type Profile struct {
 	SearchURL               string   `json:"search_url" yaml:"search_url"`
 	Scraper                 string   `json:"scraper" yaml:"scraper"`
 	AllowedExtensions       []string `json:"allowed_extensions" yaml:"allowed_extensions"`
+	Languages               []string `json:"languages,omitempty" yaml:"languages,omitempty"`
 	MinChapters             int      `json:"min_chapters" yaml:"min_chapters"`
 	RequiresBrowserSolver   bool     `json:"requires_browser_solver" yaml:"requires_browser_solver"`
 	RequiresBrowserDownload bool     `json:"requires_browser_downloader" yaml:"requires_browser_downloader"`
@@ -107,6 +108,7 @@ func normalizeProfile(p Profile) (Profile, error) {
 	}
 	p.Domains = cleanStrings(p.Domains)
 	p.AllowedExtensions = cleanExtensions(p.AllowedExtensions)
+	p.Languages = cleanStrings(p.Languages)
 	if p.ID == "" {
 		return Profile{}, fmt.Errorf("source id is required")
 	}

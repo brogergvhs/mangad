@@ -48,6 +48,10 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 		if err != nil {
 			return fmt.Errorf("encode extensions for %s: %w", p.ID, err)
 		}
+		languages, err := encodeList(p.Languages)
+		if err != nil {
+			return fmt.Errorf("encode languages for %s: %w", p.ID, err)
+		}
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO sources (
 				id,
@@ -59,6 +63,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				search_url,
 				scraper,
 				allowed_extensions_json,
+				languages_json,
 				min_chapters,
 				requires_browser_solver,
 				requires_browser_downloader,
@@ -66,7 +71,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				enabled,
 				profile_version,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 			ON CONFLICT(id) DO UPDATE SET
 				origin = excluded.origin,
 				name = excluded.name,
@@ -76,6 +81,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				search_url = excluded.search_url,
 				scraper = excluded.scraper,
 				allowed_extensions_json = excluded.allowed_extensions_json,
+				languages_json = excluded.languages_json,
 				min_chapters = excluded.min_chapters,
 				requires_browser_solver = excluded.requires_browser_solver,
 				requires_browser_downloader = excluded.requires_browser_downloader,
@@ -84,7 +90,7 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				profile_version = excluded.profile_version,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE sources.origin != 'local' OR excluded.origin = 'local'
-		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.SearchURL, p.Scraper, extensions, p.MinChapters, database.BoolToInt(p.RequiresBrowserSolver), database.BoolToInt(p.RequiresBrowserDownload), database.BoolToInt(p.SingleManga), database.BoolToInt(p.Enabled), p.Version)
+		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.SearchURL, p.Scraper, extensions, languages, p.MinChapters, database.BoolToInt(p.RequiresBrowserSolver), database.BoolToInt(p.RequiresBrowserDownload), database.BoolToInt(p.SingleManga), database.BoolToInt(p.Enabled), p.Version)
 		if err != nil {
 			return fmt.Errorf("sync source %s: %w", p.ID, err)
 		}
@@ -242,6 +248,7 @@ func sourceSelect() string {
 			search_url,
 			scraper,
 			allowed_extensions_json,
+			COALESCE(languages_json, '[]'),
 			min_chapters,
 			requires_browser_solver,
 			requires_browser_downloader,
@@ -264,7 +271,7 @@ func scanSource(scanner interface {
 	Scan(dest ...any) error
 }) (Source, error) {
 	var src Source
-	var domainsJSON, extensionsJSON, imageExtensionsJSON, stepsJSON string
+	var domainsJSON, extensionsJSON, languagesJSON, imageExtensionsJSON, stepsJSON string
 	var requiresBrowserSolver, requiresBrowserDownloader, singleManga, enabled int
 	err := scanner.Scan(
 		&src.ID,
@@ -276,6 +283,7 @@ func scanSource(scanner interface {
 		&src.SearchURL,
 		&src.Scraper,
 		&extensionsJSON,
+		&languagesJSON,
 		&src.MinChapters,
 		&requiresBrowserSolver,
 		&requiresBrowserDownloader,
@@ -300,6 +308,9 @@ func scanSource(scanner interface {
 	}
 	if src.AllowedExtensions, err = decodeList(extensionsJSON); err != nil {
 		return Source{}, fmt.Errorf("decode source extensions: %w", err)
+	}
+	if src.Languages, err = decodeList(languagesJSON); err != nil {
+		return Source{}, fmt.Errorf("decode source languages: %w", err)
 	}
 	if src.ImageExtensions, err = decodeList(imageExtensionsJSON); err != nil {
 		return Source{}, fmt.Errorf("decode source image extensions: %w", err)

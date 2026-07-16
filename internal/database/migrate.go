@@ -306,6 +306,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err = ensureColumn(ctx, tx, "sources", "search_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("migrate sources.search_url: %w", err)
 	}
+	if err = ensureColumn(ctx, tx, "sources", "languages_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
 	if err = ensureColumn(ctx, tx, "sources", "single_manga", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return fmt.Errorf("migrate sources.single_manga: %w", err)
 	}
@@ -331,6 +334,8 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"volume_read_progress", "read_pages", "INTEGER NOT NULL DEFAULT 0"},
 		{"volume_read_progress", "total_pages", "INTEGER NOT NULL DEFAULT 0"},
 		{"volume_read_progress", "last_page", "INTEGER NOT NULL DEFAULT 0"},
+		{"titles", "language_mode", "TEXT NOT NULL DEFAULT ''"},
+		{"titles", "language_gap", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "volumes", "INTEGER"},
