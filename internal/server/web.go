@@ -255,7 +255,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 		staticHandler.ServeHTTP(w, r)
 	}))
 
-	mux.HandleFunc("GET /{$}", u.dashboard)
+	mux.HandleFunc("GET /{$}", u.homePage)
+	mux.HandleFunc("GET /management", u.management)
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) { u.page(w, r, "search", "Search", nil) })
 	mux.HandleFunc("GET /library", u.libraryPage)
 	mux.HandleFunc("GET /library/{id}", u.titlePage)
@@ -504,17 +505,22 @@ func (u *webUI) fail(w http.ResponseWriter, err error) {
 
 // --- pages ---
 
-func (u *webUI) dashboard(w http.ResponseWriter, r *http.Request) {
+func (u *webUI) management(w http.ResponseWriter, r *http.Request) {
+	user := userFrom(r.Context())
+	if !user.Can(auth.PermStatsView) && !user.Can(auth.PermServicesView) && !user.Can(auth.PermSessionsView) && !user.Can(auth.PermJobsView) {
+		writeError(w, http.StatusForbidden, "missing a management permission")
+		return
+	}
 	titles, _ := u.svc.ListTitles(r.Context())
 	titles = filterRestrictedTitles(r.Context(), titles)
 	srcs, _ := u.svc.ListSources(r.Context())
-	data := dashData{Titles: titles, Sources: srcs, User: userFrom(r.Context())} // services health post-loads via /ui/health
+	data := dashData{Titles: titles, Sources: srcs, User: user} // services health post-loads via /ui/health
 	for _, t := range titles {
 		data.TotalBytes += t.SizeBytes + t.VolumeBytes
 		data.TotalPages += t.Pages + t.VolumePages
 		data.TotalChaps += t.DiscoveredCount
 	}
-	u.page(w, r, "dashboard", "Dashboard", data)
+	u.page(w, r, "dashboard", "Management", data)
 }
 
 func (u *webUI) health(w http.ResponseWriter, r *http.Request) {
@@ -2082,7 +2088,9 @@ func anyActive(js []jobs.Job) bool {
 func navFor(path string) string {
 	switch {
 	case path == "/":
-		return "dashboard"
+		return "home"
+	case strings.HasPrefix(path, "/management"):
+		return "management"
 	case strings.HasPrefix(path, "/search"):
 		return "search"
 	case strings.HasPrefix(path, "/library"):

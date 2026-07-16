@@ -1,3 +1,32 @@
+{{define "home"}}
+{{range .Rows}}
+<h2 class="mb-2 mt-6 first:mt-0 text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.Heading}}</h2>
+<div class="flex gap-3 overflow-x-auto pb-2">
+  {{range .Cards}}
+  <a href="{{.Href}}" class="w-28 shrink-0">
+    <div class="aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
+      <img class="h-full w-full object-cover" src="{{.Cover}}" alt="" loading="lazy">
+    </div>
+    {{if ge .Percent 0}}
+    <div class="relative mt-1 h-1 w-full overflow-hidden rounded-full bg-base-300">
+      <div class="absolute inset-y-0 left-0 bg-success" style="width: {{.Percent}}%"></div>
+    </div>
+    {{end}}
+    <div class="mt-1 line-clamp-2 text-xs font-medium leading-tight">{{.Title}}</div>
+    <div class="text-xs text-base-content/50">{{.Sub}}</div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+{{if not .Rows}}
+{{if .User.Can "library.view"}}
+<p class="py-4 text-base-content/60">Nothing here yet — add manga from Search or Import, and your reading activity will build this page.</p>
+{{end}}
+{{end}}
+<h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-base-content/60">Suggested for you</h2>
+<div hx-get="/ui/search/trending" hx-trigger="load" hx-swap="outerHTML"></div>
+{{end}}
+
 {{define "dashboard"}}
 {{if .User.Can "stats.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Stats</h2>

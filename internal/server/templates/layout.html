@@ -25,7 +25,7 @@
     <div class="flex min-h-full w-64 flex-col bg-base-300">
       <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Manga<span class="text-primary">D</span></a>
       <ul class="menu w-full grow px-4">
-        <li><a href="/" class="{{if eq .Nav "dashboard"}}menu-active{{end}}">{{template "iconHome"}}Dashboard</a></li>
+        <li><a href="/" class="{{if eq .Nav "home"}}menu-active{{end}}">{{template "iconHome"}}Home</a></li>
         {{if .User.Can "library.add"}}<li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>{{end}}
         <li><a href="/library" class="{{if eq .Nav "library"}}menu-active{{end}}">{{template "iconLibrary"}}Library</a></li>
         {{if .User.Can "import.use"}}<li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>{{end}}
@@ -33,6 +33,7 @@
         {{if .User.Can "users.manage"}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users</a></li>{{end}}
       </ul>
       <ul class="menu w-full px-4 pb-4">
+        {{if or (or (.User.Can "stats.view") (.User.Can "services.view")) (or (.User.Can "sessions.view") (.User.Can "jobs.view"))}}<li><a href="/management" class="{{if eq .Nav "management"}}menu-active{{end}}">{{template "iconGauge"}}Management</a></li>{{end}}
         {{if or (.User.Can "settings.appearance") (.User.Can "settings.manage")}}<li><a href="/settings" class="{{if eq .Nav "settings"}}menu-active{{end}}">{{template "iconSettings"}}Settings</a></li>{{end}}
         {{if .User}}<li><button hx-post="/logout" hx-swap="none" title="Sign out">{{template "iconLogout"}}<span class="truncate">{{.User.Username}}</span></button></li>{{end}}
       </ul>
