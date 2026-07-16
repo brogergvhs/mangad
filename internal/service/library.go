@@ -325,32 +325,54 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, cfg *config.Config, 
 		return ScanResult{}, err
 	}
 
-	titleFiles := map[int64]map[string]string{}
-	resolve := func(titleID int64, base string) string {
+	type titleIndex struct {
+		byName  map[string]string // filename -> full path
+		byLabel map[string]string // parsed chapter label -> full path
+	}
+	titleFiles := map[int64]*titleIndex{}
+	indexFor := func(titleID int64) *titleIndex {
 		if cfg == nil {
-			return ""
+			return &titleIndex{}
 		}
-		files, ok := titleFiles[titleID]
-		if !ok {
-			files = map[string]string{}
-			titleFiles[titleID] = files
-			if title, err := s.repo.GetTitle(ctx, titleID); err == nil {
-				if dir, err := s.TitleFilesDir(cfg, title); err == nil {
-					for _, sub := range []string{dir, filepath.Join(dir, chaptersSubdir)} {
-						entries, err := os.ReadDir(sub)
-						if err != nil {
+		if idx, ok := titleFiles[titleID]; ok {
+			return idx
+		}
+		idx := &titleIndex{byName: map[string]string{}, byLabel: map[string]string{}}
+		titleFiles[titleID] = idx
+		if title, err := s.repo.GetTitle(ctx, titleID); err == nil {
+			if dir, err := s.TitleFilesDir(cfg, title); err == nil {
+				for _, sub := range []string{dir, filepath.Join(dir, chaptersSubdir)} {
+					entries, err := os.ReadDir(sub)
+					if err != nil {
+						continue
+					}
+					for _, e := range entries {
+						if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".cbz") {
 							continue
 						}
-						for _, e := range entries {
-							if !e.IsDir() {
-								files[e.Name()] = filepath.Join(sub, e.Name())
+						full := filepath.Join(sub, e.Name())
+						idx.byName[e.Name()] = full
+						if label, _ := parseChapterFile(e.Name()); label != "" {
+							if _, dup := idx.byLabel[label]; !dup {
+								idx.byLabel[label] = full
 							}
 						}
 					}
 				}
 			}
 		}
-		return files[base]
+		return idx
+	}
+	resolve := func(d library.CompletedDownload) string {
+		idx := indexFor(d.TitleID)
+		if base := filepath.Base(d.OutputFile); d.OutputFile != "" {
+			if hit := idx.byName[base]; hit != "" {
+				return hit
+			}
+		}
+		// The path may be gone entirely (older failure handling erased it);
+		// fall back to matching the chapter label parsed from filenames.
+		return idx.byLabel[d.Label]
 	}
 
 	type verdict struct {
@@ -364,12 +386,19 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, cfg *config.Config, 
 	for _, download := range downloads {
 		result.Checked++
 		file := download.OutputFile
-		info, err := os.Stat(file)
-		if os.IsNotExist(err) {
+		var info os.FileInfo
+		err := error(os.ErrNotExist)
+		if file != "" {
+			info, err = os.Stat(file)
+		}
+		if os.IsNotExist(err) && file != "" {
 			alt := filepath.Join(filepath.Dir(file), chaptersSubdir, filepath.Base(file))
 			if altInfo, altErr := os.Stat(alt); altErr == nil {
 				file, info, err = alt, altInfo, nil
-			} else if hit := resolve(download.TitleID, filepath.Base(file)); hit != "" {
+			}
+		}
+		if os.IsNotExist(err) {
+			if hit := resolve(download); hit != "" {
 				if hInfo, hErr := os.Stat(hit); hErr == nil {
 					file, info, err = hit, hInfo, nil
 				}

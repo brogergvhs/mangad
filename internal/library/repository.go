@@ -1104,7 +1104,7 @@ func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, 
 		) VALUES (?, ?, ?, ?, ?, CASE WHEN ? = 'failed' THEN 1 ELSE 0 END, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP END, CURRENT_TIMESTAMP)
 		ON CONFLICT(chapter_id) DO UPDATE SET
 			status = excluded.status,
-			output_file = excluded.output_file,
+			output_file = CASE WHEN excluded.output_file = '' THEN downloads.output_file ELSE excluded.output_file END,
 			bytes = excluded.bytes,
 			pages = excluded.pages,
 			attempts = CASE excluded.status
