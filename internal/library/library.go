@@ -28,6 +28,7 @@ type Title struct {
 	Pages           int64
 	ReleaseStatus   string
 	IsAdult         bool
+	AverageScore    int64    // AniList community score 0-100, 0 = unknown
 	ContentTags     []string // catalog tags+genres, for per-user content guards
 	Favourite       bool     // acting user's favourite mark
 	LanguageMode    string   // '' ask, 'preferred', 'all', 'off'

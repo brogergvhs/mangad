@@ -188,6 +188,8 @@ func sortTitles(ts []library.Title, key, dir string) {
 		less = func(a, b library.Title) bool { return a.SizeBytes < b.SizeBytes }
 	case "size-volumes":
 		less = func(a, b library.Title) bool { return a.VolumeBytes < b.VolumeBytes }
+	case "rating":
+		less = func(a, b library.Title) bool { return a.AverageScore < b.AverageScore }
 	case "updated":
 		less = func(a, b library.Title) bool { return a.UpdatedAt.Before(b.UpdatedAt) }
 	case "added":
