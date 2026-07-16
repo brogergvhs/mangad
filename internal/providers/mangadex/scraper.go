@@ -159,6 +159,9 @@ func (s *Scraper) GetChaptersByLanguage(ctx context.Context, pageURL string, pre
 		gap = 0
 	}
 
+	if len(best) == 0 && (skipped > 0 || gap > 0) {
+		return nil, gap, fmt.Errorf("MangaDex lists this manga but has no downloadable chapters in the preferred languages (%s) — entries are external/officially licensed or exist only in other languages", strings.Join(preferred, ", "))
+	}
 	out := make([]providers.Chapter, 0, len(best))
 	for _, p := range best {
 		out = append(out, p.chapter)

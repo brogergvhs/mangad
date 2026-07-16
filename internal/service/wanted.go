@@ -376,7 +376,7 @@ func (s *WantedService) verifyCandidate(ctx context.Context, downloadSvc *Downlo
 	}, true
 }
 
-// nativeSearchURLs uses the scraper's own search API when it has one 
+// nativeSearchURLs uses the scraper's own search API when it has one
 // generic HTML search scrape can't read JSON APIs and its slug-probe fallback
 // fabricates wrong URLs on sites where the path carries an id.
 func nativeSearchURLs(ctx context.Context, downloadSvc *DownloadService, logSvc ui.Log, src sources.Source, manga catalog.Manga) ([]string, bool) {
@@ -449,9 +449,9 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 	return out, searched
 }
 
-// fetchSearchPage fetches a source search page over HTTP only; 
+// fetchSearchPage fetches a source search page over HTTP only;
 // solver-only source falls through to slug probing rather than paying the
-// slow browser path for search. 
+// slow browser path for search.
 func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (body, finalURL string, err error) {
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
 		Timeout:    30 * time.Second,

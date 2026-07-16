@@ -88,6 +88,13 @@ func (r *Repository) UpsertManga(ctx context.Context, m Manga) (Manga, error) {
 	return r.GetManga(ctx, id)
 }
 
+// DeleteMatches drops all cached source decisions for a manga, forcing the
+// next match run to search fresh.
+func (r *Repository) DeleteMatches(ctx context.Context, catalogMangaID int64) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM title_source_matches WHERE catalog_manga_id = ?`, catalogMangaID)
+	return err
+}
+
 // ContentTag is one AniList genre or tag name, for content-guard pickers.
 type ContentTag struct {
 	Name string

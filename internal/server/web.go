@@ -1542,6 +1542,11 @@ func (u *webUI) findSources(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, fmt.Errorf("no catalog metadata to search from"))
 		return
 	}
+	// An explicit re-search must not echo cached (possibly stale) decisions.
+	if err := u.svc.ClearMatches(r.Context(), *title.CatalogMangaID); err != nil {
+		u.fail(w, err)
+		return
+	}
 	if _, err := u.svc.EnqueueCatalog(r.Context(), jobs.TypeMatchSources, *title.CatalogMangaID, time.Now()); err != nil {
 		u.fail(w, err)
 		return

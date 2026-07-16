@@ -1489,6 +1489,11 @@ func (s *JobService) LinkTitleSource(ctx context.Context, titleID, matchID int64
 	return title, nil
 }
 
+// ClearMatches drops cached source decisions for a manga.
+func (s *JobService) ClearMatches(ctx context.Context, catalogID int64) error {
+	return s.want.catalog.DeleteMatches(ctx, catalogID)
+}
+
 // MatchSources finds source matches for one canonical title.
 func (s *JobService) MatchSources(ctx context.Context, catalogID int64) ([]catalog.Match, error) {
 	cfg, logSvc, err := s.RuntimeConfig(ctx)
