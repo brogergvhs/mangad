@@ -101,7 +101,16 @@
 
 {{define "library"}}
 {{if .Screen}}
-<h1 class="mb-3 text-lg font-semibold">{{.Screen.Name}}</h1>
+<div class="mb-3 flex items-center justify-between gap-2">
+  <h1 class="min-w-0 truncate text-lg font-semibold">{{.Screen.Name}}</h1>
+  <details class="dropdown dropdown-end shrink-0">
+    <summary class="btn btn-sm btn-ghost btn-square" aria-label="Screen actions">{{template "iconDots"}}</summary>
+    <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+      <li><button onclick="screen_modal.showModal()">{{template "iconEdit"}}Edit screen</button></li>
+      <li><button class="text-error" hx-post="/ui/screens/{{.Screen.ID}}/delete" hx-swap="none" hx-confirm="Delete this screen? Titles are not affected.">{{template "iconTrash"}}Delete</button></li>
+    </ul>
+  </details>
+</div>
 {{end}}
 {{if .ShowEditor}}
 <dialog id="screen_modal" class="modal" {{if .OpenEditor}}open{{end}}>
