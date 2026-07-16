@@ -277,9 +277,6 @@ func (s *LibraryService) RefreshTitle(
 		}
 	}
 	if len(chapters) == 0 {
-		// Zero chapters means a challenge page or selector drift, not a real
-		// result; erroring keeps last_refreshed_at unstamped and surfaces the
-		// failure in the jobs table instead of silently succeeding.
 		return RefreshResult{}, fmt.Errorf("no chapters found at %s — the site may need FlareSolverr, or the source URL is wrong", title.SourceURL)
 	}
 	count, err := s.repo.UpsertChapters(ctx, title.ID, chapters)
@@ -328,9 +325,6 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, cfg *config.Config, 
 		return ScanResult{}, err
 	}
 
-	// Per-title index of files under the title's CURRENT directory, so stale
-	// recorded paths (moved library, changed download root, Chapters/ split)
-	// heal by basename. Built lazily; nil cfg skips this resolution.
 	titleFiles := map[int64]map[string]string{}
 	resolve := func(titleID int64, base string) string {
 		if cfg == nil {
@@ -359,32 +353,58 @@ func (s *LibraryService) ScanDownloads(ctx context.Context, cfg *config.Config, 
 		return files[base]
 	}
 
+	type verdict struct {
+		download library.CompletedDownload
+		file     string
+		size     int64
+	}
+	var found []verdict
+	var lost []library.CompletedDownload
 	var result ScanResult
 	for _, download := range downloads {
 		result.Checked++
 		file := download.OutputFile
 		info, err := os.Stat(file)
 		if os.IsNotExist(err) {
-			// The Chapters/Volumes split moves files into a subdirectory;
-			// heal the stored path instead of failing the download.
 			alt := filepath.Join(filepath.Dir(file), chaptersSubdir, filepath.Base(file))
 			if altInfo, altErr := os.Stat(alt); altErr == nil {
 				file, info, err = alt, altInfo, nil
-			} else if found := resolve(download.TitleID, filepath.Base(file)); found != "" {
-				if fInfo, fErr := os.Stat(found); fErr == nil {
-					file, info, err = found, fInfo, nil
+			} else if hit := resolve(download.TitleID, filepath.Base(file)); hit != "" {
+				if hInfo, hErr := os.Stat(hit); hErr == nil {
+					file, info, err = hit, hInfo, nil
 				}
 			}
 		}
 		if err == nil {
-			if err := s.repo.MarkDownloadCompleted(ctx, download.ChapterID, file, info.Size(), cbzPageCount(file)); err != nil {
-				return result, err
-			}
+			found = append(found, verdict{download: download, file: file, size: info.Size()})
 			continue
 		} else if !os.IsNotExist(err) {
 			return result, fmt.Errorf("check %s: %w", file, err)
 		}
+		lost = append(lost, download)
+	}
 
+	if len(found) == 0 && len(lost) >= 5 {
+		sample := lost[0]
+		dirs := "(no config: current-dir resolution skipped)"
+		if cfg != nil {
+			if title, err := s.repo.GetTitle(ctx, sample.TitleID); err == nil {
+				if dir, err := s.TitleFilesDir(cfg, title); err == nil {
+					dirs = dir + " and " + filepath.Join(dir, chaptersSubdir)
+				} else {
+					dirs = "unresolvable title dir: " + err.Error()
+				}
+			}
+		}
+		return result, fmt.Errorf("scan aborted: none of %d files found — nothing was marked failed. Recorded path example: %s; also searched %s. Check the download directory setting/mount", len(lost), sample.OutputFile, dirs)
+	}
+
+	for _, v := range found {
+		if err := s.repo.MarkDownloadCompleted(ctx, v.download.ChapterID, v.file, v.size, cbzPageCount(v.file)); err != nil {
+			return result, err
+		}
+	}
+	for _, download := range lost {
 		result.Missing++
 		if err := s.repo.MarkDownloadFailed(ctx, download.ChapterID, fmt.Errorf("output file missing: %s", download.OutputFile)); err != nil {
 			return result, err
@@ -421,8 +441,6 @@ func (s *LibraryService) DownloadMissing(
 	if err != nil {
 		return nil, err
 	}
-	// A run of consecutive failures means the source is broken, not that the
-	// job is progressing; stop instead of hammering every remaining chapter.
 	const maxConsecutiveFailures = 10
 	consecutive := 0
 	results := make([]ChapterDownloadResult, 0, len(missing))
