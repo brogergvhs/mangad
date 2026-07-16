@@ -7,22 +7,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/brogergvhs/mangad/internal/auth"
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/service"
 	"github.com/brogergvhs/mangad/internal/sources"
+	"github.com/brogergvhs/mangad/internal/util"
 )
 
 // New returns the HTTP API handler.
@@ -98,14 +98,72 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		volumes := r.URL.Query().Get("mode") == "volumes"
+		if volumes {
+			progress, err = svc.VolumesReaderProgress(r.Context(), progress.ID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		// ?chapter=N returns the window around that chapter — the reader uses
 		// this to keep extending the strip while scrolling.
 		if c, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64); c > 0 {
-			manifest, _, _ := readerManifestWindow(progress, c)
+			manifest, _, _ := readerManifestWindowMode(progress, c, volumes)
 			writeJSON(w, http.StatusOK, manifest)
 			return
 		}
 		writeJSON(w, http.StatusOK, readerManifest(progress))
+	})
+
+	mux.HandleFunc("POST /api/reader/volumes/{id}/pages", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid volume id")
+			return
+		}
+		var req struct {
+			Page       int `json:"page"`
+			TotalPages int `json:"total_pages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		vol, err := svc.MarkVolumePageRead(r.Context(), id, req.Page, req.TotalPages)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		presence.SetPage(r.Context(), auth.UserID(r.Context()), "Vol "+strconv.FormatFloat(vol.Number, 'f', -1, 64), req.Page, req.TotalPages)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	})
+
+	mux.HandleFunc("GET /api/reader/volumes/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) {
+		id, err := parseInt64Path(r, "id")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid volume id")
+			return
+		}
+		page, err := strconv.Atoi(r.PathValue("page"))
+		if err != nil || page <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid page")
+			return
+		}
+		vol, err := svc.GetVolume(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "volume not found")
+			return
+		}
+		entry, rc, err := cbzPage(vol.File, page)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "page not found")
+			return
+		}
+		defer rc.Close()
+		w.Header().Set("Content-Type", imageMime(entry.Name))
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+		_, _ = io.Copy(w, rc)
 	})
 
 	mux.HandleFunc("POST /api/reader/chapters/{id}/pages", func(w http.ResponseWriter, r *http.Request) {
@@ -660,16 +718,29 @@ type readerManifestResponse struct {
 	CurrentChapterID int64                   `json:"current_chapter_id,omitempty"`
 	ResumeChapterID  int64                   `json:"resume_chapter_id,omitempty"`
 	ResumePage       int                     `json:"resume_page,omitempty"`
+	MarkBase         string                  `json:"mark_base"`
+	ExtendBase       string                  `json:"extend_base"`
 	Chapters         []readerManifestChapter `json:"chapters"`
 }
 
+const (
+	chapterMarkBase   = "/api/reader/chapters/"
+	volumeMarkBase    = "/api/reader/volumes/"
+	chapterExtendBase = "/api/reader/titles/%d/manifest?chapter="
+	volumeExtendBase  = "/api/reader/titles/%d/manifest?mode=volumes&chapter="
+)
+
 func readerManifest(progress library.TitleReadProgress) readerManifestResponse {
-	return readerManifestFor(progress, progress.Chapters, progress.NextChapterID, progress.NextPage)
+	return readerManifestFor(progress, progress.Chapters, progress.NextChapterID, progress.NextPage, false)
 }
 
 func readerManifestWindow(progress library.TitleReadProgress, requestedChapterID int64) (readerManifestResponse, int64, int64) {
+	return readerManifestWindowMode(progress, requestedChapterID, false)
+}
+
+func readerManifestWindowMode(progress library.TitleReadProgress, requestedChapterID int64, volumes bool) (readerManifestResponse, int64, int64) {
 	if len(progress.Chapters) == 0 {
-		return readerManifestFor(progress, nil, 0, 0), 0, 0
+		return readerManifestFor(progress, nil, 0, 0, volumes), 0, 0
 	}
 	current := 0
 	target := requestedChapterID
@@ -710,16 +781,22 @@ func readerManifestWindow(progress library.TitleReadProgress, requestedChapterID
 	if current+1 < len(progress.Chapters) {
 		nextID = progress.Chapters[current+1].ID
 	}
-	return readerManifestFor(progress, progress.Chapters[start:end], resumeChapterID, resumePage), prevID, nextID
+	return readerManifestFor(progress, progress.Chapters[start:end], resumeChapterID, resumePage, volumes), prevID, nextID
 }
 
-func readerManifestFor(progress library.TitleReadProgress, chapters []library.ChapterReadStatus, resumeChapterID int64, resumePage int) readerManifestResponse {
+func readerManifestFor(progress library.TitleReadProgress, chapters []library.ChapterReadStatus, resumeChapterID int64, resumePage int, volumes bool) readerManifestResponse {
+	markBase, extendBase := chapterMarkBase, fmt.Sprintf(chapterExtendBase, progress.ID)
+	if volumes {
+		markBase, extendBase = volumeMarkBase, fmt.Sprintf(volumeExtendBase, progress.ID)
+	}
 	out := readerManifestResponse{
 		TitleID:          progress.ID,
 		Title:            progress.DisplayTitle,
 		CurrentChapterID: resumeChapterID,
 		ResumeChapterID:  resumeChapterID,
 		ResumePage:       resumePage,
+		MarkBase:         markBase,
+		ExtendBase:       extendBase,
 		Chapters:         make([]readerManifestChapter, 0, len(chapters)),
 	}
 	for _, chapter := range chapters {
@@ -739,7 +816,7 @@ func readerManifestFor(progress library.TitleReadProgress, chapters []library.Ch
 		for page := 1; page <= pageCount; page++ {
 			item.Pages = append(item.Pages, readerManifestPage{
 				Page: page,
-				URL:  "/api/reader/chapters/" + strconv.FormatInt(chapter.ID, 10) + "/pages/" + strconv.Itoa(page),
+				URL:  markBase + strconv.FormatInt(chapter.ID, 10) + "/pages/" + strconv.Itoa(page),
 				Read: chapter.Completed || page <= chapter.ReadPages,
 			})
 		}
@@ -753,7 +830,7 @@ func cbzPage(path string, page int) (*zip.File, io.ReadCloser, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	entries := cbzImageEntries(zr.File)
+	entries := util.CBZImageEntries(zr.File)
 	if page > len(entries) {
 		zr.Close()
 		return nil, nil, strconv.ErrSyntax
@@ -771,23 +848,6 @@ func cbzPage(path string, page int) (*zip.File, io.ReadCloser, error) {
 	}, nil
 }
 
-func cbzImageEntries(files []*zip.File) []*zip.File {
-	out := make([]*zip.File, 0, len(files))
-	for _, file := range files {
-		if file.FileInfo().IsDir() {
-			continue
-		}
-		switch strings.ToLower(filepath.Ext(file.Name)) {
-		case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif":
-			out = append(out, file)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return naturalLess(out[i].Name, out[j].Name)
-	})
-	return out
-}
-
 type readCloserFunc struct {
 	io.Reader
 	close func() error
@@ -795,34 +855,6 @@ type readCloserFunc struct {
 
 func (r readCloserFunc) Close() error {
 	return r.close()
-}
-
-func naturalLess(a, b string) bool {
-	as, bs := []rune(strings.ToLower(filepath.Base(a))), []rune(strings.ToLower(filepath.Base(b)))
-	for len(as) > 0 && len(bs) > 0 {
-		ac, ar := nextNaturalChunk(as)
-		bc, br := nextNaturalChunk(bs)
-		if unicode.IsDigit(ac[0]) && unicode.IsDigit(bc[0]) {
-			ai, _ := strconv.Atoi(string(ac))
-			bi, _ := strconv.Atoi(string(bc))
-			if ai != bi {
-				return ai < bi
-			}
-		} else if string(ac) != string(bc) {
-			return string(ac) < string(bc)
-		}
-		as, bs = ar, br
-	}
-	return len(as) < len(bs)
-}
-
-func nextNaturalChunk(s []rune) ([]rune, []rune) {
-	digit := unicode.IsDigit(s[0])
-	i := 1
-	for i < len(s) && unicode.IsDigit(s[i]) == digit {
-		i++
-	}
-	return s[:i], s[i:]
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

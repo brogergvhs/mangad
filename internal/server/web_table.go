@@ -11,6 +11,7 @@ import (
 
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/mangad/internal/util"
 )
 
 // tableColumn is a header cell. A non-empty SortKey makes it sortable.
@@ -207,7 +208,7 @@ func sortChapters(cs []library.ChapterStatus, key, dir string) {
 			return a.SuffixNum < b.SuffixNum
 		}
 	case "label":
-		less = func(a, b library.ChapterStatus) bool { return naturalLess(a.Label, b.Label) }
+		less = func(a, b library.ChapterStatus) bool { return util.NaturalLess(a.Label, b.Label) }
 	case "read":
 		less = func(a, b library.ChapterStatus) bool { return chapterReadPercent(a) < chapterReadPercent(b) }
 	case "missing":

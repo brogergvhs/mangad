@@ -24,6 +24,8 @@ type Volume struct {
 	Pages       int
 	CustomCover bool
 	Read        bool
+	ReadPages   int
+	LastPage    int
 }
 
 var reVolumeFile = regexp.MustCompile(`(?i)^\s*vol(?:ume)?\.?\s*([0-9]+(?:\.[0-9]+)?)\s*[-–—:.]*\s*(.*)$`)
@@ -100,7 +102,8 @@ func (r *Repository) SyncVolumeFiles(ctx context.Context, titleID int64, dir str
 // Volumes lists a title's volumes with the acting user's read marks.
 func (r *Repository) Volumes(ctx context.Context, titleID int64) ([]Volume, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT v.id, v.title_id, v.number, v.name, v.file, v.bytes, v.pages, v.cover IS NOT NULL, COALESCE(vr.completed, 0)
+		SELECT v.id, v.title_id, v.number, v.name, v.file, v.bytes, v.pages, v.cover IS NOT NULL,
+			COALESCE(vr.completed, 0), COALESCE(vr.read_pages, 0), COALESCE(vr.last_page, 0)
 		FROM volumes v
 		LEFT JOIN volume_read_progress vr ON vr.volume_id = v.id AND vr.user_id = ?
 		WHERE v.title_id = ?
@@ -113,7 +116,7 @@ func (r *Repository) Volumes(ctx context.Context, titleID int64) ([]Volume, erro
 	for rows.Next() {
 		var v Volume
 		var custom, read int
-		if err := rows.Scan(&v.ID, &v.TitleID, &v.Number, &v.Name, &v.File, &v.Bytes, &v.Pages, &custom, &read); err != nil {
+		if err := rows.Scan(&v.ID, &v.TitleID, &v.Number, &v.Name, &v.File, &v.Bytes, &v.Pages, &custom, &read, &v.ReadPages, &v.LastPage); err != nil {
 			return nil, err
 		}
 		v.CustomCover = custom != 0
@@ -221,4 +224,107 @@ func (r *Repository) SetVolumeRangeRead(ctx context.Context, titleID int64, from
 		}
 	}
 	return len(ids), nil
+}
+
+// VolumesMissingThumbs lists volumes without a generated thumbnail.
+func (r *Repository) VolumesMissingThumbs(ctx context.Context, titleID int64) ([]Volume, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, title_id, file FROM volumes WHERE title_id = ? AND thumb IS NULL`, titleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Volume
+	for rows.Next() {
+		var v Volume
+		if err := rows.Scan(&v.ID, &v.TitleID, &v.File); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) SetVolumeThumb(ctx context.Context, id int64, blob []byte, mime string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE volumes SET thumb = ?, thumb_type = ? WHERE id = ?`, blob, mime, id)
+	return err
+}
+
+// VolumeThumb returns the generated thumbnail, if any.
+func (r *Repository) VolumeThumb(ctx context.Context, id int64) ([]byte, string, error) {
+	var blob []byte
+	var mime string
+	err := r.db.QueryRowContext(ctx, `SELECT thumb, thumb_type FROM volumes WHERE id = ?`, id).Scan(&blob, &mime)
+	if err == sql.ErrNoRows {
+		return nil, "", nil
+	}
+	return blob, mime, err
+}
+
+// MarkVolumePageRead records reading progress inside a volume; the volume
+// completes when every page is read.
+func (r *Repository) MarkVolumePageRead(ctx context.Context, volumeID int64, page, totalPages int) (Volume, error) {
+	if page <= 0 {
+		return Volume{}, fmt.Errorf("page must be positive")
+	}
+	v, err := r.GetVolume(ctx, volumeID)
+	if err != nil {
+		return Volume{}, err
+	}
+	if totalPages <= 0 {
+		totalPages = v.Pages
+	}
+	completed := 0
+	if totalPages > 0 && page >= totalPages {
+		completed = 1
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO volume_read_progress (user_id, volume_id, completed, read_pages, total_pages, last_page)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(user_id, volume_id) DO UPDATE SET
+			read_pages = MAX(read_pages, excluded.read_pages),
+			total_pages = excluded.total_pages,
+			last_page = excluded.last_page,
+			completed = MAX(completed, excluded.completed),
+			last_read_at = CURRENT_TIMESTAMP
+	`, auth.UserID(ctx), volumeID, completed, page, totalPages, page)
+	return v, err
+}
+
+// VolumesReaderProgress shapes a title's volumes as reader chapters so the
+// manifest/window machinery works unchanged for volume reading.
+func (r *Repository) VolumesReaderProgress(ctx context.Context, title Title) (TitleReadProgress, error) {
+	vols, err := r.Volumes(ctx, title.ID)
+	if err != nil {
+		return TitleReadProgress{}, err
+	}
+	out := TitleReadProgress{Title: title, TotalChapters: len(vols)}
+	for _, v := range vols {
+		label := strconv.FormatFloat(v.Number, 'f', -1, 64)
+		st := ChapterReadStatus{
+			Downloaded: true,
+			OutputFile: v.File,
+			Pages:      v.Pages,
+			TotalPages: v.Pages,
+			ReadPages:  v.ReadPages,
+			Completed:  v.Read,
+		}
+		st.ID = v.ID
+		st.Label = label
+		st.Title = v.Name
+		st.FirstUnreadPage = v.ReadPages + 1
+		if st.FirstUnreadPage > v.Pages {
+			st.FirstUnreadPage = v.Pages
+		}
+		out.Chapters = append(out.Chapters, st)
+		out.TotalPages += int64(v.Pages)
+		out.ReadPages += int64(v.ReadPages)
+		if v.Read {
+			out.ReadChapters++
+		}
+		if out.NextChapterID == 0 && !v.Read {
+			out.NextChapterID = v.ID
+			out.NextPage = st.FirstUnreadPage
+		}
+	}
+	return out, nil
 }
