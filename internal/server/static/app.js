@@ -80,6 +80,17 @@ document.addEventListener("input", function (e) {
   });
 });
 
+// Tag picker: keep the "N selected" summary in sync with the checkboxes.
+document.addEventListener("change", function (e) {
+  if (!e.target.matches("[data-tag-list] input[type='checkbox']")) return;
+  var details = e.target.closest("details.dropdown");
+  if (!details) return;
+  var summary = details.querySelector("[data-tag-count]");
+  if (!summary) return;
+  var count = details.querySelectorAll("[data-tag-list] input:checked").length;
+  summary.textContent = count ? count + " selected" : "None selected";
+});
+
 // Library filters: mirror each table refresh into the URL so reloads and
 // back-navigation keep the current filters. Sidebar links (/library,
 // /library?screen=N) navigate without filter params and so reset them.

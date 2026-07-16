@@ -180,7 +180,7 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 {{end}}
-<form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change[target.name], keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
+<form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change[!!event.target.name], keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
   <button type="submit" class="sr-only" tabindex="-1">Apply filters</button>
   {{if .Screen}}<input type="hidden" name="screen" value="{{.Screen.ID}}">{{end}}
   <input type="checkbox" id="lib-filters" class="peer sr-only">
@@ -783,12 +783,9 @@
 {{define "tagPicker"}}
 <div class="fieldset"><span class="fieldset-legend">{{.Label}}</span>
   {{if .Options}}
-  <details class="group rounded-lg border border-base-300">
-    <summary class="flex cursor-pointer select-none items-center justify-between p-2 text-sm">
-      <span>{{if .Selected}}{{len .Selected}} selected{{else}}None selected{{end}}</span>
-      <span class="text-base-content/50 transition-transform group-open:rotate-90">{{template "iconChevron"}}</span>
-    </summary>
-    <div class="border-t border-base-300 p-2">
+  <details class="dropdown w-full">
+    <summary class="select select-sm w-full flex cursor-pointer items-center" data-tag-count>{{if .Selected}}{{len .Selected}} selected{{else}}None selected{{end}}</summary>
+    <div class="dropdown-content z-30 mt-1 w-full rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
       <input class="input input-sm mb-2 w-full" placeholder="Filter tags…" data-tag-filter form="">
       <div class="grid max-h-52 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto" data-tag-list>
         {{$sel := .Selected}}{{range .Options}}
