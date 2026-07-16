@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/brogergvhs/mangad/internal/chapters"
@@ -95,6 +96,14 @@ func (s *LibraryService) GetVolume(ctx context.Context, id int64) (library.Volum
 
 func (s *LibraryService) SetVolumeRead(ctx context.Context, id int64, read bool) error {
 	return s.repo.SetVolumeRead(ctx, id, read)
+}
+
+func (s *LibraryService) LastReadAt(ctx context.Context) (map[int64]time.Time, error) {
+	return s.repo.LastReadAt(ctx)
+}
+
+func (s *LibraryService) LatestArrivals(ctx context.Context) (map[int64]library.Arrival, error) {
+	return s.repo.LatestArrivals(ctx)
 }
 
 func (s *LibraryService) MarkVolumePageRead(ctx context.Context, volumeID int64, page, totalPages int) (library.Volume, error) {

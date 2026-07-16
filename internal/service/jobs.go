@@ -1403,6 +1403,14 @@ func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) err
 	return s.lib.SetVolumeRead(ctx, id, read)
 }
 
+func (s *JobService) LastReadAt(ctx context.Context) (map[int64]time.Time, error) {
+	return s.lib.LastReadAt(ctx)
+}
+
+func (s *JobService) LatestArrivals(ctx context.Context) (map[int64]library.Arrival, error) {
+	return s.lib.LatestArrivals(ctx)
+}
+
 func (s *JobService) MarkVolumePageRead(ctx context.Context, volumeID int64, page, totalPages int) (library.Volume, error) {
 	return s.lib.MarkVolumePageRead(ctx, volumeID, page, totalPages)
 }
