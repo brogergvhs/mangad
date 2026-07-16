@@ -69,10 +69,11 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				requires_browser_downloader,
 				single_manga,
 				chapterless,
+				nsfw,
 				enabled,
 				profile_version,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 			ON CONFLICT(id) DO UPDATE SET
 				origin = excluded.origin,
 				name = excluded.name,
@@ -88,11 +89,12 @@ func (r *Repository) Sync(ctx context.Context, profiles []Profile, origin string
 				requires_browser_downloader = excluded.requires_browser_downloader,
 				single_manga = excluded.single_manga,
 				chapterless = excluded.chapterless,
+				nsfw = excluded.nsfw,
 				enabled = sources.enabled,
 				profile_version = excluded.profile_version,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE sources.origin != 'local' OR excluded.origin = 'local'
-		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.SearchURL, p.Scraper, extensions, languages, p.MinChapters, database.BoolToInt(p.RequiresBrowserSolver), database.BoolToInt(p.RequiresBrowserDownload), database.BoolToInt(p.SingleManga), database.BoolToInt(p.Chapterless), database.BoolToInt(p.Enabled), p.Version)
+		`, p.ID, origin, p.Name, domains, p.BaseURL, p.SampleMangaURL, p.SearchURL, p.Scraper, extensions, languages, p.MinChapters, database.BoolToInt(p.RequiresBrowserSolver), database.BoolToInt(p.RequiresBrowserDownload), database.BoolToInt(p.SingleManga), database.BoolToInt(p.Chapterless), database.BoolToInt(p.NSFW), database.BoolToInt(p.Enabled), p.Version)
 		if err != nil {
 			return fmt.Errorf("sync source %s: %w", p.ID, err)
 		}
@@ -256,6 +258,7 @@ func sourceSelect() string {
 			requires_browser_downloader,
 			single_manga,
 			COALESCE(chapterless, 0),
+			COALESCE(nsfw, 0),
 			enabled,
 			profile_version,
 			status,
@@ -275,7 +278,7 @@ func scanSource(scanner interface {
 }) (Source, error) {
 	var src Source
 	var domainsJSON, extensionsJSON, languagesJSON, imageExtensionsJSON, stepsJSON string
-	var requiresBrowserSolver, requiresBrowserDownloader, singleManga, chapterless, enabled int
+	var requiresBrowserSolver, requiresBrowserDownloader, singleManga, chapterless, nsfw, enabled int
 	err := scanner.Scan(
 		&src.ID,
 		&src.Origin,
@@ -292,6 +295,7 @@ func scanSource(scanner interface {
 		&requiresBrowserDownloader,
 		&singleManga,
 		&chapterless,
+		&nsfw,
 		&enabled,
 		&src.Version,
 		&src.Status,
@@ -328,6 +332,7 @@ func scanSource(scanner interface {
 	src.RequiresBrowserDownload = requiresBrowserDownloader != 0
 	src.SingleManga = singleManga != 0
 	src.Chapterless = chapterless != 0
+	src.NSFW = nsfw != 0
 	src.Enabled = enabled != 0
 	src.Origin = cleanOrigin(src.Origin)
 	return src, nil

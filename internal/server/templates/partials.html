@@ -199,6 +199,7 @@
       </label>
       <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="single_manga" {{if .SingleManga}}checked{{end}}> Single manga source (no search)</label>
       <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="chapterless" {{if .Chapterless}}checked{{end}}> No chapters — each manga page holds its images directly</label>
+      <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="nsfw" {{if .NSFW}}checked{{end}}> NSFW-only source (hidden from users without adult access)</label>
       <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="enabled" {{if .Enabled}}checked{{end}}> Enabled</label>
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('source-edit-modal').remove()">Cancel</button>

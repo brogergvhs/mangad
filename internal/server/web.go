@@ -417,6 +417,21 @@ func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
 	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), items))
 }
 
+// filterNSFWSources hides NSFW-only sources from users without adult access.
+func filterNSFWSources(ctx context.Context, list []sources.Source) []sources.Source {
+	u := auth.FromContext(ctx)
+	if u != nil && u.AllowAdult {
+		return list
+	}
+	out := list[:0]
+	for _, src := range list {
+		if !src.NSFW {
+			out = append(out, src)
+		}
+	}
+	return out
+}
+
 // contentAllowed reports whether the acting user may see content with the
 // given adult flag and tag/genre set. The env admin is never restricted.
 func contentAllowed(ctx context.Context, isAdult bool, tags []string) bool {
@@ -517,6 +532,7 @@ func (u *webUI) management(w http.ResponseWriter, r *http.Request) {
 	titles, _ := u.svc.ListTitles(r.Context())
 	titles = filterRestrictedTitles(r.Context(), titles)
 	srcs, _ := u.svc.ListSources(r.Context())
+	srcs = filterNSFWSources(r.Context(), srcs)
 	data := dashData{Titles: titles, Sources: srcs, User: user} // services health post-loads via /ui/health
 	for _, t := range titles {
 		data.TotalBytes += t.SizeBytes + t.VolumeBytes
@@ -945,6 +961,7 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 	view.RefreshEvery = u.svc.Setting(r.Context(), service.SettingServeRefreshEvery, service.SettingDefault(service.SettingServeRefreshEvery))
 	linked := u.linkedSourceIDs(r.Context(), id)
 	allSources, _ := u.svc.ListSources(r.Context()) // one fetch for every source-derived section
+	allSources = filterNSFWSources(r.Context(), allSources)
 	view.LinkedSources = u.linkedSourceViews(r.Context(), title)
 	view.Sources = u.sourceView(r.Context(), title, linked, allSources)
 	view.SingleSources = filterSources(singleMangaSources(allSources), linked)
@@ -1315,6 +1332,7 @@ func (u *webUI) sourcesPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	srcs = filterNSFWSources(r.Context(), srcs)
 	u.page(w, r, "sources", "Sources", sourcesPageView{Sources: srcs, Scrapers: registry.Names()})
 }
 
@@ -1740,6 +1758,7 @@ func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
 	p.Languages = splitList(r.FormValue("languages"))
 	p.SingleManga = formChecked(r, "single_manga")
 	p.Chapterless = formChecked(r, "chapterless")
+	p.NSFW = formChecked(r, "nsfw")
 	p.Enabled = formChecked(r, "enabled")
 	// Saving stores a local override; built-in sync no longer clobbers it.
 	if err := u.svc.ImportLocalSource(r.Context(), p); err != nil {
@@ -1863,7 +1882,7 @@ func customProfileFromForm(r *http.Request) (sources.Profile, bool, bool, error)
 		BaseURL: base, SampleMangaURL: manga, Scraper: strings.TrimSpace(r.FormValue("scraper")),
 		AllowedExtensions: exts, MinChapters: 1,
 		RequiresBrowserSolver: solver, RequiresBrowserDownload: browser,
-		SingleManga: formChecked(r, "single_manga"), Chapterless: formChecked(r, "chapterless"), Enabled: true,
+		SingleManga: formChecked(r, "single_manga"), Chapterless: formChecked(r, "chapterless"), NSFW: formChecked(r, "nsfw"), Enabled: true,
 	}, solver, browser, nil
 }
 

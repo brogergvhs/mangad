@@ -309,6 +309,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err = ensureColumn(ctx, tx, "sources", "languages_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
+	if err = ensureColumn(ctx, tx, "sources", "nsfw", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if err = ensureColumn(ctx, tx, "sources", "chapterless", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}

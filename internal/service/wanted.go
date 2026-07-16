@@ -144,6 +144,9 @@ func (s *WantedService) MatchSources(ctx context.Context, cfg *config.Config, lo
 		if !src.Enabled {
 			continue
 		}
+		if src.NSFW && !manga.IsAdult {
+			continue // NSFW-only sources never host SFW manga
+		}
 		if match, ok := reuse[src.ID]; ok {
 			logSvc.Debugf("Reusing cached match for source %s (verified %s).\n", src.ID, match.VerifiedAt)
 			cached = append(cached, match)
