@@ -47,7 +47,7 @@ type pageData struct {
 	Theme      string
 	ThemeCSS   template.CSS // custom-theme variable overrides
 	Screens    []library.Screen
-	ActiveID   int64 // active screen id, from ?screen=
+	ActiveID   int64
 	Content    template.HTML
 }
 type readerView struct {
@@ -110,6 +110,7 @@ type activityView struct {
 	User          *auth.User
 	AniList       service.AniListConnection
 	Content       titleContentView
+	Screen        int64
 }
 type sourceRowView struct {
 	Source sources.Source
@@ -293,6 +294,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/screens", u.screenSave)
 	mux.HandleFunc("POST /ui/screens/{id}", u.screenSave)
 	mux.HandleFunc("POST /ui/screens/{id}/delete", u.screenDelete)
+	mux.HandleFunc("POST /ui/screens/reorder", u.screenReorder)
 	mux.HandleFunc("GET /ui/library/{id}/content", u.titleContentFrag)
 	mux.HandleFunc("POST /ui/library/{id}/volumes/range", u.volumesRange)
 	mux.HandleFunc("POST /ui/volumes/{id}/read", u.volumeRead(true))
@@ -644,6 +646,21 @@ func (u *webUI) screenSave(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/library?screen=%d", id))
 }
 
+func (u *webUI) screenReorder(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	var ids []int64
+	for _, raw := range r.Form["order"] {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	if err := u.svc.ReorderScreens(r.Context(), ids); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (u *webUI) screenDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -664,6 +681,7 @@ func (u *webUI) libraryTable(w http.ResponseWriter, r *http.Request) {
 // libraryResults renders the library as a table, a card grid, or both
 // (responsive auto mode).
 type libraryResults struct {
+	Screen int64
 	tableData
 	Cards     []library.Title
 	Fulls     []libraryFullRow // detailed rows for the full view

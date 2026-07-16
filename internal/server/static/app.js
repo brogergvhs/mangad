@@ -80,6 +80,42 @@ document.addEventListener("input", function (e) {
   });
 });
 
+// Sidebar screen reordering: drag rows, persist the new order on drop.
+(function () {
+  var list = document.querySelector("[data-screen-list]");
+  if (!list) return;
+  var dragging = null;
+  list.addEventListener("dragstart", function (e) {
+    dragging = e.target.closest("[data-screen-id]");
+    if (dragging) dragging.classList.add("dragging");
+  });
+  list.addEventListener("dragend", function () {
+    if (dragging) dragging.classList.remove("dragging");
+    dragging = null;
+  });
+  list.addEventListener("dragover", function (e) {
+    if (!dragging) return;
+    e.preventDefault();
+    var over = e.target.closest("[data-screen-id]");
+    if (!over || over === dragging) return;
+    var rect = over.getBoundingClientRect();
+    var after = e.clientY > rect.top + rect.height / 2;
+    list.insertBefore(dragging, after ? over.nextSibling : over);
+  });
+  list.addEventListener("drop", function (e) {
+    e.preventDefault();
+    var params = new URLSearchParams();
+    list.querySelectorAll("[data-screen-id]").forEach(function (row) {
+      params.append("order", row.dataset.screenId);
+    });
+    fetch("/ui/screens/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+  });
+})();
+
 (function () {
   var shell = document.querySelector("[data-reader]");
   if (!shell) return;

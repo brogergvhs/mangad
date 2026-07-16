@@ -1415,6 +1415,10 @@ func (s *JobService) SaveScreen(ctx context.Context, sc library.Screen) (int64, 
 	return s.lib.SaveScreen(ctx, sc)
 }
 
+func (s *JobService) ReorderScreens(ctx context.Context, ids []int64) error {
+	return s.lib.ReorderScreens(ctx, ids)
+}
+
 func (s *JobService) DeleteScreen(ctx context.Context, id int64) error {
 	return s.lib.DeleteScreen(ctx, id)
 }

@@ -67,7 +67,7 @@ func hasAnyTag(have, want []string) bool {
 
 // Screens lists the acting user's saved views.
 func (r *Repository) Screens(ctx context.Context) ([]Screen, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, user_id, name, config_json FROM library_screens WHERE user_id = ? ORDER BY name COLLATE NOCASE`, auth.UserID(ctx))
+	rows, err := r.db.QueryContext(ctx, `SELECT id, user_id, name, config_json FROM library_screens WHERE user_id = ? ORDER BY position, id`, auth.UserID(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -112,11 +112,30 @@ func (r *Repository) SaveScreen(ctx context.Context, sc Screen) (int64, error) {
 		_, err := r.db.ExecContext(ctx, `UPDATE library_screens SET name = ?, config_json = ? WHERE id = ? AND user_id = ?`, sc.Name, string(cfg), sc.ID, auth.UserID(ctx))
 		return sc.ID, err
 	}
-	res, err := r.db.ExecContext(ctx, `INSERT INTO library_screens (user_id, name, config_json) VALUES (?, ?, ?)`, auth.UserID(ctx), sc.Name, string(cfg))
+	res, err := r.db.ExecContext(ctx, `
+		INSERT INTO library_screens (user_id, name, config_json, position)
+		VALUES (?, ?, ?, COALESCE((SELECT MAX(position)+1 FROM library_screens WHERE user_id = ?), 0))`,
+		auth.UserID(ctx), sc.Name, string(cfg), auth.UserID(ctx))
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// ReorderScreens sets positions from the given id order, ignoring ids that
+// aren't the acting user's.
+func (r *Repository) ReorderScreens(ctx context.Context, ids []int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for pos, id := range ids {
+		if _, err := tx.ExecContext(ctx, `UPDATE library_screens SET position = ? WHERE id = ? AND user_id = ?`, pos, id, auth.UserID(ctx)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // DeleteScreen removes one of the acting user's screens.

@@ -29,14 +29,17 @@
         {{if .User.Can "library.add"}}<li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>{{end}}
         <li>
           <details class="group/screens" {{if eq .Nav "library"}}open{{end}}>
-            <summary class="flex cursor-pointer list-none items-center gap-[0.6rem] rounded-lg px-3 py-2 transition-colors hover:bg-neutral {{if and (eq .Nav "library") (not .ActiveID)}}menu-active{{end}}">
+            <summary class="flex cursor-pointer list-none items-center gap-[0.6rem] rounded-lg px-3 py-2 transition-colors hover:bg-neutral">
               {{template "iconLibrary"}}Library
               <span class="ml-auto text-base-content/50 transition-transform group-open/screens:rotate-90">{{template "iconChevron"}}</span>
             </summary>
-            <ul class="mt-0.5 flex flex-col gap-0.5 pl-6">
+            <ul class="mt-0.5 flex flex-col gap-0.5 pl-6" data-screen-list>
               <li><a href="/library" class="{{if and (eq .Nav "library") (not .ActiveID)}}menu-active{{end}}">All</a></li>
               {{$active := .ActiveID}}{{range .Screens}}
-              <li><a href="/library?screen={{.ID}}" class="{{if eq .ID $active}}menu-active{{end}}"><span class="truncate">{{.Name}}</span></a></li>
+              <li draggable="true" data-screen-id="{{.ID}}" class="flex items-center gap-1 rounded-lg [&.dragging]:opacity-50">
+                <span class="cursor-grab select-none px-1 text-base-content/30" data-screen-handle>⠿</span>
+                <a href="/library?screen={{.ID}}" class="min-w-0 flex-1 {{if eq .ID $active}}menu-active{{end}}"><span class="truncate">{{.Name}}</span></a>
+              </li>
               {{end}}
               <li><a href="/library?new-screen=1" class="text-base-content/60">+ New screen</a></li>
             </ul>

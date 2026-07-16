@@ -110,6 +110,10 @@ func (s *LibraryService) SaveScreen(ctx context.Context, sc library.Screen) (int
 	return s.repo.SaveScreen(ctx, sc)
 }
 
+func (s *LibraryService) ReorderScreens(ctx context.Context, ids []int64) error {
+	return s.repo.ReorderScreens(ctx, ids)
+}
+
 func (s *LibraryService) DeleteScreen(ctx context.Context, id int64) error {
 	return s.repo.DeleteScreen(ctx, id)
 }
