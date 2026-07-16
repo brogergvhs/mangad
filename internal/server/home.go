@@ -19,7 +19,7 @@ type homeCard struct {
 	Cover   string
 	Title   string
 	Sub     string
-	Percent int // -1 hides the bar
+	Percent int64 // -1 hides the bar
 }
 
 type homeRow struct {
@@ -186,9 +186,9 @@ func genreTitleIDs(mangas map[int64]catalog.Manga, genre string) map[int64]bool 
 	return out
 }
 
-func pctInt(part, total int64) int {
+func pctInt(part, total int64) int64 {
 	if total <= 0 {
 		return 0
 	}
-	return int(part * 100 / total)
+	return part * 100 / total
 }

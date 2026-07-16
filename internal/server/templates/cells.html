@@ -154,13 +154,11 @@
     <span class="shrink-0">{{if gt .Title.MissingCount 0}}{{.Title.MissingCount}} missing · {{end}}{{humanBytes .Title.SizeBytes}}</span>
     {{end}}
   </div>
-  <div class="relative mt-1 h-1 w-full overflow-hidden rounded-full bg-base-300">
+  <div class="mt-1">
     {{if and (eq .Title.DiscoveredCount 0) (gt .Title.VolumeCount 0)}}
-    <div class="absolute inset-y-0 left-0 bg-primary" style="width: 100%"></div>
-    <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .Title.VolumeReadCount .Title.VolumeCount}}%"></div>
+    {{template "bar" bar (pct .Title.VolumeReadCount .Title.VolumeCount) 100}}
     {{else}}
-    <div class="absolute inset-y-0 left-0 bg-primary" style="width: {{pct .Title.CompletedCount .Title.DiscoveredCount}}%"></div>
-    <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .Title.ReadCount .Title.DiscoveredCount}}%"></div>
+    {{template "bar" bar (pct .Title.ReadCount .Title.DiscoveredCount) (pct .Title.CompletedCount .Title.DiscoveredCount)}}
     {{end}}
   </div>
 </div>
@@ -226,7 +224,7 @@
 
 {{define "anilistSuggestions"}}
 {{if .Items}}
-<div class="collapse collapse-arrow bg-base-100 mt-4">
+<div class="collapse collapse-arrow bg-base-100 mt-4 mb-4">
   <input type="checkbox">
   <div class="collapse-title font-semibold">From your AniList <span class="badge badge-sm badge-ghost">{{len .Items}} not in library</span></div>
   <div class="collapse-content">{{template "mangaResults" .}}</div>

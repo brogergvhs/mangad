@@ -2347,6 +2347,15 @@ func (u *webUI) funcs() template.FuncMap {
 			return false
 		},
 		"mangaTitle": mangaTitle,
+		"sub": func(a, b int64) int64 {
+			if a < b {
+				return 0
+			}
+			return a - b
+		},
+		"bar": func(readPct, fullPct int64) map[string]int64 {
+			return map[string]int64{"Read": readPct, "Full": fullPct}
+		},
 		"tagPicker": func(options []catalog.ContentTag, values []string, name, label, hint string) map[string]any {
 			selected := make(map[string]bool, len(values))
 			for _, v := range values {

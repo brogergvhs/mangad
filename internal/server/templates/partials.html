@@ -34,28 +34,28 @@
 {{end}}
 {{end}}
 
-{{define "progressBar"}}
-{{if or (gt .DiscoveredCount 0) (eq .VolumeCount 0)}}
-<div class="relative h-2 w-full overflow-hidden rounded-full bg-base-300">
-  <div class="absolute inset-y-0 left-0 bg-primary" style="width: {{pct .CompletedCount .DiscoveredCount}}%"></div>
-  <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .ReadCount .DiscoveredCount}}%"></div>
-</div>
-<div class="text-sm text-base-content/60 flex flex-wrap gap-x-2 max-sm:justify-between max-sm:w-full">
-  <span>{{.CompletedCount}}/{{.DiscoveredCount}}</span><span class="max-sm:hidden">·</span>
-  <span>{{.MissingCount}} missing</span>{{if gt .FailedCount 0}}<span class="max-sm:hidden">·</span><span>{{.FailedCount}} failed</span>{{end}}<span class="max-sm:hidden">·</span>
-  <span>{{humanBytes .SizeBytes}}</span><span class="max-sm:hidden">·</span>
-  <span>{{.Pages}} pages</span>
+{{define "bar"}}
+<div class="flex h-1.5 w-full overflow-hidden rounded-full bg-base-300">
+  <div class="bg-success" style="width: {{.Read}}%"></div>
+  <div class="bg-primary/40" style="width: {{sub .Full .Read}}%"></div>
 </div>
 {{end}}
-{{if gt .VolumeCount 0}}
-<div class="relative h-2 w-full overflow-hidden rounded-full bg-base-300">
-  <div class="absolute inset-y-0 left-0 bg-primary" style="width: 100%"></div>
-  <div class="absolute inset-y-0 left-0 bg-success" style="width: {{pct .VolumeReadCount .VolumeCount}}%"></div>
+
+{{define "progressBar"}}
+{{if gt .DiscoveredCount 0}}
+{{template "bar" bar (pct .ReadCount .DiscoveredCount) (pct .CompletedCount .DiscoveredCount)}}
+<div class="mt-1 flex flex-wrap gap-x-2 text-sm text-base-content/60">
+  <span>{{.ReadCount}}/{{.DiscoveredCount}} read</span>
+  {{if gt .MissingCount 0}}<span>· {{.MissingCount}} missing</span>{{end}}
+  {{if gt .FailedCount 0}}<span>· {{.FailedCount}} failed</span>{{end}}
+  <span>· {{humanBytes .SizeBytes}}</span>
+  {{if gt .VolumeCount 0}}<span>· {{.VolumeReadCount}}/{{.VolumeCount}} vols</span>{{end}}
 </div>
-<div class="text-sm text-base-content/60 flex flex-wrap gap-x-2 max-sm:justify-between max-sm:w-full">
-  <span>{{.VolumeReadCount}}/{{.VolumeCount}} volumes read</span><span class="max-sm:hidden">·</span>
-  <span>{{humanBytes .VolumeBytes}}</span><span class="max-sm:hidden">·</span>
-  <span>{{.VolumePages}} pages</span>
+{{else if gt .VolumeCount 0}}
+{{template "bar" bar (pct .VolumeReadCount .VolumeCount) 100}}
+<div class="mt-1 flex flex-wrap gap-x-2 text-sm text-base-content/60">
+  <span>{{.VolumeReadCount}}/{{.VolumeCount}} volumes read</span>
+  <span>· {{humanBytes .VolumeBytes}}</span>
 </div>
 {{end}}
 {{end}}

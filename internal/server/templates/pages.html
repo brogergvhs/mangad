@@ -9,12 +9,7 @@
     </div>
     <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Title}}</div>
     <div class="mt-0.5 text-xs text-base-content/50">{{.Sub}}</div>
-    {{if ge .Percent 0}}
-    <div class="relative mt-1 h-1 w-full overflow-hidden rounded-full bg-base-300">
-      <div class="absolute inset-y-0 left-0 bg-primary" style="width: 100%"></div>
-      <div class="absolute inset-y-0 left-0 bg-success" style="width: {{.Percent}}%"></div>
-    </div>
-    {{end}}
+    {{if ge .Percent 0}}<div class="mt-1">{{template "bar" bar .Percent 100}}</div>{{end}}
   </a>
   {{end}}
 </div>
