@@ -23,6 +23,7 @@ type Config struct {
 	AllowExt       []string `yaml:"allow_ext"`
 	Languages      []string `yaml:"languages"`
 	LanguageMode   string   `yaml:"-"`
+	Chapterless    bool     `yaml:"-"`
 
 	DefaultURL          string `yaml:"default_url"`
 	DefaultRange        string `yaml:"default_range"`

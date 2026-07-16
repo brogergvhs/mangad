@@ -1739,6 +1739,7 @@ func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
 	p.Scraper = strings.TrimSpace(r.FormValue("scraper"))
 	p.Languages = splitList(r.FormValue("languages"))
 	p.SingleManga = formChecked(r, "single_manga")
+	p.Chapterless = formChecked(r, "chapterless")
 	p.Enabled = formChecked(r, "enabled")
 	// Saving stores a local override; built-in sync no longer clobbers it.
 	if err := u.svc.ImportLocalSource(r.Context(), p); err != nil {
@@ -1862,7 +1863,7 @@ func customProfileFromForm(r *http.Request) (sources.Profile, bool, bool, error)
 		BaseURL: base, SampleMangaURL: manga, Scraper: strings.TrimSpace(r.FormValue("scraper")),
 		AllowedExtensions: exts, MinChapters: 1,
 		RequiresBrowserSolver: solver, RequiresBrowserDownload: browser,
-		SingleManga: formChecked(r, "single_manga"), Enabled: true,
+		SingleManga: formChecked(r, "single_manga"), Chapterless: formChecked(r, "chapterless"), Enabled: true,
 	}, solver, browser, nil
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/brogergvhs/mangad/internal/chapters"
 	"github.com/brogergvhs/mangad/internal/config"
 	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/mangad/internal/ui"
 	"github.com/brogergvhs/mangad/internal/util"
 )
 
@@ -191,4 +192,20 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func TestFetchChaptersChapterless(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Chapterless = true
+	svc, err := NewSourceDownloadService(cfg, ui.NewLogger(false), nil, "generic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, finalURL, gap, err := svc.FetchChapters(context.Background(), "https://gallery.test/g/42")
+	if err != nil || gap != 0 || finalURL != "https://gallery.test/g/42" {
+		t.Fatalf("err=%v gap=%d final=%s", err, gap, finalURL)
+	}
+	if len(list) != 1 || list[0].Label != "Oneshot" || list[0].URL != "https://gallery.test/g/42" {
+		t.Fatalf("list = %#v", list)
+	}
 }

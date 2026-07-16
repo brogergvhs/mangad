@@ -278,6 +278,9 @@ func (f flaresolverrFetcher) applySession(ctx context.Context, target string, re
 // languageGap reports chapters existing only outside the preferred languages
 // after the last FetchChapters (LanguageAware scrapers only).
 func (s *DownloadService) FetchChapters(ctx context.Context, sourceURL string) (list []chapters.Chapter, finalURL string, languageGap int, err error) {
+	if s.cfg.Chapterless {
+		return []chapters.Chapter{{Chapter: providers.Chapter{URL: sourceURL, Label: "Oneshot"}}}, sourceURL, 0, nil
+	}
 	var raw []providers.Chapter
 	finalURL = sourceURL
 	switch scraper := s.scraper.(type) {

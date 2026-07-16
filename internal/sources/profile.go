@@ -41,6 +41,7 @@ type Profile struct {
 	RequiresBrowserSolver   bool     `json:"requires_browser_solver" yaml:"requires_browser_solver"`
 	RequiresBrowserDownload bool     `json:"requires_browser_downloader" yaml:"requires_browser_downloader"`
 	SingleManga             bool     `json:"single_manga" yaml:"single_manga"`
+	Chapterless             bool     `json:"chapterless,omitempty" yaml:"chapterless,omitempty"`
 	Enabled                 bool     `json:"enabled" yaml:"enabled"`
 	Version                 string   `json:"version" yaml:"version"`
 }
@@ -109,6 +110,9 @@ func normalizeProfile(p Profile) (Profile, error) {
 	p.Domains = cleanStrings(p.Domains)
 	p.AllowedExtensions = cleanExtensions(p.AllowedExtensions)
 	p.Languages = cleanStrings(p.Languages)
+	if p.Chapterless {
+		p.MinChapters = 1
+	}
 	if p.ID == "" {
 		return Profile{}, fmt.Errorf("source id is required")
 	}

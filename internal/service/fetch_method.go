@@ -12,5 +12,6 @@ func probeConfig(cfg config.Config, src sources.Source, solver, browser bool) co
 	}
 	cfg.BrowserSolver.Enabled = solver
 	cfg.BrowserDownload.Enabled = browser
+	cfg.Chapterless = src.Chapterless
 	return cfg
 }
