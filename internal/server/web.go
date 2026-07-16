@@ -275,6 +275,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/library/{id}/activity", u.libActivity)
 	mux.HandleFunc("POST /ui/library/{id}/monitored", u.libMonitored)
 	mux.HandleFunc("POST /ui/library/{id}/favourite", u.libFavourite)
+	mux.HandleFunc("POST /ui/library/{id}/language-mode", u.libLanguageMode)
 	mux.HandleFunc("POST /ui/library/{id}/refresh-interval", u.libRefreshInterval)
 	mux.HandleFunc("POST /ui/library/{id}/remove", u.libRemove)
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
@@ -677,8 +678,13 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 			}
 		}
 		t.Fulls = append(t.Fulls, full)
+		rowClass := ""
+		if tl.IsAdult {
+			rowClass = "outline outline-1 -outline-offset-1 outline-error"
+		}
 		t.Rows = append(t.Rows, tableRow{
-			ID: strconv.FormatInt(tl.ID, 10),
+			ID:    strconv.FormatInt(tl.ID, 10),
+			Class: rowClass,
 			Cells: []template.HTML{
 				u.renderToHTML("cellCover", tl),
 				u.renderToHTML("cellTitle", view),
@@ -1043,6 +1049,20 @@ func (u *webUI) writeTitleContent(w http.ResponseWriter, r *http.Request, titleI
 type favView struct {
 	ID        int64
 	Favourite bool
+}
+
+func (u *webUI) libLanguageMode(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.SetLanguageMode(r.Context(), id, r.FormValue("mode")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.kick()
+	w.Header().Set("HX-Refresh", "true")
 }
 
 func (u *webUI) libFavourite(w http.ResponseWriter, r *http.Request) {
@@ -1712,6 +1732,7 @@ func (u *webUI) srcEditSave(w http.ResponseWriter, r *http.Request) {
 	p.Domains = splitList(r.FormValue("domains"))
 	p.AllowedExtensions = splitList(r.FormValue("extensions"))
 	p.Scraper = strings.TrimSpace(r.FormValue("scraper"))
+	p.Languages = splitList(r.FormValue("languages"))
 	p.SingleManga = formChecked(r, "single_manga")
 	p.Enabled = formChecked(r, "enabled")
 	// Saving stores a local override; built-in sync no longer clobbers it.

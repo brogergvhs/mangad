@@ -207,6 +207,17 @@
   </div>
 </div>
 
+{{if and (gt .Title.LanguageGap 0) (eq .Title.LanguageMode "") (.User.Can "library.manage")}}
+<div class="alert alert-warning alert-soft mt-3 flex-wrap">
+  <span class="text-sm">{{.Title.LanguageGap}} chapters are only available in other languages. Download them anyway?</span>
+  <div class="flex flex-wrap gap-2">
+    <button class="btn btn-sm btn-warning" hx-post="/ui/library/{{.Title.ID}}/language-mode" hx-vals='{"mode":"all"}' hx-swap="none">Download all languages</button>
+    <button class="btn btn-sm btn-outline" hx-post="/ui/library/{{.Title.ID}}/language-mode" hx-vals='{"mode":"preferred"}' hx-swap="none">Preferred only</button>
+    <button class="btn btn-sm btn-ghost" hx-post="/ui/library/{{.Title.ID}}/language-mode" hx-vals='{"mode":"off"}' hx-swap="none">Stop downloads</button>
+  </div>
+</div>
+{{end}}
+
 {{template "titleActivity" .}}
 
 <dialog id="remove_title_modal" class="modal">

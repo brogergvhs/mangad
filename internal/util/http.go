@@ -2,7 +2,10 @@ package util
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -146,6 +149,24 @@ func joinCookies(inline, file string) string {
 	}
 
 	return s
+}
+
+// GetJSON fetches a JSON document with retries and decodes it into out.
+func GetJSON(ctx context.Context, client *http.Client, target string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := DoWithRetry(client, req, 2, 500*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 }
 
 // StatusError reports a non-success HTTP status after retries.

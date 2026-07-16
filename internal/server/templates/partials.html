@@ -175,6 +175,7 @@
       <label class="fieldset"><span class="fieldset-legend">Search URL ({query} placeholder)</span><input class="input w-full" name="search_url" value="{{.SearchURL}}"></label>
       <label class="fieldset"><span class="fieldset-legend">Domains (comma-separated)</span><input class="input w-full" name="domains" value="{{range $i, $d := .Domains}}{{if $i}}, {{end}}{{$d}}{{end}}"></label>
       <label class="fieldset"><span class="fieldset-legend">Image types (comma-separated)</span><input class="input w-full" name="extensions" value="{{range $i, $e := .AllowedExtensions}}{{if $i}}, {{end}}{{$e}}{{end}}"></label>
+      <label class="fieldset"><span class="fieldset-legend">Preferred languages (comma-separated)</span><input class="input w-full" name="languages" value="{{range $i, $l := .Languages}}{{if $i}}, {{end}}{{$l}}{{end}}" placeholder="en"><span class="label">For multi-language sources (MangaDex): ISO codes in preference order, e.g. en, it.</span></label>
       <div class="grid grid-cols-2 gap-3">
         <label class="fieldset"><span class="fieldset-legend">Pages fetch</span>
           <select class="select w-full" name="chapter_fetch">
