@@ -587,7 +587,7 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 			view.ExcludeTags = sc.Config.ExcludeTags
 		}
 	}
-	view.OpenEditor = values.Get("new-screen") == "1"
+	view.OpenEditor = values.Get("new-screen") == "1" || (view.Screen != nil && values.Get("edit") == "1")
 	view.ShowEditor = view.Screen != nil || view.OpenEditor
 	if view.ShowEditor {
 		view.TagOptions, _ = u.svc.ContentTagOptions(r.Context())
@@ -2329,12 +2329,12 @@ func (u *webUI) funcs() template.FuncMap {
 			return false
 		},
 		"mangaTitle": mangaTitle,
-		"tagPicker": func(options []catalog.ContentTag, values []string, name, label string) map[string]any {
+		"tagPicker": func(options []catalog.ContentTag, values []string, name, label, hint string) map[string]any {
 			selected := make(map[string]bool, len(values))
 			for _, v := range values {
 				selected[v] = true
 			}
-			return map[string]any{"Options": options, "Selected": selected, "Values": values, "Name": name, "Label": label}
+			return map[string]any{"Options": options, "Selected": selected, "Values": values, "Name": name, "Label": label, "Hint": hint}
 		},
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },

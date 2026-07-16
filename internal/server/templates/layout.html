@@ -36,7 +36,16 @@
             <ul class="mt-0.5 flex flex-col gap-0.5 pl-6">
               <li><a href="/library" class="{{if and (eq .Nav "library") (not .ActiveID)}}menu-active{{end}}">All</a></li>
               {{$active := .ActiveID}}{{range .Screens}}
-              <li><a href="/library?screen={{.ID}}" class="{{if eq .ID $active}}menu-active{{end}}">{{.Name}}</a></li>
+              <li class="flex flex-row items-center gap-0">
+                <a href="/library?screen={{.ID}}" class="min-w-0 flex-1 {{if eq .ID $active}}menu-active{{end}}"><span class="truncate">{{.Name}}</span></a>
+                <details class="dropdown dropdown-end shrink-0">
+                  <summary class="btn btn-ghost btn-xs btn-square" aria-label="Screen actions">{{template "iconDots"}}</summary>
+                  <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-lg border border-base-300">
+                    <li><a href="/library?screen={{.ID}}&edit=1">{{template "iconEdit"}}Edit</a></li>
+                    <li><button class="text-error" hx-post="/ui/screens/{{.ID}}/delete" hx-swap="none" hx-confirm="Delete this screen? Titles are not affected.">{{template "iconTrash"}}Delete</button></li>
+                  </ul>
+                </details>
+              </li>
               {{end}}
               <li><a href="/library?new-screen=1" class="text-base-content/60">+ New screen</a></li>
             </ul>
