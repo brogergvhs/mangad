@@ -784,7 +784,7 @@
       <div class="grid max-h-52 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto" data-tag-list>
         {{$sel := .Selected}}{{range .Options}}
         <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
-          <input type="checkbox" class="checkbox checkbox-xs shrink-0" SHOULDNOTHAPPEN {{if index $sel .Name}}checked{{end}}>
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.Name}}" {{if index $sel .Name}}checked{{end}}>
           <span class="truncate">{{.Name}}</span>
           {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
         </label>
