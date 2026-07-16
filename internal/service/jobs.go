@@ -955,6 +955,12 @@ func (s *JobService) refreshTagVocabulary(ctx context.Context) error {
 	return s.want.catalog.ReplaceContentTags(ctx, genres, tags)
 }
 
+// StoredContentTags returns the stored tag/genre vocabulary without ever
+// fetching it remotely.
+func (s *JobService) StoredContentTags(ctx context.Context) ([]catalog.ContentTag, error) {
+	return s.want.catalog.ContentTags(ctx)
+}
+
 // ContentTagOptions returns the stored tag/genre vocabulary for pickers,
 // fetching it once from AniList when nothing is stored yet.
 func (s *JobService) ContentTagOptions(ctx context.Context) ([]catalog.ContentTag, error) {

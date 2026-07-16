@@ -165,7 +165,7 @@
 {{end}}
 
 {{define "libraryResults"}}
-<div id="{{.ID}}" {{if .Poll}}hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:drop"{{end}}>
+<div id="{{.ID}}" {{if .Poll}}data-poll hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:drop"{{end}}>
   {{if not .Rows}}
   <p class="text-base-content/60 py-3">{{.Empty}}</p>
   {{else}}

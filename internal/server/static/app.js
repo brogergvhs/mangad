@@ -80,6 +80,24 @@ document.addEventListener("input", function (e) {
   });
 });
 
+// Library filters: mirror each table refresh into the URL so reloads and
+// back-navigation keep the current filters. Sidebar links (/library,
+// /library?screen=N) navigate without filter params and so reset them.
+// Poll refreshes are skipped; the screen-editor params survive rewrites.
+document.body.addEventListener("htmx:afterRequest", function (e) {
+  if (!e.detail.successful || !e.detail.xhr || !e.detail.xhr.responseURL) return;
+  if (e.detail.elt && e.detail.elt.hasAttribute("data-poll")) return;
+  var url;
+  try { url = new URL(e.detail.xhr.responseURL); } catch (err) { return; }
+  if (url.pathname !== "/ui/library/table") return;
+  var current = new URLSearchParams(location.search);
+  ["new-screen", "edit"].forEach(function (key) {
+    if (current.has(key)) url.searchParams.set(key, current.get(key));
+  });
+  var qs = url.searchParams.toString();
+  history.replaceState(null, "", "/library" + (qs ? "?" + qs : ""));
+});
+
 // Sidebar screen reordering: drag rows, persist the new order on drop.
 (function () {
   var list = document.querySelector("[data-screen-list]");

@@ -80,15 +80,17 @@ type libraryView struct {
 	Cfg         library.ScreenConfig
 }
 type libraryControls struct {
-	Q        string
-	Monitor  string
-	Fav      string
-	Source   string
-	Progress string
-	Content  string // chapters/volumes presence
-	Sort     string
-	Dir      string
-	View     string
+	Q           string
+	Monitor     string
+	Fav         string
+	Source      string
+	Progress    string
+	Content     string // chapters/volumes presence
+	Sort        string
+	Dir         string
+	View        string
+	IncludeTags []string
+	ExcludeTags []string
 }
 type healthView struct {
 	Services []service.ServiceHealth
@@ -591,7 +593,10 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 	}
 	view.OpenEditor = values.Get("new-screen") == "1" || (view.Screen != nil && values.Get("edit") == "1")
 	view.ShowEditor = view.Screen != nil || view.OpenEditor
-	if view.ShowEditor {
+	view.TagOptions, _ = u.svc.StoredContentTags(r.Context())
+	if len(view.TagOptions) == 0 && view.ShowEditor {
+		// The editor keeps its on-demand AniList vocabulary fetch; the plain
+		// library render must never block on the network.
 		view.TagOptions, _ = u.svc.ContentTagOptions(r.Context())
 	}
 	view.Controls = libraryControlsFrom(screenDefaults(values, view.Screen))
@@ -604,18 +609,11 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 
 func screenFromForm(r *http.Request) library.Screen {
 	_ = r.ParseForm()
-	tags := func(key string) []string {
-		var out []string
-		for _, v := range r.Form[key] {
-			out = append(out, splitCommaList(v)...)
-		}
-		return out
-	}
 	return library.Screen{
 		Name: r.FormValue("name"),
 		Config: library.ScreenConfig{
-			IncludeTags: tags("include_tags"),
-			ExcludeTags: tags("exclude_tags"),
+			IncludeTags: tagList(r.Form["include_tags"]),
+			ExcludeTags: tagList(r.Form["exclude_tags"]),
 			Adult:       r.FormValue("adult"),
 			Monitor:     r.FormValue("monitor"),
 			Fav:         r.FormValue("fav"),
@@ -754,9 +752,11 @@ func initialReaderPosition(manifest readerManifestResponse) string {
 func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) libraryResults {
 	page, _, _ := tableParams(values, libraryPerPage)
 	var screen *library.Screen
+	var screenID int64
 	if id, _ := strconv.ParseInt(values.Get("screen"), 10, 64); id > 0 {
 		if sc, err := u.svc.GetScreen(ctx, id); err == nil {
 			screen = &sc
+			screenID = id
 		}
 	}
 	controls := libraryControlsFrom(screenDefaults(values, screen))
@@ -781,7 +781,7 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		empty = "No manga match the current search or filters."
 	}
 
-	t := libraryResults{View: controls.View, CanManage: auth.FromContext(ctx).Can(auth.PermLibraryManage)}
+	t := libraryResults{Screen: screenID, View: controls.View, CanManage: auth.FromContext(ctx).Can(auth.PermLibraryManage)}
 	t.tableData = tableData{
 		ID: "library-table", BaseURL: "/ui/library/table",
 		Page: page, PerPage: libraryPerPage, Total: total, Sort: controls.Sort, Dir: controls.Dir,
@@ -837,15 +837,17 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 
 func libraryControlsFrom(values url.Values) libraryControls {
 	c := libraryControls{
-		Q:        strings.TrimSpace(values.Get("q")),
-		Monitor:  values.Get("monitor"),
-		Fav:      values.Get("fav"),
-		Content:  values.Get("content"),
-		Source:   values.Get("source"),
-		Progress: values.Get("progress"),
-		Sort:     values.Get("sort"),
-		Dir:      values.Get("dir"),
-		View:     values.Get("view"),
+		Q:           strings.TrimSpace(values.Get("q")),
+		Monitor:     values.Get("monitor"),
+		Fav:         values.Get("fav"),
+		Content:     values.Get("content"),
+		Source:      values.Get("source"),
+		Progress:    values.Get("progress"),
+		Sort:        values.Get("sort"),
+		Dir:         values.Get("dir"),
+		View:        values.Get("view"),
+		IncludeTags: tagList(values["include_tags"]),
+		ExcludeTags: tagList(values["exclude_tags"]),
 	}
 	if c.View != "table" && c.View != "cards" && c.View != "full" {
 		c.View = "auto"
@@ -908,6 +910,23 @@ func libraryTableParams(values url.Values) url.Values {
 			out.Set(key, value)
 		}
 	}
+	for _, key := range []string{"include_tags", "exclude_tags"} {
+		for _, value := range values[key] {
+			if value = strings.TrimSpace(value); value != "" {
+				out.Add(key, value)
+			}
+		}
+	}
+	return out
+}
+
+// tagList flattens repeated form values, splitting comma lists from the
+// text-input fallback of the tag picker.
+func tagList(raw []string) []string {
+	var out []string
+	for _, v := range raw {
+		out = append(out, splitCommaList(v)...)
+	}
 	return out
 }
 
@@ -916,6 +935,12 @@ func filterTitles(titles []library.Title, c libraryControls) []library.Title {
 	out := titles[:0]
 	for _, title := range titles {
 		if q != "" && !strings.Contains(strings.ToLower(title.DisplayTitle+" "+title.SourceID+" "+title.ReleaseStatus), q) {
+			continue
+		}
+		if len(c.IncludeTags) > 0 && !library.HasAnyTag(title.ContentTags, c.IncludeTags) {
+			continue
+		}
+		if library.HasAnyTag(title.ContentTags, c.ExcludeTags) {
 			continue
 		}
 		switch c.Monitor {
@@ -2357,9 +2382,18 @@ func (u *webUI) funcs() template.FuncMap {
 			return map[string]int64{"Read": readPct, "Full": fullPct}
 		},
 		"tagPicker": func(options []catalog.ContentTag, values []string, name, label, hint string) map[string]any {
+			// Selected keys are canonicalized to option names so values from
+			// hand-typed URLs or the text fallback render checked.
 			selected := make(map[string]bool, len(values))
 			for _, v := range values {
-				selected[v] = true
+				key := strings.TrimSpace(v)
+				for _, o := range options {
+					if strings.EqualFold(o.Name, key) {
+						key = o.Name
+						break
+					}
+				}
+				selected[key] = true
 			}
 			return map[string]any{"Options": options, "Selected": selected, "Values": values, "Name": name, "Label": label, "Hint": hint}
 		},

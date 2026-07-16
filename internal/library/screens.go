@@ -45,16 +45,17 @@ func (c ScreenConfig) Matches(t Title) bool {
 			return false
 		}
 	}
-	if len(c.IncludeTags) > 0 && !hasAnyTag(t.ContentTags, c.IncludeTags) {
+	if len(c.IncludeTags) > 0 && !HasAnyTag(t.ContentTags, c.IncludeTags) {
 		return false
 	}
-	if len(c.ExcludeTags) > 0 && hasAnyTag(t.ContentTags, c.ExcludeTags) {
+	if len(c.ExcludeTags) > 0 && HasAnyTag(t.ContentTags, c.ExcludeTags) {
 		return false
 	}
 	return true
 }
 
-func hasAnyTag(have, want []string) bool {
+// HasAnyTag reports whether any wanted tag is present (case-insensitive).
+func HasAnyTag(have, want []string) bool {
 	for _, w := range want {
 		for _, h := range have {
 			if strings.EqualFold(strings.TrimSpace(w), strings.TrimSpace(h)) {
