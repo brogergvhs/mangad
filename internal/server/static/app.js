@@ -191,7 +191,7 @@ document.addEventListener("input", function (e) {
     if (!chapter || !page || read[key] || pending[key]) return;
     pending[key] = true;
     queueWrite(function () {
-      return postJSON("/api/reader/chapters/" + chapter + "/pages", {
+      return postJSON((manifest.mark_base || "/api/reader/chapters/") + chapter + "/pages", {
         page: page,
         total_pages: total,
       }).then(function () {
@@ -296,7 +296,7 @@ document.addEventListener("input", function (e) {
   function extend() {
     if (fetching || noMore || !lastChapterID) return finish();
     fetching = true;
-    fetch("/api/reader/titles/" + manifest.title_id + "/manifest?chapter=" + lastChapterID)
+    fetch(manifest.extend_base ? manifest.extend_base + lastChapterID : "/api/reader/titles/" + manifest.title_id + "/manifest?chapter=" + lastChapterID)
       .then(function (resp) { if (!resp.ok) throw new Error("manifest fetch failed"); return resp.json(); })
       .then(function (m) {
         fetching = false;

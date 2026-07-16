@@ -43,6 +43,9 @@ func (s *WantedService) ImportVolumesFolder(ctx context.Context, root, folder st
 	if _, err := s.library.SyncVolumeFiles(ctx, title.ID, dir, cbzPageCount); err != nil {
 		return library.Title{}, err
 	}
+	if err := generateVolumeThumbs(ctx, s.library, title.ID); err != nil {
+		return library.Title{}, err
+	}
 	return s.library.GetTitle(ctx, title.ID)
 }
 
@@ -150,6 +153,8 @@ func (s *LibraryService) AttachVolumesFolder(ctx context.Context, cfg *config.Co
 		}
 	}
 	_ = os.Remove(srcDir) // only succeeds when emptied
-	_, err = s.repo.SyncVolumeFiles(ctx, title.ID, volumesDir, cbzPageCount)
-	return err
+	if _, err := s.repo.SyncVolumeFiles(ctx, title.ID, volumesDir, cbzPageCount); err != nil {
+		return err
+	}
+	return s.GenerateVolumeThumbs(ctx, title.ID)
 }

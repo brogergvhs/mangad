@@ -566,9 +566,16 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	progress, err := u.svc.ReaderProgress(r.Context(), id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	volumesMode := r.URL.Query().Get("mode") == "volumes"
+	var progress library.TitleReadProgress
+	var err2 error
+	if volumesMode {
+		progress, err2 = u.svc.VolumesReaderProgress(r.Context(), id)
+	} else {
+		progress, err2 = u.svc.ReaderProgress(r.Context(), id)
+	}
+	if err2 != nil {
+		http.Error(w, err2.Error(), http.StatusBadRequest)
 		return
 	}
 	if !contentAllowed(r.Context(), progress.Title.IsAdult, progress.Title.ContentTags) {
@@ -577,16 +584,20 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 	}
 	presence.SetTitle(r.Context(), auth.UserID(r.Context()), progress.ID, progress.DisplayTitle)
 	currentID, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64)
-	manifest, prevID, nextID := readerManifestWindow(progress, currentID)
+	manifest, prevID, nextID := readerManifestWindowMode(progress, currentID, volumesMode)
 	data := readerView{Title: progress.Title, Manifest: manifest, PagePosition: initialReaderPosition(manifest)}
 	if len(data.Manifest.Chapters) == 0 {
 		data.Empty = "No downloaded chapters are available to read yet."
 	}
+	mode := ""
+	if volumesMode {
+		mode = "&mode=volumes"
+	}
 	if prevID > 0 {
-		data.PrevURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, prevID)
+		data.PrevURL = fmt.Sprintf("/reader/%d?chapter=%d%s", progress.ID, prevID, mode)
 	}
 	if nextID > 0 {
-		data.NextURL = fmt.Sprintf("/reader/%d?chapter=%d", progress.ID, nextID)
+		data.NextURL = fmt.Sprintf("/reader/%d?chapter=%d%s", progress.ID, nextID, mode)
 	}
 	if raw, err := json.Marshal(data.Manifest); err == nil {
 		data.ManifestJSON = template.JS(raw)
@@ -931,14 +942,15 @@ const chaptersPerPage = 25
 
 // titleContentView drives the tabbed Chapters/Volumes section.
 type titleContentView struct {
-	Title         library.Title
-	Tab           string // "chapters" or "volumes"
-	ReadLabel     string
-	ChaptersTable chaptersView
-	ChapterCount  int64
-	Volumes       []volumeRowView
-	VolumeCount   int
-	Attaching     bool
+	Title           library.Title
+	Tab             string // "chapters" or "volumes"
+	ReadLabel       string
+	VolumeReadLabel string
+	ChaptersTable   chaptersView
+	ChapterCount    int64
+	Volumes         []volumeRowView
+	VolumeCount     int
+	Attaching       bool
 }
 
 func (u *webUI) buildTitleContent(r *http.Request, title library.Title, tab string) titleContentView {
@@ -960,6 +972,13 @@ func (u *webUI) buildTitleContent(r *http.Request, title library.Title, tab stri
 	view.ReadLabel = "Read"
 	if progress, err := u.svc.ReaderProgress(ctx, title.ID); err == nil && progress.NextChapterID != 0 && progress.ReadPages > 0 {
 		view.ReadLabel = "Continue reading"
+	}
+	view.VolumeReadLabel = "Read"
+	for _, v := range vols {
+		if v.ReadPages > 0 || v.Read {
+			view.VolumeReadLabel = "Continue reading"
+			break
+		}
 	}
 	if tab == "chapters" {
 		view.ChaptersTable = u.buildChaptersTable(ctx, title, r.URL.Query())

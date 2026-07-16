@@ -349,7 +349,9 @@
       {{end}}
     </div>
     <div class="flex sm:items-center gap-2 max-sm:flex-col">
-      {{if gt .Title.CompletedCount 0}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+      {{if eq .Tab "volumes"}}
+      {{if .VolumeCount}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}?mode=volumes">{{.VolumeReadLabel}}</a>{{end}}
+      {{else if gt .Title.CompletedCount 0}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
       <details class="dropdown dropdown-end max-sm:w-full">
         <summary class="btn btn-outline max-sm:w-full">Bulk mark</summary>
         {{if eq .Tab "volumes"}}
@@ -372,7 +374,7 @@
   <div class="divide-y divide-line/25 rounded-xl bg-base-100 px-4">
     {{range .Volumes}}
     <div class="flex items-center gap-3 py-2">
-      <img class="h-14 w-10 shrink-0 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover" alt="" loading="lazy">
+      <img class="h-14 w-10 shrink-0 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover?v={{if .CustomCover}}c{{else}}t{{end}}" alt="" loading="lazy">
       <div class="min-w-0 flex-1">
         <div class="text-sm font-medium">{{if .Label}}Vol. {{.Label}}{{end}}{{if and .Label .Name}} — {{end}}{{.Name}}</div>
         <div class="text-xs text-base-content/50">{{if .Pages}}{{.Pages}} pages · {{end}}{{.Size}}</div>

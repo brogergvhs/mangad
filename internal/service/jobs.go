@@ -1403,8 +1403,20 @@ func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) err
 	return s.lib.SetVolumeRead(ctx, id, read)
 }
 
+func (s *JobService) MarkVolumePageRead(ctx context.Context, volumeID int64, page, totalPages int) (library.Volume, error) {
+	return s.lib.MarkVolumePageRead(ctx, volumeID, page, totalPages)
+}
+
+func (s *JobService) VolumesReaderProgress(ctx context.Context, titleID int64) (library.TitleReadProgress, error) {
+	return s.lib.VolumesReaderProgress(ctx, titleID)
+}
+
 func (s *JobService) SetVolumeRangeRead(ctx context.Context, titleID int64, from, to float64, read bool) (int, error) {
 	return s.lib.SetVolumeRangeRead(ctx, titleID, from, to, read)
+}
+
+func (s *JobService) VolumeThumb(ctx context.Context, id int64) ([]byte, string, error) {
+	return s.lib.VolumeThumb(ctx, id)
 }
 
 func (s *JobService) VolumeCover(ctx context.Context, id int64) ([]byte, string, error) {

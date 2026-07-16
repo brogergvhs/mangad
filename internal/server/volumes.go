@@ -68,17 +68,23 @@ func (u *webUI) volumesRange(w http.ResponseWriter, r *http.Request) {
 	u.writeTitleContent(w, r, id, "volumes")
 }
 
-// volumeCover serves the custom cover when set, else the volume's first page.
+// volumeCover serves the custom cover, else the pre-generated thumbnail,
+// else the raw first page. URLs carry a version query so responses can be
+// cached hard; uploads and resets change the version.
 func (u *webUI) volumeCover(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	blob, mime, err := u.svc.VolumeCover(r.Context(), id)
-	if err == nil && len(blob) > 0 {
+	w.Header().Set("Cache-Control", "private, max-age=604800")
+	if blob, mime, err := u.svc.VolumeCover(r.Context(), id); err == nil && len(blob) > 0 {
 		w.Header().Set("Content-Type", mime)
-		w.Header().Set("Cache-Control", "private, max-age=3600")
+		_, _ = w.Write(blob)
+		return
+	}
+	if blob, mime, err := u.svc.VolumeThumb(r.Context(), id); err == nil && len(blob) > 0 {
+		w.Header().Set("Content-Type", mime)
 		_, _ = w.Write(blob)
 		return
 	}
@@ -94,7 +100,6 @@ func (u *webUI) volumeCover(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rc.Close()
 	w.Header().Set("Content-Type", imageMime(entry.Name))
-	w.Header().Set("Cache-Control", "private, max-age=3600")
 	_, _ = io.Copy(w, rc)
 }
 
