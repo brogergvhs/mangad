@@ -176,10 +176,18 @@ func sortTitles(ts []library.Title, key, dir string) {
 		}
 	case "missing":
 		less = func(a, b library.Title) bool { return a.MissingCount < b.MissingCount }
+	case "failed":
+		less = func(a, b library.Title) bool { return a.FailedCount < b.FailedCount }
 	case "chapters":
 		less = func(a, b library.Title) bool { return a.DiscoveredCount < b.DiscoveredCount }
+	case "volumes":
+		less = func(a, b library.Title) bool { return a.VolumeCount < b.VolumeCount }
 	case "size":
+		less = func(a, b library.Title) bool { return a.SizeBytes+a.VolumeBytes < b.SizeBytes+b.VolumeBytes }
+	case "size-chapters":
 		less = func(a, b library.Title) bool { return a.SizeBytes < b.SizeBytes }
+	case "size-volumes":
+		less = func(a, b library.Title) bool { return a.VolumeBytes < b.VolumeBytes }
 	case "updated":
 		less = func(a, b library.Title) bool { return a.UpdatedAt.Before(b.UpdatedAt) }
 	case "added":

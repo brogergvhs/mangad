@@ -76,6 +76,7 @@ type libraryControls struct {
 	Fav      string
 	Source   string
 	Progress string
+	Content  string // chapters/volumes presence
 	Sort     string
 	Dir      string
 	View     string
@@ -694,6 +695,7 @@ func libraryControlsFrom(values url.Values) libraryControls {
 		Q:        strings.TrimSpace(values.Get("q")),
 		Monitor:  values.Get("monitor"),
 		Fav:      values.Get("fav"),
+		Content:  values.Get("content"),
 		Source:   values.Get("source"),
 		Progress: values.Get("progress"),
 		Sort:     values.Get("sort"),
@@ -708,6 +710,11 @@ func libraryControlsFrom(values url.Values) libraryControls {
 	}
 	if c.Fav != "only" {
 		c.Fav = "all"
+	}
+	switch c.Content {
+	case "chapters", "no-chapters", "volumes", "no-volumes":
+	default:
+		c.Content = "all"
 	}
 	if c.Source == "" {
 		c.Source = "all"
@@ -729,7 +736,7 @@ func libraryControlsFrom(values url.Values) libraryControls {
 
 func libraryTableParams(values url.Values) url.Values {
 	out := url.Values{}
-	for _, key := range []string{"q", "monitor", "source", "progress", "sort", "dir", "view"} {
+	for _, key := range []string{"q", "monitor", "fav", "source", "progress", "content", "sort", "dir", "view"} {
 		if value := strings.TrimSpace(values.Get(key)); value != "" {
 			out.Set(key, value)
 		}
@@ -782,6 +789,24 @@ func filterTitles(titles []library.Title, c libraryControls) []library.Title {
 			}
 		case "empty":
 			if title.DiscoveredCount != 0 {
+				continue
+			}
+		}
+		switch c.Content {
+		case "chapters":
+			if title.DiscoveredCount == 0 {
+				continue
+			}
+		case "no-chapters":
+			if title.DiscoveredCount != 0 {
+				continue
+			}
+		case "volumes":
+			if title.VolumeCount == 0 {
+				continue
+			}
+		case "no-volumes":
+			if title.VolumeCount != 0 {
 				continue
 			}
 		}

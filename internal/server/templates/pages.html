@@ -120,6 +120,14 @@
       <option value="unlinked" {{if eq .Controls.Source "unlinked"}}selected{{end}}>Unlinked</option>
       <option value="imported" {{if eq .Controls.Source "imported"}}selected{{end}}>Imported</option>
     </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Content</span>
+    <select name="content" class="select select-sm w-full">
+      <option value="all" {{if eq .Controls.Content "all"}}selected{{end}}>All</option>
+      <option value="chapters" {{if eq .Controls.Content "chapters"}}selected{{end}}>With chapters</option>
+      <option value="no-chapters" {{if eq .Controls.Content "no-chapters"}}selected{{end}}>Without chapters</option>
+      <option value="volumes" {{if eq .Controls.Content "volumes"}}selected{{end}}>With volumes</option>
+      <option value="no-volumes" {{if eq .Controls.Content "no-volumes"}}selected{{end}}>Without volumes</option>
+    </select></label>
   <label class="fieldset"><span class="fieldset-legend">Favourites</span>
     <select name="fav" class="select select-sm w-full">
       <option value="all" {{if eq .Controls.Fav "all"}}selected{{end}}>All</option>
@@ -137,8 +145,12 @@
       <option value="added" {{if eq .Controls.Sort "added"}}selected{{end}}>Last added</option>
       <option value="title" {{if eq .Controls.Sort "title"}}selected{{end}}>Title</option>
       <option value="missing" {{if eq .Controls.Sort "missing"}}selected{{end}}>Missing chapters</option>
+      <option value="failed" {{if eq .Controls.Sort "failed"}}selected{{end}}>Failed chapters</option>
       <option value="chapters" {{if eq .Controls.Sort "chapters"}}selected{{end}}>Total chapters</option>
-      <option value="size" {{if eq .Controls.Sort "size"}}selected{{end}}>Size</option>
+      <option value="volumes" {{if eq .Controls.Sort "volumes"}}selected{{end}}>Total volumes</option>
+      <option value="size" {{if eq .Controls.Sort "size"}}selected{{end}}>Size (total)</option>
+      <option value="size-chapters" {{if eq .Controls.Sort "size-chapters"}}selected{{end}}>Size (chapters)</option>
+      <option value="size-volumes" {{if eq .Controls.Sort "size-volumes"}}selected{{end}}>Size (volumes)</option>
       <option value="updated" {{if eq .Controls.Sort "updated"}}selected{{end}}>Updated</option>
     </select></label>
   <label class="fieldset"><span class="fieldset-legend">Direction</span>
