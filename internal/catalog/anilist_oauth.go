@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -277,6 +278,9 @@ func (c *AniListClient) DeleteEntry(ctx context.Context, mediaID int) error {
 	if err := c.do(ctx, `
 		query ($id: Int) { Media(id: $id, type: MANGA) { mediaListEntry { id } } }
 	`, map[string]any{"id": mediaID}, &lookup); err != nil {
+		if errors.Is(err, errAniListNotFound) {
+			return nil
+		}
 		return err
 	}
 	entry := lookup.Data.Media.MediaListEntry
@@ -290,7 +294,10 @@ func (c *AniListClient) DeleteEntry(ctx context.Context, mediaID int) error {
 			} `json:"DeleteMediaListEntry"`
 		} `json:"data"`
 	}
-	return c.do(ctx, `
+	if err := c.do(ctx, `
 		mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }
-	`, map[string]any{"id": entry.ID}, &resp)
+	`, map[string]any{"id": entry.ID}, &resp); err != nil && !errors.Is(err, errAniListNotFound) {
+		return err
+	}
+	return nil
 }

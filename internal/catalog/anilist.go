@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,10 @@ import (
 )
 
 const AniListProvider = "anilist"
+
+// errAniListNotFound marks an HTTP 404 from AniList, so a delete of an
+// already-absent entry can be treated as success.
+var errAniListNotFound = errors.New("anilist: not found")
 
 // AniListClient queries AniList GraphQL.
 type AniListClient struct {
@@ -301,6 +306,9 @@ func (c *AniListClient) do(ctx context.Context, query string, variables map[stri
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("anilist HTTP 404: %w", errAniListNotFound)
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("anilist HTTP %d", resp.StatusCode)
 	}
