@@ -10,6 +10,26 @@ import (
 	"github.com/brogergvhs/mangad/internal/catalog"
 )
 
+func TestVisibleTagOptions(t *testing.T) {
+	t.Parallel()
+
+	options := []catalog.ContentTag{
+		{Name: "Action", Kind: "genre"},
+		{Name: "Gore", Kind: "tag"},
+		{Name: "Kids", Kind: "tag"},
+	}
+	ctx := auth.WithUser(context.Background(), &auth.User{BlockedTags: []string{"gore"}})
+	got := visibleTagOptions(ctx, append([]catalog.ContentTag(nil), options...))
+	if len(got) != 2 || got[0].Name != "Action" || got[1].Name != "Kids" {
+		t.Errorf("visibleTagOptions = %v, want Action+Kids", got)
+	}
+
+	free := auth.WithUser(context.Background(), &auth.User{})
+	if got := visibleTagOptions(free, options); len(got) != 3 {
+		t.Errorf("no blocked tags should keep all options, got %v", got)
+	}
+}
+
 func TestContentAllowedAllowedTags(t *testing.T) {
 	t.Parallel()
 

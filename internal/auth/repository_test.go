@@ -9,6 +9,23 @@ import (
 	"github.com/brogergvhs/mangad/internal/database"
 )
 
+func TestMemberRoleHasNoJobsOrImportPerms(t *testing.T) {
+	t.Parallel()
+
+	for _, role := range builtinRoles() {
+		if role.Name != "member" {
+			continue
+		}
+		for _, p := range role.Perms {
+			if p == PermJobsView || p == PermJobsManage || p == PermImportUse {
+				t.Errorf("member role must not hold %s", p)
+			}
+		}
+		return
+	}
+	t.Fatal("member role missing")
+}
+
 func TestUserContentGuardsRoundTrip(t *testing.T) {
 	t.Parallel()
 

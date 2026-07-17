@@ -439,14 +439,38 @@ func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := u.svc.RecommendedManga(r.Context(), limit)
 	if err != nil {
-		u.frag(w, "mangaResults", mangaResults{})
+		u.frag(w, "mangaResults", u.guardedBrowse(r.Context(), c))
 		return
 	}
 	items = filterSortManga(items, c)
 	if len(items) > 18 {
 		items = items[:18]
 	}
-	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", c.View, items))
+	view := u.mangaResultsView(r.Context(), "", c.View, items)
+	if len(view.Items) == 0 {
+		view = u.guardedBrowse(r.Context(), c)
+	}
+	u.frag(w, "mangaResults", view)
+}
+
+// guardedBrowse fills an empty suggestions grid with a popularity browse
+// pre-filtered by the acting user's tag guards.
+func (u *webUI) guardedBrowse(ctx context.Context, c searchControls) mangaResults {
+	filter := catalog.SearchFilter{Sort: anilistSort(c.Sort, c.Dir)}
+	if filter.Sort == "" {
+		filter.Sort = "POPULARITY_DESC"
+	}
+	if usr := auth.FromContext(ctx); usr != nil {
+		if options, err := u.svc.ContentTagOptions(ctx); err == nil && len(options) > 0 {
+			filter.GenreIn, filter.TagIn = splitByKind(usr.AllowedTags, options)
+			filter.GenreNotIn, filter.TagNotIn = splitByKind(usr.BlockedTags, options)
+		}
+	}
+	items, _, err := u.svc.SearchAniList(ctx, "", 18, filter)
+	if err != nil {
+		return mangaResults{}
+	}
+	return u.mangaResultsView(ctx, "", c.View, items)
 }
 
 // filterNSFWSources hides NSFW-only sources from users without adult access.
@@ -483,6 +507,21 @@ func contentAllowed(ctx context.Context, isAdult bool, tags []string) bool {
 // mangaContentTags collects the tag/genre vocabulary a catalog entry carries.
 func mangaContentTags(m catalog.Manga) []string {
 	return append(append([]string{}, m.Tags...), m.Genres...)
+}
+
+// visibleTagOptions hides the acting user's blocked tags from filter pickers.
+func visibleTagOptions(ctx context.Context, options []catalog.ContentTag) []catalog.ContentTag {
+	u := auth.FromContext(ctx)
+	if u == nil || len(u.BlockedTags) == 0 {
+		return options
+	}
+	out := options[:0]
+	for _, o := range options {
+		if !library.HasAnyTag([]string{o.Name}, u.BlockedTags) {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // filterRestrictedTitles hides titles the acting user must not see (adult
@@ -605,6 +644,7 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 		// Only the editor may block on the one-time AniList vocabulary fetch.
 		view.TagOptions, _ = u.svc.ContentTagOptions(r.Context())
 	}
+	view.TagOptions = visibleTagOptions(r.Context(), view.TagOptions)
 	view.Controls = libraryControlsFrom(screenDefaults(values, view.Screen))
 	title := "Library"
 	if view.Screen != nil {
@@ -1653,7 +1693,8 @@ func filterSortManga(items []catalog.Manga, c searchControls) []catalog.Manga {
 
 func (u *webUI) searchPage(w http.ResponseWriter, r *http.Request) {
 	view := searchView{Controls: searchControlsFrom(r.URL.Query())}
-	view.TagOptions, _ = u.svc.StoredContentTags(r.Context())
+	options, _ := u.svc.StoredContentTags(r.Context())
+	view.TagOptions = visibleTagOptions(r.Context(), options)
 	u.page(w, r, "search", "Search", view)
 }
 
