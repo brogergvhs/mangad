@@ -1948,7 +1948,7 @@ func (u *webUI) libRemove(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if _, err := u.svc.RemoveTitleFiles(r.Context(), id, r.FormValue("delete_files") == "on", r.FormValue("drop_anilist") == "on"); err != nil {
+	if _, err := u.svc.RemoveTitleFiles(r.Context(), id, r.FormValue("delete_files") == "on", r.FormValue("delete_anilist") == "on"); err != nil {
 		u.fail(w, err)
 		return
 	}

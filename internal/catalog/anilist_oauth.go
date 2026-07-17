@@ -261,3 +261,36 @@ func (c *AniListClient) SaveEntry(ctx context.Context, mediaID, progress int, st
 			SaveMediaListEntry(mediaId: $id, progress: $progress, status: $status) { id }
 		}`, vars, &resp)
 }
+
+// DeleteEntry removes the authenticated user's list entry for a media entirely.
+// A missing entry is treated as already gone.
+func (c *AniListClient) DeleteEntry(ctx context.Context, mediaID int) error {
+	var lookup struct {
+		Data struct {
+			Media struct {
+				MediaListEntry *struct {
+					ID int `json:"id"`
+				} `json:"mediaListEntry"`
+			} `json:"Media"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, `
+		query ($id: Int) { Media(id: $id, type: MANGA) { mediaListEntry { id } } }
+	`, map[string]any{"id": mediaID}, &lookup); err != nil {
+		return err
+	}
+	entry := lookup.Data.Media.MediaListEntry
+	if entry == nil {
+		return nil
+	}
+	var resp struct {
+		Data struct {
+			DeleteMediaListEntry struct {
+				Deleted bool `json:"deleted"`
+			} `json:"DeleteMediaListEntry"`
+		} `json:"data"`
+	}
+	return c.do(ctx, `
+		mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }
+	`, map[string]any{"id": entry.ID}, &resp)
+}

@@ -1229,6 +1229,25 @@ func (s *JobService) markAniListDropped(ctx context.Context, userID int64, media
 	}()
 }
 
+// deleteAniListEntry removes a title from the acting user's AniList list
+// entirely, in the background.
+func (s *JobService) deleteAniListEntry(ctx context.Context, userID int64, mediaID int) {
+	ctx = context.WithoutCancel(ctx)
+	actx, _, ok := s.aniListIdentity(ctx, userID)
+	if !ok {
+		return
+	}
+	go func() {
+		pctx, cancel := context.WithTimeout(actx, 3*time.Minute)
+		defer cancel()
+		if err := s.want.AniList().DeleteEntry(pctx, mediaID); err != nil {
+			log.Printf("anilist delete (media %d): %v", mediaID, err)
+			return
+		}
+		s.invalidateRecs(userID)
+	}()
+}
+
 // ToggleFavourite flips the acting user's favourite and mirrors it to their
 // AniList account in the background.
 func (s *JobService) ToggleFavourite(ctx context.Context, titleID int64) (bool, error) {
@@ -1462,7 +1481,7 @@ func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Man
 // RemoveTitleFiles removes a title and, when deleteFiles is set, its
 // downloaded folder on disk. Without deletion the folder reappears on the
 // Import page as an untracked candidate.
-func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles, dropAniList bool) (library.Title, error) {
+func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles, deleteAniList bool) (library.Title, error) {
 	title, err := s.lib.GetTitle(ctx, id)
 	if err != nil {
 		return library.Title{}, err
@@ -1486,8 +1505,12 @@ func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles
 	if _, err := s.lib.RemoveTitle(ctx, id); err != nil {
 		return library.Title{}, err
 	}
-	if dropAniList && hasAniList {
-		s.markAniListDropped(ctx, auth.UserID(ctx), mediaID)
+	if hasAniList {
+		if deleteAniList {
+			s.deleteAniListEntry(ctx, auth.UserID(ctx), mediaID)
+		} else {
+			s.markAniListDropped(ctx, auth.UserID(ctx), mediaID)
+		}
 	}
 	if filesDir != "" {
 		if err := os.RemoveAll(filesDir); err != nil {
