@@ -88,7 +88,6 @@ type userEditView struct {
 	User       auth.User
 	Roles      []auth.Role
 	TagOptions []catalog.ContentTag
-	Blocked    map[string]bool
 }
 
 func (u *webUI) userEditModal(w http.ResponseWriter, r *http.Request) {
@@ -104,11 +103,7 @@ func (u *webUI) userEditModal(w http.ResponseWriter, r *http.Request) {
 	}
 	roles, _ := u.svc.Auth().ListRoles(r.Context())
 	opts, _ := u.svc.ContentTagOptions(r.Context())
-	blocked := make(map[string]bool, len(usr.BlockedTags))
-	for _, t := range usr.BlockedTags {
-		blocked[t] = true
-	}
-	u.frag(w, "userEditModal", userEditView{User: *usr, Roles: roles, TagOptions: opts, Blocked: blocked})
+	u.frag(w, "userEditModal", userEditView{User: *usr, Roles: roles, TagOptions: opts})
 }
 
 type roleEditView struct {
@@ -132,20 +127,18 @@ func (u *webUI) roleEditModal(w http.ResponseWriter, r *http.Request) {
 	u.fail(w, fmt.Errorf("role not found"))
 }
 
-// blockedTagsFromForm accepts both picker checkboxes (one value each) and the
-// no-vocabulary text fallback (one comma-separated value).
-func blockedTagsFromForm(r *http.Request) []string {
+func contentGuardsFromForm(r *http.Request) auth.ContentGuards {
 	_ = r.ParseForm()
-	var out []string
-	for _, v := range r.Form["blocked_tags"] {
-		out = append(out, splitCommaList(v)...)
+	return auth.ContentGuards{
+		AllowAdult:  r.FormValue("allow_adult") == "on",
+		BlockedTags: tagList(r.Form["blocked_tags"]),
+		AllowedTags: tagList(r.Form["allowed_tags"]),
 	}
-	return out
 }
 
 func (u *webUI) userCreate(w http.ResponseWriter, r *http.Request) {
 	roleID, _ := strconv.ParseInt(r.FormValue("role_id"), 10, 64)
-	if err := u.svc.Auth().CreateUser(r.Context(), r.FormValue("username"), r.FormValue("password"), roleID, r.FormValue("allow_adult") == "on", blockedTagsFromForm(r)); err != nil {
+	if err := u.svc.Auth().CreateUser(r.Context(), r.FormValue("username"), r.FormValue("password"), roleID, contentGuardsFromForm(r)); err != nil {
 		u.fail(w, err)
 		return
 	}
@@ -159,7 +152,7 @@ func (u *webUI) userUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roleID, _ := strconv.ParseInt(r.FormValue("role_id"), 10, 64)
-	if err := u.svc.Auth().UpdateUser(r.Context(), id, roleID, r.FormValue("password"), r.FormValue("allow_adult") == "on", blockedTagsFromForm(r)); err != nil {
+	if err := u.svc.Auth().UpdateUser(r.Context(), id, roleID, r.FormValue("password"), contentGuardsFromForm(r)); err != nil {
 		u.fail(w, err)
 		return
 	}

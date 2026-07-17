@@ -474,14 +474,10 @@ func contentAllowed(ctx context.Context, isAdult bool, tags []string) bool {
 	if isAdult && !u.AllowAdult {
 		return false
 	}
-	for _, blocked := range u.BlockedTags {
-		for _, tag := range tags {
-			if strings.EqualFold(strings.TrimSpace(blocked), strings.TrimSpace(tag)) {
-				return false
-			}
-		}
+	if len(u.AllowedTags) > 0 && !library.HasAnyTag(tags, u.AllowedTags) {
+		return false
 	}
-	return true
+	return !library.HasAnyTag(tags, u.BlockedTags)
 }
 
 // mangaContentTags collects the tag/genre vocabulary a catalog entry carries.

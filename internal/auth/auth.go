@@ -50,7 +50,8 @@ type User struct {
 	RoleID      int64
 	RoleName    string
 	AllowAdult  bool
-	BlockedTags []string // tags/genres this user must not see // per-user (not role): may see adult-flagged content
+	BlockedTags []string // tags/genres this user must not see
+	AllowedTags []string // when set, only manga carrying one of these are shown
 	Perms       map[string]bool
 	CreatedAt   time.Time
 }

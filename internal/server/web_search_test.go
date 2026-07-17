@@ -1,12 +1,41 @@
 package server
 
 import (
+	"context"
 	"net/url"
 	"reflect"
 	"testing"
 
+	"github.com/brogergvhs/mangad/internal/auth"
 	"github.com/brogergvhs/mangad/internal/catalog"
 )
+
+func TestContentAllowedAllowedTags(t *testing.T) {
+	t.Parallel()
+
+	ctx := auth.WithUser(context.Background(), &auth.User{
+		AllowedTags: []string{"Kids"},
+		BlockedTags: []string{"Gore"},
+	})
+	if !contentAllowed(ctx, false, []string{"Kids", "Action"}) {
+		t.Error("kids-tagged manga should be allowed")
+	}
+	if contentAllowed(ctx, false, []string{"Action"}) {
+		t.Error("manga without an allowed tag should be hidden")
+	}
+	if contentAllowed(ctx, false, nil) {
+		t.Error("untagged manga should be hidden under an allowlist")
+	}
+	if contentAllowed(ctx, false, []string{"Kids", "Gore"}) {
+		t.Error("blocked tag should win over the allowlist")
+	}
+	if contentAllowed(ctx, true, []string{"Kids"}) {
+		t.Error("adult flag should still hide content")
+	}
+	if !contentAllowed(auth.WithUser(context.Background(), &auth.User{}), false, []string{"Action"}) {
+		t.Error("no allowlist should keep everything visible")
+	}
+}
 
 func TestSearchControlsFrom(t *testing.T) {
 	t.Parallel()
