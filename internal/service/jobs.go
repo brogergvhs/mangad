@@ -1233,14 +1233,14 @@ func (s *JobService) markAniListDropped(ctx context.Context, userID int64, media
 // entirely, in the background.
 func (s *JobService) deleteAniListEntry(ctx context.Context, userID int64, mediaID int) {
 	ctx = context.WithoutCancel(ctx)
-	actx, _, ok := s.aniListIdentity(ctx, userID)
+	actx, aid, ok := s.aniListIdentity(ctx, userID)
 	if !ok {
 		return
 	}
 	go func() {
 		pctx, cancel := context.WithTimeout(actx, 3*time.Minute)
 		defer cancel()
-		if err := s.want.AniList().DeleteEntry(pctx, mediaID); err != nil {
+		if err := s.want.AniList().DeleteEntry(pctx, aid, mediaID); err != nil {
 			log.Printf("anilist delete (media %d): %v", mediaID, err)
 			return
 		}

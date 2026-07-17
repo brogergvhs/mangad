@@ -43,7 +43,7 @@ type WantedService struct {
 		UserList(context.Context, int) ([]catalog.AniListEntry, error)
 		MediaEntry(context.Context, int) (int, string, bool, error)
 		SaveEntry(context.Context, int, int, string) error
-		DeleteEntry(context.Context, int) error
+		DeleteEntry(context.Context, int, int) error
 		FavouriteManga(context.Context, int) ([]int, error)
 		IsFavourite(context.Context, int) (bool, error)
 		ToggleFavourite(context.Context, int) error
@@ -59,7 +59,7 @@ type AniListAPI interface {
 	UserList(context.Context, int) ([]catalog.AniListEntry, error)
 	MediaEntry(context.Context, int) (int, string, bool, error)
 	SaveEntry(context.Context, int, int, string) error
-	DeleteEntry(context.Context, int) error
+	DeleteEntry(context.Context, int, int) error
 	FavouriteManga(context.Context, int) ([]int, error)
 	IsFavourite(context.Context, int) (bool, error)
 	ToggleFavourite(context.Context, int) error

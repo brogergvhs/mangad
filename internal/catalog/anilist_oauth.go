@@ -264,27 +264,26 @@ func (c *AniListClient) SaveEntry(ctx context.Context, mediaID, progress int, st
 }
 
 // DeleteEntry removes the authenticated user's list entry for a media entirely.
-// A missing entry is treated as already gone.
-func (c *AniListClient) DeleteEntry(ctx context.Context, mediaID int) error {
+// The entry id is resolved via the viewer-scoped MediaList query rather than
+// Media.mediaListEntry, which AniList serves from a CDN cache that can return
+// a stale or foreign entry id. A missing entry is treated as already gone.
+func (c *AniListClient) DeleteEntry(ctx context.Context, userID, mediaID int) error {
 	var lookup struct {
 		Data struct {
-			Media struct {
-				MediaListEntry *struct {
-					ID int `json:"id"`
-				} `json:"mediaListEntry"`
-			} `json:"Media"`
+			MediaList *struct {
+				ID int `json:"id"`
+			} `json:"MediaList"`
 		} `json:"data"`
 	}
 	if err := c.do(ctx, `
-		query ($id: Int) { Media(id: $id, type: MANGA) { mediaListEntry { id } } }
-	`, map[string]any{"id": mediaID}, &lookup); err != nil {
+		query ($userId: Int, $mediaId: Int) { MediaList(userId: $userId, mediaId: $mediaId, type: MANGA) { id } }
+	`, map[string]any{"userId": userID, "mediaId": mediaID}, &lookup); err != nil {
 		if errors.Is(err, errAniListNotFound) {
 			return nil
 		}
 		return err
 	}
-	entry := lookup.Data.Media.MediaListEntry
-	if entry == nil {
+	if lookup.Data.MediaList == nil {
 		return nil
 	}
 	var resp struct {
@@ -294,10 +293,7 @@ func (c *AniListClient) DeleteEntry(ctx context.Context, mediaID int) error {
 			} `json:"DeleteMediaListEntry"`
 		} `json:"data"`
 	}
-	if err := c.do(ctx, `
+	return c.do(ctx, `
 		mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }
-	`, map[string]any{"id": entry.ID}, &resp); err != nil && !errors.Is(err, errAniListNotFound) {
-		return err
-	}
-	return nil
+	`, map[string]any{"id": lookup.Data.MediaList.ID}, &resp)
 }
