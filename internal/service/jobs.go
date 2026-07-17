@@ -42,7 +42,19 @@ type JobService struct {
 	running    sync.Map // job ID -> context.CancelCauseFunc for in-flight jobs
 	titleLocks sync.Map // title ID -> *sync.Mutex
 	auth       *auth.Service
+	recMu      sync.Mutex
+	recCache   map[int64]cachedRecs // user ID -> recommendation grid
 }
+
+// cachedRecs is a per-user recommendation grid kept briefly so filter
+// changes on the search page don't refetch the AniList list + related
+// queries on every toggle.
+type cachedRecs struct {
+	items   []catalog.Manga
+	expires time.Time
+}
+
+const recommendationTTL = 10 * time.Minute
 
 // errJobCancelled aborts an in-flight job on explicit user cancellation.
 var errJobCancelled = errors.New("cancelled by user")
@@ -694,13 +706,20 @@ func (s *JobService) ConnectAniList(ctx context.Context, userID int64, redirectU
 			anilist_name = excluded.anilist_name,
 			expires_at = excluded.expires_at
 	`, userID, token, aid, name, expires)
-	return err
+	if err != nil {
+		return err
+	}
+	s.invalidateRecs(userID)
+	return nil
 }
 
 // DisconnectAniList removes the user's stored token.
 func (s *JobService) DisconnectAniList(ctx context.Context, userID int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM user_anilist WHERE user_id = ?`, userID)
-	return err
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM user_anilist WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	s.invalidateRecs(userID)
+	return nil
 }
 
 // expandAniListSync spawns one child sync job per connected user.
@@ -825,6 +844,7 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 			}
 		}
 	}
+	s.invalidateRecs(userID)
 	return errs2err(errs)
 }
 
@@ -1045,7 +1065,9 @@ func (s *JobService) PushAniListEntry(ctx context.Context, userID, titleID int64
 		defer cancel()
 		if err := s.reconcileAniListEntry(pctx, mediaID, local, status); err != nil {
 			log.Printf("anilist entry push (media %d): %v", mediaID, err)
+			return
 		}
+		s.invalidateRecs(userID)
 	}()
 }
 
@@ -1103,7 +1125,9 @@ func (s *JobService) markAniListDropped(ctx context.Context, userID int64, media
 		defer cancel()
 		if err := s.want.AniList().SaveEntry(pctx, mediaID, -1, "DROPPED"); err != nil {
 			log.Printf("anilist drop (media %d): %v", mediaID, err)
+			return
 		}
+		s.invalidateRecs(userID)
 	}()
 }
 
@@ -1226,13 +1250,55 @@ func (s *JobService) TrendingManga(ctx context.Context, limit int) ([]catalog.Ma
 // their list entries, minus everything already on that list. Falls back to
 // global trending for disconnected users or empty lists.
 func (s *JobService) RecommendedManga(ctx context.Context, limit int) ([]catalog.Manga, error) {
+	uid := auth.UserID(ctx)
+	s.recMu.Lock()
+	if c, ok := s.recCache[uid]; ok && time.Now().Before(c.expires) {
+		items := append([]catalog.Manga(nil), c.items...)
+		s.recMu.Unlock()
+		if len(items) > limit {
+			items = items[:limit]
+		}
+		return items, nil
+	}
+	s.recMu.Unlock()
+	items, personalized, err := s.recommendedManga(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	// Trending fallbacks stay uncached so a user who connects AniList (or
+	// whose list was empty) gets personalized results on the next render.
+	if personalized {
+		s.recMu.Lock()
+		if s.recCache == nil {
+			s.recCache = map[int64]cachedRecs{}
+		}
+		s.recCache[uid] = cachedRecs{items: append([]catalog.Manga(nil), items...), expires: time.Now().Add(recommendationTTL)}
+		s.recMu.Unlock()
+	}
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return items, nil
+}
+
+// invalidateRecs drops a user's cached recommendation grid after their
+// AniList state changes.
+func (s *JobService) invalidateRecs(userID int64) {
+	s.recMu.Lock()
+	delete(s.recCache, userID)
+	s.recMu.Unlock()
+}
+
+func (s *JobService) recommendedManga(ctx context.Context, limit int) ([]catalog.Manga, bool, error) {
 	actx, aid, ok := s.aniListIdentity(ctx, auth.UserID(ctx))
 	if !ok {
-		return s.TrendingManga(ctx, limit)
+		items, err := s.TrendingManga(ctx, limit)
+		return items, false, err
 	}
 	entries, err := s.want.AniList().UserList(actx, aid)
 	if err != nil || len(entries) == 0 {
-		return s.TrendingManga(ctx, limit)
+		items, err := s.TrendingManga(ctx, limit)
+		return items, false, err
 	}
 	onList := make(map[string]bool, len(entries))
 	var seeds []catalog.AniListEntry
@@ -1275,12 +1341,12 @@ func (s *JobService) RecommendedManga(ctx context.Context, limit int) ([]catalog
 		}
 	}
 	if len(out) == 0 {
-		return s.TrendingManga(ctx, limit)
+		items, err := s.TrendingManga(ctx, limit)
+		return items, false, err
 	}
-	if len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
+	// The full pool is returned (and cached) untruncated so callers can
+	// filter before capping their grid.
+	return out, true, nil
 }
 
 // MangaByIDs returns catalog manga keyed by ID in one query.
@@ -1355,10 +1421,10 @@ func (s *JobService) SetMonitored(ctx context.Context, id int64, monitored bool)
 }
 
 // SearchAniList searches AniList and stores returned metadata locally.
-func (s *JobService) SearchAniList(ctx context.Context, query string, limit int) ([]catalog.Manga, error) {
+func (s *JobService) SearchAniList(ctx context.Context, query string, limit int, filter catalog.SearchFilter) ([]catalog.Manga, error) {
 	// Unauthenticated: a token makes AniList pre-filter adult entries by the
 	// account's own 18+ setting, bypassing mangaD's per-user content guard.
-	return s.want.SearchAniList(ctx, query, limit)
+	return s.want.SearchAniList(ctx, query, limit, filter)
 }
 
 // AddAniListWanted adds an AniList title to wanted.
