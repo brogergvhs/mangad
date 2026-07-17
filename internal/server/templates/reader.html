@@ -12,6 +12,7 @@
       <span id="reader-position">{{.PagePosition}}</span>
     </div>
     <div class="reader-nav-right">
+      {{if not .Empty}}<button class="btn btn-outline btn-sm" data-reader-download>Save for offline</button>{{end}}
       {{if .NextURL}}<a class="btn btn-outline btn-sm" data-reader-next href="{{.NextURL}}">Next chapter</a>{{end}}
     </div>
   </div>

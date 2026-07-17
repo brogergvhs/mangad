@@ -22,7 +22,7 @@ func authEnabled() bool { return os.Getenv("MANGAD_ADMIN_PASSWORD") != "" }
 // session cookie when auth is enabled, the env admin otherwise.
 func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" {
+		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" || r.URL.Path == "/sw.js" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -186,6 +186,7 @@ func registerAuthRoutes(mux *http.ServeMux, svc *service.JobService) {
 			svc.Auth().Logout(r.Context(), c.Value)
 		}
 		http.SetCookie(w, &http.Cookie{Name: "mangad_session", Value: "", Path: "/", MaxAge: -1})
+		w.Header().Set("Clear-Site-Data", `"cache"`) // drop any offline-cached per-user pages
 		w.Header().Set("HX-Redirect", "/login")
 	})
 }

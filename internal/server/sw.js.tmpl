@@ -1,0 +1,173 @@
+const VERSION = "__VERSION__";
+const SHELL = "shell-" + VERSION;
+const PAGES = "pages-v1";
+const PRECACHE = [
+  "/static/app.css?v=" + VERSION,
+  "/static/app.js?v=" + VERSION,
+  "/static/htmx.min.js?v=" + VERSION,
+  "/static/icon-192.png",
+  "/static/icon-512.png",
+];
+const QUEUE_DB = "mangad-sync";
+const QUEUE_STORE = "writes";
+
+self.addEventListener("install", function (e) {
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", function (e) {
+  e.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== PAGES).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+function isPageImage(url) {
+  return /\/api\/reader\/(chapters|volumes)\/\d+\/pages\/\d+$/.test(url.pathname);
+}
+function isProgressWrite(url) {
+  return /\/api\/reader\/(chapters|volumes)\/\d+\/pages$/.test(url.pathname);
+}
+
+self.addEventListener("fetch", function (e) {
+  const req = e.request;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  if (req.method === "POST" && isProgressWrite(url)) {
+    e.respondWith(sendOrQueue(req));
+    return;
+  }
+  if (req.method !== "GET") return;
+
+  if (url.pathname.startsWith("/static/") || isPageImage(url)) {
+    e.respondWith(cacheFirst(req, isPageImage(url) ? PAGES : SHELL));
+    return;
+  }
+  if (req.mode === "navigate" || url.pathname.startsWith("/api/reader/")) {
+    e.respondWith(networkFirst(req));
+    return;
+  }
+});
+
+async function cacheFirst(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res.ok && !res.redirected) cache.put(req, res.clone());
+  return res;
+}
+
+// Navigations and manifests are per-user; they are served fresh from the
+// network and only fall back to whatever "Save for offline" cached — never
+// stored incidentally, so no cross-user HTML leaks into the shared cache.
+async function networkFirst(req) {
+  try {
+    const res = await fetch(req);
+    flush();
+    return res;
+  } catch (err) {
+    const hit = await caches.open(SHELL).then((c) => c.match(req));
+    if (hit) return hit;
+    throw err;
+  }
+}
+
+function retryable(status) {
+  return status === 401 || status === 403 || status >= 500;
+}
+
+async function sendOrQueue(req) {
+  const body = await req.clone().text();
+  try {
+    const res = await fetch(req);
+    if (res.ok) { flush(); return res; }
+    if (retryable(res.status)) throw new Error("retryable");
+    return res; // genuine 4xx (bad request) — let the reader see it
+  } catch (err) {
+    await enqueue({ url: req.url, body: body });
+    return new Response(null, { status: 202 });
+  }
+}
+
+function openQueue() {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(QUEUE_DB, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore(QUEUE_STORE, { keyPath: "id", autoIncrement: true });
+    open.onsuccess = () => resolve(open.result);
+    open.onerror = () => reject(open.error);
+  });
+}
+
+function txStore(db, mode) {
+  return db.transaction(QUEUE_STORE, mode).objectStore(QUEUE_STORE);
+}
+
+async function enqueue(entry) {
+  const db = await openQueue();
+  await new Promise((resolve, reject) => {
+    const r = txStore(db, "readwrite").add(entry);
+    r.onsuccess = resolve;
+    r.onerror = () => reject(r.error);
+  });
+  db.close();
+}
+
+let flushing = false;
+async function flush() {
+  if (flushing) return;
+  flushing = true;
+  try {
+    const db = await openQueue();
+    const entries = await new Promise((resolve, reject) => {
+      const r = txStore(db, "readonly").getAll();
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    for (const entry of entries) {
+      let res;
+      try {
+        res = await fetch(entry.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: entry.body,
+        });
+      } catch (err) {
+        break; // still offline
+      }
+      if (retryable(res.status)) break; // expired session or transient — keep, retry after re-login
+      await new Promise((resolve) => {
+        const d = txStore(db, "readwrite").delete(entry.id);
+        d.onsuccess = resolve;
+        d.onerror = resolve;
+      });
+    }
+    db.close();
+  } finally {
+    flushing = false;
+  }
+}
+
+self.addEventListener("message", function (e) {
+  const msg = e.data || {};
+  if (msg.type === "flush") {
+    flush();
+  } else if (msg.type === "save" && Array.isArray(msg.urls)) {
+    e.waitUntil(saveForOffline(msg.urls));
+  }
+});
+
+async function saveForOffline(urls) {
+  const shell = await caches.open(SHELL);
+  const pages = await caches.open(PAGES);
+  await Promise.all(urls.map(async (u) => {
+    try {
+      const res = await fetch(u, { credentials: "same-origin" });
+      if (!res.ok || res.redirected) return;
+      const target = isPageImage(new URL(u, self.location.origin)) ? pages : shell;
+      await target.put(u, res.clone());
+    } catch (err) { /* skip unreachable */ }
+  }));
+}

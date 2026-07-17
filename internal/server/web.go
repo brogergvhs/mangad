@@ -35,6 +35,9 @@ var templateFS embed.FS
 //go:embed static/*
 var staticFS embed.FS
 
+//go:embed sw.js.tmpl
+var swTemplate string
+
 type webUI struct {
 	svc      *service.JobService
 	tmpl     *template.Template
@@ -269,6 +272,16 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		staticHandler.ServeHTTP(w, r)
 	}))
+
+	// The service worker must live at the root so its scope covers the whole
+	// app; its version is baked in so the shell cache rotates per build.
+	sw := []byte(strings.ReplaceAll(swTemplate, "__VERSION__", u.assetVer))
+	mux.HandleFunc("GET /sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		_, _ = w.Write(sw)
+	})
 
 	mux.HandleFunc("GET /{$}", u.homePage)
 	mux.HandleFunc("GET /management", u.management)

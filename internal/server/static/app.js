@@ -1,3 +1,18 @@
+// --- PWA: register the service worker and nudge it to flush queued offline
+// progress writes whenever connectivity or focus returns ---
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(function () {});
+  function flushWrites() {
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: "flush" });
+    }
+  }
+  window.addEventListener("online", flushWrites);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") flushWrites();
+  });
+}
+
 // --- dropdowns: close any open <details.dropdown> on outside click or action ---
 document.addEventListener("click", function (e) {
   var inDrop = e.target.closest("details.dropdown");
@@ -206,6 +221,22 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
     return;
   }
 
+  var saveBtn = document.querySelector("[data-reader-download]");
+  if (saveBtn && navigator.serviceWorker) {
+    saveBtn.addEventListener("click", function () {
+      var urls = [location.href];
+      (manifest.chapters || []).forEach(function (ch) {
+        if (manifest.extend_base) urls.push(manifest.extend_base + ch.id);
+        (ch.pages || []).forEach(function (p) { urls.push(p.url); });
+      });
+      navigator.serviceWorker.ready.then(function (reg) {
+        (reg.active || navigator.serviceWorker.controller).postMessage({ type: "save", urls: urls });
+      });
+      saveBtn.textContent = "Saved for offline";
+      saveBtn.disabled = true;
+    });
+  }
+
   // Flatten the manifest into an ordered build queue. Elements are appended
   // strictly in order, and each image is appended only after it has fully
   // loaded (dimensions known), so the layout never collapses and a later
@@ -252,7 +283,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       keepalive: true, // final page marks must survive chapter navigation
     }).then(function (resp) {
       if (!resp.ok) throw new Error("reader write failed");
-      return resp.json();
+      return resp.status === 202 ? {} : resp.json(); // 202 = queued offline, empty body
     });
   }
 
