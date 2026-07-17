@@ -432,18 +432,21 @@ func (u *webUI) relatedManga(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
-	// Over-fetch so include/exclude filters act on the full candidate pool
-	// rather than on an arbitrary 18-item cut.
-	items, err := u.svc.RecommendedManga(r.Context(), 54)
+	c := searchControlsFrom(r.Form)
+	limit := 18
+	if c.Sort != "" {
+		limit = 54 // sort over the full cached pool, not an arbitrary cut
+	}
+	items, err := u.svc.RecommendedManga(r.Context(), limit)
 	if err != nil {
 		u.frag(w, "mangaResults", mangaResults{})
 		return
 	}
-	items = filterSortManga(items, searchControlsFrom(r.Form))
+	items = filterSortManga(items, c)
 	if len(items) > 18 {
 		items = items[:18]
 	}
-	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), items))
+	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", c.View, items))
 }
 
 // filterNSFWSources hides NSFW-only sources from users without adult access.
@@ -603,8 +606,7 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 	view.ShowEditor = view.Screen != nil || view.OpenEditor
 	view.TagOptions, _ = u.svc.StoredContentTags(r.Context())
 	if len(view.TagOptions) == 0 && view.ShowEditor {
-		// The editor keeps its on-demand AniList vocabulary fetch; the plain
-		// library render must never block on the network.
+		// Only the editor may block on the one-time AniList vocabulary fetch.
 		view.TagOptions, _ = u.svc.ContentTagOptions(r.Context())
 	}
 	view.Controls = libraryControlsFrom(screenDefaults(values, view.Screen))
@@ -928,8 +930,7 @@ func libraryTableParams(values url.Values) url.Values {
 	return out
 }
 
-// tagList flattens repeated form values, splitting comma lists from the
-// text-input fallback of the tag picker.
+// tagList flattens repeated form values, splitting comma-list fallbacks.
 func tagList(raw []string) []string {
 	var out []string
 	for _, v := range raw {
@@ -1571,8 +1572,7 @@ func searchControlsFrom(values url.Values) searchControls {
 	return c
 }
 
-// anilistSort maps a search sort control to an AniList MediaSort enum; empty
-// keeps AniList's relevance ranking.
+// anilistSort maps a sort control to an AniList MediaSort enum.
 func anilistSort(key, dir string) string {
 	enum, ok := map[string]string{
 		"rating":   "SCORE",
@@ -1589,8 +1589,7 @@ func anilistSort(key, dir string) string {
 	return enum
 }
 
-// splitByKind partitions tag-filter values into AniList genres and tags via
-// the stored vocabulary; unknown names count as tags.
+// splitByKind partitions values into genres and tags; unknown names are tags.
 func splitByKind(names []string, options []catalog.ContentTag) (genres, tags []string) {
 	kinds := make(map[string]string, len(options))
 	for _, o := range options {
@@ -1606,10 +1605,8 @@ func splitByKind(names []string, options []catalog.ContentTag) (genres, tags []s
 	return genres, tags
 }
 
-// filterSortManga applies the search controls to catalog entries: every
-// include tag must be present, no exclude tag may be, then sorts. It is the
-// final authority over whatever pre-filtering AniList did.
-func filterSortManga(items []catalog.Manga, c searchControls) []catalog.Manga {
+// filterManga keeps entries carrying every include tag and no exclude tag.
+func filterManga(items []catalog.Manga, c searchControls) []catalog.Manga {
 	out := items[:0]
 	for _, m := range items {
 		tags := mangaContentTags(m)
@@ -1624,6 +1621,12 @@ func filterSortManga(items []catalog.Manga, c searchControls) []catalog.Manga {
 			out = append(out, m)
 		}
 	}
+	return out
+}
+
+// filterSortManga additionally sorts; only for unsorted recommendation pools.
+func filterSortManga(items []catalog.Manga, c searchControls) []catalog.Manga {
+	out := filterManga(items, c)
 	chapters := func(m catalog.Manga) int {
 		if m.Chapters == nil {
 			return 0
@@ -1658,31 +1661,65 @@ func (u *webUI) searchPage(w http.ResponseWriter, r *http.Request) {
 	u.page(w, r, "search", "Search", view)
 }
 
+// searchResultsView is one result page plus the "Show more" continuation.
+type searchResultsView struct {
+	Results   mangaResults
+	Controls  searchControls
+	View      string
+	NextPage  int  // 0 = no further pages
+	RetryPage int  // set with Error: the page to retry
+	Append    bool // page 2+: suppress the empty-state text
+	Error     bool
+}
+
+const searchPerPage = 18
+
 func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	c := searchControlsFrom(r.Form)
-	if c.Q == "" {
-		// Cleared input: fall back to the recommendations grid.
+	filtered := len(c.IncludeTags) > 0 || len(c.ExcludeTags) > 0
+	if c.Q == "" && !filtered {
 		u.trendingManga(w, r)
 		return
 	}
+	page, _ := strconv.Atoi(r.FormValue("page"))
+	if page < 1 {
+		page = 1
+	}
 	filter := catalog.SearchFilter{Sort: anilistSort(c.Sort, c.Dir)}
-	if len(c.IncludeTags) > 0 || len(c.ExcludeTags) > 0 {
-		// The vocabulary decides genre_in vs tag_in; without it genre names
-		// sent as tag_in silently match nothing on AniList, so skip the
-		// server-side pre-filter and let filterSortManga enforce the
-		// selection on the returned page instead.
+	if c.Q == "" && filter.Sort == "" {
+		filter.Sort = "POPULARITY_DESC" // a browse without a query has no relevance ranking
+	}
+	if filtered {
+		// Without the vocabulary genre names would go to tag_in and match nothing.
 		if options, err := u.svc.ContentTagOptions(r.Context()); err == nil && len(options) > 0 {
 			filter.GenreIn, filter.TagIn = splitByKind(c.IncludeTags, options)
 			filter.GenreNotIn, filter.TagNotIn = splitByKind(c.ExcludeTags, options)
 		}
 	}
-	items, err := u.svc.SearchAniList(r.Context(), c.Q, 12, filter)
-	if err != nil {
-		u.fail(w, err)
-		return
+	view := searchResultsView{Controls: c, View: c.View, Append: page > 1}
+	// Scan ahead past pages the tag filter empties.
+	var items []catalog.Manga
+	more, last := false, page
+	for scan := 0; scan < 3; scan++ {
+		last = page + scan
+		filter.Page = last
+		fetched, m, err := u.svc.SearchAniList(r.Context(), c.Q, searchPerPage, filter)
+		if err != nil {
+			view.Error, view.RetryPage = true, page
+			u.frag(w, "searchResults", view)
+			return
+		}
+		items, more = filterManga(fetched, c), m
+		if len(items) > 0 || !more {
+			break
+		}
 	}
-	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), filterSortManga(items, c)))
+	view.Results = u.mangaResultsView(r.Context(), "", view.View, items)
+	if more {
+		view.NextPage = last + 1
+	}
+	u.frag(w, "searchResults", view)
 }
 
 func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
@@ -1831,7 +1868,7 @@ func (u *webUI) importSearch(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		query = importQuery(folder)
 	}
-	items, err := u.svc.SearchAniList(r.Context(), query, 10, catalog.SearchFilter{})
+	items, _, err := u.svc.SearchAniList(r.Context(), query, 10, catalog.SearchFilter{})
 	if err != nil {
 		u.fail(w, err)
 		return
@@ -2526,10 +2563,7 @@ func (u *webUI) funcs() template.FuncMap {
 			return map[string]int64{"Read": readPct, "Full": fullPct}
 		},
 		"tagPicker": func(options []catalog.ContentTag, values []string, name, label, hint string) map[string]any {
-			// Selected keys are canonicalized to option names so values from
-			// hand-typed URLs or the text fallback render checked; values
-			// matching no option render as extra checked entries so they
-			// survive the next form serialization.
+			// Keys canonicalize to option names; unmatched values become Extras.
 			selected := make(map[string]bool, len(values))
 			var extras []string
 			for _, v := range values {

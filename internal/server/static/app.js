@@ -91,10 +91,8 @@ document.addEventListener("change", function (e) {
   summary.textContent = count ? count + " selected" : "None selected";
 });
 
-// Library filters: mirror each table refresh into the URL so reloads and
-// back-navigation keep the current filters. Sidebar links (/library,
-// /library?screen=N) navigate without filter params and so reset them.
-// Poll refreshes are skipped; the screen-editor params survive rewrites.
+// Library filters: mirror table refreshes into the URL so reloads and
+// back-navigation keep them; plain sidebar links reset them.
 document.body.addEventListener("htmx:afterRequest", function (e) {
   if (!e.detail.successful || !e.detail.xhr || !e.detail.xhr.responseURL) return;
   if (e.detail.elt && e.detail.elt.hasAttribute("data-poll")) return;
@@ -109,8 +107,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   history.replaceState(null, "", "/library" + (qs ? "?" + qs : ""));
 });
 
-// Search filters: mirror the form state into the URL on /search so reloads
-// and shared links reproduce the current query and filters.
+// Search filters: mirror the form state into the /search URL.
 document.body.addEventListener("htmx:afterRequest", function (e) {
   if (location.pathname !== "/search") return;
   if (!e.detail.successful || !e.detail.xhr || !e.detail.xhr.responseURL) return;

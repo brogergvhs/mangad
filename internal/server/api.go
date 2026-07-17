@@ -323,7 +323,12 @@ func New(
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		items, err := svc.SearchAniList(r.Context(), r.URL.Query().Get("q"), 10, catalog.SearchFilter{})
+		q := strings.TrimSpace(r.URL.Query().Get("q"))
+		if q == "" {
+			writeError(w, http.StatusBadRequest, "q is required")
+			return
+		}
+		items, _, err := svc.SearchAniList(r.Context(), q, 10, catalog.SearchFilter{})
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return

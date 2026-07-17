@@ -46,9 +46,7 @@ type JobService struct {
 	recCache   map[int64]cachedRecs // user ID -> recommendation grid
 }
 
-// cachedRecs is a per-user recommendation grid kept briefly so filter
-// changes on the search page don't refetch the AniList list + related
-// queries on every toggle.
+// cachedRecs is a user's recommendation pool, cached to spare AniList calls.
 type cachedRecs struct {
 	items   []catalog.Manga
 	expires time.Time
@@ -975,8 +973,7 @@ func (s *JobService) refreshTagVocabulary(ctx context.Context) error {
 	return s.want.catalog.ReplaceContentTags(ctx, genres, tags)
 }
 
-// StoredContentTags returns the stored tag/genre vocabulary without ever
-// fetching it remotely.
+// StoredContentTags returns the stored vocabulary without remote fetching.
 func (s *JobService) StoredContentTags(ctx context.Context) ([]catalog.ContentTag, error) {
 	return s.want.catalog.ContentTags(ctx)
 }
@@ -1245,35 +1242,22 @@ func (s *JobService) TrendingManga(ctx context.Context, limit int) ([]catalog.Ma
 	return s.want.AniList().Trending(ctx, limit) // unauthenticated: see SearchAniList
 }
 
-// RecommendedManga returns account-aware suggestions when the acting user has
-// a connected AniList account: AniList's recommendations for a handful of
-// their list entries, minus everything already on that list. Falls back to
-// global trending for disconnected users or empty lists.
+// RecommendedManga returns AniList recommendations seeded from the acting
+// user's list, falling back to global trending without a connected account.
 func (s *JobService) RecommendedManga(ctx context.Context, limit int) ([]catalog.Manga, error) {
 	uid := auth.UserID(ctx)
-	s.recMu.Lock()
-	if c, ok := s.recCache[uid]; ok && time.Now().Before(c.expires) {
-		items := append([]catalog.Manga(nil), c.items...)
-		s.recMu.Unlock()
-		if len(items) > limit {
-			items = items[:limit]
+	items, ok := s.recsFromCache(uid)
+	if !ok {
+		var personalized bool
+		var err error
+		items, personalized, err = s.recommendedManga(ctx, limit)
+		if err != nil {
+			return nil, err
 		}
-		return items, nil
-	}
-	s.recMu.Unlock()
-	items, personalized, err := s.recommendedManga(ctx, limit)
-	if err != nil {
-		return nil, err
-	}
-	// Trending fallbacks stay uncached so a user who connects AniList (or
-	// whose list was empty) gets personalized results on the next render.
-	if personalized {
-		s.recMu.Lock()
-		if s.recCache == nil {
-			s.recCache = map[int64]cachedRecs{}
+		// Fallbacks stay uncached so a fresh connect shows up immediately.
+		if personalized {
+			s.cacheRecs(uid, items)
 		}
-		s.recCache[uid] = cachedRecs{items: append([]catalog.Manga(nil), items...), expires: time.Now().Add(recommendationTTL)}
-		s.recMu.Unlock()
 	}
 	if len(items) > limit {
 		items = items[:limit]
@@ -1281,8 +1265,26 @@ func (s *JobService) RecommendedManga(ctx context.Context, limit int) ([]catalog
 	return items, nil
 }
 
-// invalidateRecs drops a user's cached recommendation grid after their
-// AniList state changes.
+func (s *JobService) recsFromCache(uid int64) ([]catalog.Manga, bool) {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	c, ok := s.recCache[uid]
+	if !ok || !time.Now().Before(c.expires) {
+		return nil, false
+	}
+	return append([]catalog.Manga(nil), c.items...), true
+}
+
+func (s *JobService) cacheRecs(uid int64, items []catalog.Manga) {
+	s.recMu.Lock()
+	defer s.recMu.Unlock()
+	if s.recCache == nil {
+		s.recCache = map[int64]cachedRecs{}
+	}
+	s.recCache[uid] = cachedRecs{items: append([]catalog.Manga(nil), items...), expires: time.Now().Add(recommendationTTL)}
+}
+
+// invalidateRecs drops a user's cached recommendations on AniList changes.
 func (s *JobService) invalidateRecs(userID int64) {
 	s.recMu.Lock()
 	delete(s.recCache, userID)
@@ -1344,8 +1346,6 @@ func (s *JobService) recommendedManga(ctx context.Context, limit int) ([]catalog
 		items, err := s.TrendingManga(ctx, limit)
 		return items, false, err
 	}
-	// The full pool is returned (and cached) untruncated so callers can
-	// filter before capping their grid.
 	return out, true, nil
 }
 
@@ -1421,7 +1421,7 @@ func (s *JobService) SetMonitored(ctx context.Context, id int64, monitored bool)
 }
 
 // SearchAniList searches AniList and stores returned metadata locally.
-func (s *JobService) SearchAniList(ctx context.Context, query string, limit int, filter catalog.SearchFilter) ([]catalog.Manga, error) {
+func (s *JobService) SearchAniList(ctx context.Context, query string, limit int, filter catalog.SearchFilter) ([]catalog.Manga, bool, error) {
 	// Unauthenticated: a token makes AniList pre-filter adult entries by the
 	// account's own 18+ setting, bypassing mangaD's per-user content guard.
 	return s.want.SearchAniList(ctx, query, limit, filter)

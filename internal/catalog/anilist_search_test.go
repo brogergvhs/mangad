@@ -13,8 +13,52 @@ func TestSearchQueryVarsPlain(t *testing.T) {
 	if strings.Contains(gql, "genre_in") || strings.Contains(gql, "tag_in") || strings.Contains(gql, "sort: $sort") {
 		t.Errorf("plain search should not declare filter args:\n%s", gql)
 	}
-	if want := map[string]any{"search": "naruto", "perPage": 12}; !reflect.DeepEqual(vars, want) {
+	for _, arg := range []string{"search: $search", "Page(page: $page", "pageInfo { hasNextPage }"} {
+		if !strings.Contains(gql, arg) {
+			t.Errorf("query missing %q:\n%s", arg, gql)
+		}
+	}
+	if want := map[string]any{"search": "naruto", "perPage": 12, "page": 1}; !reflect.DeepEqual(vars, want) {
 		t.Errorf("vars = %v, want %v", vars, want)
+	}
+}
+
+func TestSearchHasMore(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		hasNext     bool
+		page, limit int
+		want        bool
+	}{
+		{true, 1, 18, true},
+		{false, 1, 18, false},
+		{true, 276, 18, true},  // 277*18 = 4986 <= 5000
+		{true, 277, 18, false}, // 278*18 = 5004 > 5000
+		{true, 0, 18, true},    // unset page treated as 1
+	}
+	for _, tc := range cases {
+		if got := searchHasMore(tc.hasNext, tc.page, tc.limit); got != tc.want {
+			t.Errorf("searchHasMore(%v, %d, %d) = %v, want %v", tc.hasNext, tc.page, tc.limit, got, tc.want)
+		}
+	}
+}
+
+func TestSearchQueryVarsBrowse(t *testing.T) {
+	t.Parallel()
+
+	gql, vars := searchQueryVars("", 18, SearchFilter{GenreIn: []string{"Cyberpunk"}, Sort: "POPULARITY_DESC", Page: 3})
+	if strings.Contains(gql, "search: $search") {
+		t.Errorf("browse without a query must not declare the search arg:\n%s", gql)
+	}
+	if _, ok := vars["search"]; ok {
+		t.Error("search var should be absent for a browse")
+	}
+	if vars["page"] != 3 {
+		t.Errorf("page = %v, want 3", vars["page"])
+	}
+	if !strings.Contains(gql, "genre_in: $genreIn") || !strings.Contains(gql, "sort: $sort") {
+		t.Errorf("browse filter args missing:\n%s", gql)
 	}
 }
 

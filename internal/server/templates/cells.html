@@ -249,6 +249,38 @@
 {{end}}
 {{end}}
 
+{{define "searchResults"}}
+{{if .Error}}
+<form class="py-2 text-center text-sm" hx-post="/ui/search" hx-target="this" hx-swap="outerHTML" hx-indicator="#search-spin">
+  {{template "searchResultsState" .}}
+  <input type="hidden" name="page" value="{{.RetryPage}}">
+  <span class="text-error">Search failed.</span>
+  <button type="submit" class="btn btn-xs btn-outline">Retry</button>
+</form>
+{{else}}
+{{if .Results.Items}}{{template "mangaResults" .Results}}
+{{else if and (not .Append) (not .NextPage)}}{{template "mangaResults" .Results}}
+{{else if not .Append}}<p class="py-2 text-sm text-base-content/60">No matches on the first pages — “Show more” keeps scanning.</p>
+{{else if not .NextPage}}<p class="py-2 text-center text-sm text-base-content/60">End of results.</p>{{end}}
+{{if .NextPage}}
+<form class="py-2 text-center" hx-post="/ui/search" hx-target="this" hx-swap="outerHTML" hx-indicator="#search-spin">
+  {{template "searchResultsState" .}}
+  <input type="hidden" name="page" value="{{.NextPage}}">
+  <button type="submit" class="btn btn-sm btn-outline">Show more</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "searchResultsState"}}
+<input type="hidden" name="q" value="{{.Controls.Q}}">
+<input type="hidden" name="sort" value="{{.Controls.Sort}}">
+<input type="hidden" name="dir" value="{{.Controls.Dir}}">
+<input type="hidden" name="view" value="{{.View}}">
+{{range .Controls.IncludeTags}}<input type="hidden" name="include_tags" value="{{.}}">{{end}}
+{{range .Controls.ExcludeTags}}<input type="hidden" name="exclude_tags" value="{{.}}">{{end}}
+{{end}}
+
 {{define "mangaResults"}}
 {{if .Heading}}<h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.Heading}}</h2>{{end}}
 {{if not .Items}}

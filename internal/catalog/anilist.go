@@ -43,17 +43,25 @@ type SearchFilter struct {
 	TagIn      []string
 	TagNotIn   []string
 	Sort       string
+	Page       int // 1-based result page; 0 means 1
 }
 
 // searchQueryVars builds the GraphQL query and variables for Search.
 func searchQueryVars(query string, limit int, f SearchFilter) (string, map[string]any) {
-	varDefs := "$search: String, $perPage: Int"
-	mediaArgs := "search: $search, type: MANGA, format: MANGA"
-	vars := map[string]any{"search": query, "perPage": limit}
+	page := f.Page
+	if page < 1 {
+		page = 1
+	}
+	varDefs := "$page: Int, $perPage: Int"
+	mediaArgs := "type: MANGA, format: MANGA"
+	vars := map[string]any{"page": page, "perPage": limit}
 	add := func(name, typ, arg string, val any) {
 		varDefs += ", $" + name + ": " + typ
 		mediaArgs += ", " + arg + ": $" + name
 		vars[name] = val
+	}
+	if query != "" {
+		add("search", "String", "search", query)
 	}
 	if len(f.GenreIn) > 0 {
 		add("genreIn", "[String]", "genre_in", f.GenreIn)
@@ -75,7 +83,8 @@ func searchQueryVars(query string, limit int, f SearchFilter) (string, map[strin
 	}
 	gql := fmt.Sprintf(`
 		query (%s) {
-			Page(page: 1, perPage: $perPage) {
+			Page(page: $page, perPage: $perPage) {
+				pageInfo { hasNextPage }
 				media(%s) {
 					id title { romaji english native } description(asHtml: false)
 					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
@@ -85,17 +94,28 @@ func searchQueryVars(query string, limit int, f SearchFilter) (string, map[strin
 	return gql, vars
 }
 
-// Search returns manga results for a text query.
-func (c *AniListClient) Search(ctx context.Context, query string, limit int, filter SearchFilter) ([]Manga, error) {
+const anilistMaxPageEntries = 5000
+
+// searchHasMore combines AniList's hasNextPage with the depth cap.
+func searchHasMore(hasNext bool, page, limit int) bool {
+	if page < 1 {
+		page = 1
+	}
+	return hasNext && (page+1)*limit <= anilistMaxPageEntries
+}
+
+// Search returns one result page and whether further pages exist.
+func (c *AniListClient) Search(ctx context.Context, query string, limit int, filter SearchFilter) ([]Manga, bool, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	gql, vars := searchQueryVars(query, limit, filter)
 	var resp anilistSearchResponse
 	if err := c.do(ctx, gql, vars, &resp); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return anilistMediaToManga(resp.Data.Page.Media)
+	items, err := anilistMediaToManga(resp.Data.Page.Media)
+	return items, searchHasMore(resp.Data.Page.PageInfo.HasNextPage, filter.Page, limit), err
 }
 
 // Related returns manga related to an AniList entry (relations first, then
@@ -306,6 +326,9 @@ func (c *AniListClient) do(ctx context.Context, query string, variables map[stri
 type anilistSearchResponse struct {
 	Data struct {
 		Page struct {
+			PageInfo struct {
+				HasNextPage bool `json:"hasNextPage"`
+			} `json:"pageInfo"`
 			Media []anilistMedia `json:"media"`
 		} `json:"Page"`
 	} `json:"data"`
