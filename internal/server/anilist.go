@@ -119,6 +119,10 @@ func (u *webUI) anilistSyncTitle(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
 	if err := u.svc.SyncAniListTitle(r.Context(), id); err != nil {
 		u.fail(w, err)
 		return

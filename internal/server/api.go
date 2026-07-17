@@ -341,6 +341,10 @@ func New(
 				writeError(w, http.StatusBadGateway, err.Error())
 				return
 			}
+			if !contentAllowed(r.Context(), item.IsAdult, mangaContentTags(item)) {
+				writeError(w, http.StatusNotFound, "not found")
+				return
+			}
 			writeJSON(w, http.StatusCreated, item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -391,6 +395,10 @@ func New(
 				writeError(w, http.StatusBadRequest, "invalid json")
 				return
 			}
+			if m, err := svc.GetManga(r.Context(), req.CatalogID); err != nil || !contentAllowed(r.Context(), m.IsAdult, mangaContentTags(m)) {
+				writeError(w, http.StatusNotFound, "not found")
+				return
+			}
 			matches, err := svc.MatchSources(r.Context(), req.CatalogID)
 			if err != nil {
 				writeError(w, http.StatusBadGateway, err.Error())
@@ -426,6 +434,10 @@ func New(
 		}
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
 		writeJSON(w, http.StatusCreated, title)

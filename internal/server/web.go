@@ -443,7 +443,7 @@ func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
 		u.frag(w, "mangaResults", u.guardedBrowse(r.Context(), c))
 		return
 	}
-	items = filterSortManga(items, c)
+	items = allowedManga(r.Context(), filterSortManga(items, c))
 	if len(items) > 18 {
 		items = items[:18]
 	}
@@ -486,7 +486,7 @@ func filterNSFWSources(ctx context.Context, list []sources.Source) []sources.Sou
 	if u != nil && u.AllowAdult {
 		return list
 	}
-	out := list[:0]
+	out := make([]sources.Source, 0, len(list))
 	for _, src := range list {
 		if !src.NSFW {
 			out = append(out, src)
@@ -519,7 +519,7 @@ func mangaContentTags(m catalog.Manga) []string {
 
 // allowedManga drops catalog entries the acting user must not see.
 func allowedManga(ctx context.Context, items []catalog.Manga) []catalog.Manga {
-	out := items[:0]
+	out := make([]catalog.Manga, 0, len(items))
 	for _, m := range items {
 		if contentAllowed(ctx, m.IsAdult, mangaContentTags(m)) {
 			out = append(out, m)
@@ -540,7 +540,7 @@ func visibleTagOptions(ctx context.Context, options []catalog.ContentTag) []cata
 	if u == nil || len(u.BlockedTags) == 0 {
 		return options
 	}
-	out := options[:0]
+	out := make([]catalog.ContentTag, 0, len(options))
 	for _, o := range options {
 		if !library.HasAnyTag([]string{o.Name}, u.BlockedTags) {
 			out = append(out, o)
@@ -552,7 +552,7 @@ func visibleTagOptions(ctx context.Context, options []catalog.ContentTag) []cata
 // filterRestrictedTitles hides titles the acting user must not see (adult
 // flag or blocked tags/genres).
 func filterRestrictedTitles(ctx context.Context, titles []library.Title) []library.Title {
-	out := titles[:0]
+	out := make([]library.Title, 0, len(titles))
 	for _, t := range titles {
 		if contentAllowed(ctx, t.IsAdult, t.ContentTags) {
 			out = append(out, t)
@@ -1337,6 +1337,10 @@ func (u *webUI) libLanguageMode(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
 	if err := u.svc.SetLanguageMode(r.Context(), id, r.FormValue("mode")); err != nil {
 		u.fail(w, err)
 		return
@@ -1349,6 +1353,10 @@ func (u *webUI) libFavourite(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
 		return
 	}
 	fav, err := u.svc.ToggleFavourite(r.Context(), id)
@@ -1395,7 +1403,8 @@ func (u *webUI) chapterRead(read bool) http.HandlerFunc {
 			u.fail(w, err)
 			return
 		}
-		if !titleAllowed(r.Context(), u.svc, titleID) {
+		status, err := u.svc.ChapterReadStatus(r.Context(), chapterID)
+		if err != nil || status.TitleID != titleID || !titleAllowed(r.Context(), u.svc, titleID) {
 			http.NotFound(w, r)
 			return
 		}
@@ -1419,6 +1428,10 @@ func (u *webUI) chapterRangeRead(w http.ResponseWriter, r *http.Request) {
 	titleID, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, titleID) {
+		http.NotFound(w, r)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1695,7 +1708,7 @@ func splitByKind(names []string, options []catalog.ContentTag) (genres, tags []s
 
 // filterManga keeps entries carrying every include tag and no exclude tag.
 func filterManga(items []catalog.Manga, c searchControls) []catalog.Manga {
-	out := items[:0]
+	out := make([]catalog.Manga, 0, len(items))
 	for _, m := range items {
 		tags := mangaContentTags(m)
 		keep := !library.HasAnyTag(tags, c.ExcludeTags)
@@ -1822,6 +1835,10 @@ func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
+		u.fail(w, fmt.Errorf("title not found"))
+		return
+	}
 	u.kick()
 	if r.FormValue("card") != "" {
 		u.frag(w, "addedButtonCard", title)
@@ -1891,6 +1908,10 @@ func (u *webUI) libRefreshInterval(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
 	if err := u.svc.SetRefreshInterval(r.Context(), id, r.FormValue("interval")); err != nil {
 		u.fail(w, err)
 		return
@@ -1902,6 +1923,10 @@ func (u *webUI) libMonitored(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
 		return
 	}
 	on := r.FormValue("on") == "true"
@@ -1917,6 +1942,10 @@ func (u *webUI) libRemove(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
 		return
 	}
 	if _, err := u.svc.RemoveTitleFiles(r.Context(), id, r.FormValue("delete_files") == "on", r.FormValue("drop_anilist") == "on"); err != nil {
@@ -1996,8 +2025,8 @@ func (u *webUI) findSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title, err := u.svc.GetTitle(r.Context(), id)
-	if err != nil {
-		u.fail(w, err)
+	if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
+		http.NotFound(w, r)
 		return
 	}
 	if title.CatalogMangaID == nil {
@@ -2038,6 +2067,10 @@ func (u *webUI) unlinkSource(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
 	if err := u.svc.UnlinkTitleSource(r.Context(), id, r.FormValue("url")); err != nil {
 		u.fail(w, err)
 		return
@@ -2049,6 +2082,10 @@ func (u *webUI) linkSource(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
 		return
 	}
 	matchID, err := strconv.ParseInt(r.FormValue("match_id"), 10, 64)
@@ -2070,6 +2107,10 @@ func (u *webUI) srcVerifyURL(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
 	sourceID := strings.TrimSpace(r.FormValue("source_id"))
 	rawURL := strings.TrimSpace(r.FormValue("url"))
 	res, err := u.svc.VerifySourceURL(r.Context(), sourceID, rawURL)
@@ -2086,6 +2127,10 @@ func (u *webUI) linkSourceURL(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
 	if _, err := u.svc.LinkTitleSourceURL(r.Context(), id, r.FormValue("source_id"), r.FormValue("url")); err != nil {
 		u.fail(w, err)
 		return
@@ -2098,6 +2143,10 @@ func (u *webUI) linkSourceByID(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
 		return
 	}
 	sourceID := strings.TrimSpace(r.FormValue("source_id"))

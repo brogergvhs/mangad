@@ -51,12 +51,12 @@ func (u *webUI) volumeRead(read bool) http.HandlerFunc {
 			u.fail(w, err)
 			return
 		}
-		if err := u.svc.SetVolumeRead(r.Context(), id, read); err != nil {
-			u.fail(w, err)
+		vol, err := u.svc.GetVolume(r.Context(), id)
+		if err != nil || !titleAllowed(r.Context(), u.svc, vol.TitleID) {
+			http.NotFound(w, r)
 			return
 		}
-		vol, err := u.svc.GetVolume(r.Context(), id)
-		if err != nil {
+		if err := u.svc.SetVolumeRead(r.Context(), id, read); err != nil {
 			u.fail(w, err)
 			return
 		}
@@ -96,6 +96,11 @@ func (u *webUI) volumeCover(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	vol, err := u.svc.GetVolume(r.Context(), id)
+	if err != nil || !titleAllowed(r.Context(), u.svc, vol.TitleID) {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Cache-Control", "private, max-age=604800")
 	if blob, mime, err := u.svc.VolumeCover(r.Context(), id); err == nil && len(blob) > 0 {
 		w.Header().Set("Content-Type", mime)
@@ -105,11 +110,6 @@ func (u *webUI) volumeCover(w http.ResponseWriter, r *http.Request) {
 	if blob, mime, err := u.svc.VolumeThumb(r.Context(), id); err == nil && len(blob) > 0 {
 		w.Header().Set("Content-Type", mime)
 		_, _ = w.Write(blob)
-		return
-	}
-	vol, err := u.svc.GetVolume(r.Context(), id)
-	if err != nil {
-		http.NotFound(w, r)
 		return
 	}
 	entry, rc, err := cbzPage(vol.File, 1)
@@ -143,6 +143,10 @@ func (u *webUI) volumeCoverUpload(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if vol, err := u.svc.GetVolume(r.Context(), id); err != nil || !titleAllowed(r.Context(), u.svc, vol.TitleID) {
+		http.NotFound(w, r)
 		return
 	}
 	if err := r.ParseMultipartForm(maxCoverBytes); err != nil {
@@ -179,6 +183,10 @@ func (u *webUI) volumeCoverReset(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if vol, err := u.svc.GetVolume(r.Context(), id); err != nil || !titleAllowed(r.Context(), u.svc, vol.TitleID) {
+		http.NotFound(w, r)
 		return
 	}
 	if err := u.svc.SetVolumeCover(r.Context(), id, nil, ""); err != nil {

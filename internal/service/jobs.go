@@ -365,6 +365,16 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 			log.Printf("startup download stats scan failed: %v", err)
 		}
 	}()
+	go func() {
+		// Refresh the tag vocabulary when it is empty or predates the adult
+		// flag (a stored vocabulary always carries adult tags), so upgraded
+		// and fresh installs guard adult content without waiting for a sweep.
+		if tags, err := svc.want.catalog.ContentTags(ctx); err == nil && !hasAdultTag(tags) {
+			if err := svc.refreshTagVocabulary(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("startup tag vocabulary refresh failed: %v", err)
+			}
+		}
+	}()
 	return svc, func() { _ = db.Close() }, nil
 }
 
@@ -967,6 +977,15 @@ func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressMan
 	return errs2err(errs)
 }
 
+func hasAdultTag(tags []catalog.ContentTag) bool {
+	for _, t := range tags {
+		if t.IsAdult {
+			return true
+		}
+	}
+	return false
+}
+
 // refreshTagVocabulary re-fetches AniList's global genre/tag lists.
 func (s *JobService) refreshTagVocabulary(ctx context.Context) error {
 	genres, tags, err := s.want.AniList().TagVocabulary(ctx)
@@ -990,27 +1009,68 @@ func (s *JobService) StoredContentTags(ctx context.Context) ([]catalog.ContentTa
 	return s.want.catalog.ContentTags(ctx)
 }
 
-// AdultTagNames returns the vocabulary names flagged adult, briefly cached.
+// seedAdultTags is AniList's adult-flagged tag/genre vocabulary baked in, so a
+// non-adult user is protected even before the live vocabulary is fetched (or
+// when AniList is unreachable). Kept in sync with MediaTagCollection.isAdult.
+var seedAdultTags = []string{
+	"Hentai",
+	"Ahegao", "Amputation", "Anal Sex", "Armpits", "Ashikoki", "Asphyxiation",
+	"Bondage", "Boobjob", "Cervix Penetration", "Cheating", "Cumflation",
+	"Cunnilingus", "DILF", "Deepthroat", "Defloration", "Double Penetration",
+	"Erotic Piercings", "Exhibitionism", "Facial", "Feet", "Fellatio", "Femdom",
+	"Fingering", "Fisting", "Flat Chest", "Futanari", "Group Sex", "Hair Pulling",
+	"Handjob", "Human Pet", "Hypersexuality", "Incest", "Inseki", "Irrumatio",
+	"Lactation", "Large Breasts", "MILF", "Male Pregnancy", "Masochism",
+	"Masturbation", "Mating Press", "Nakadashi", "Netorare", "Netorase", "Netori",
+	"Omegaverse", "Oyakodon", "Pet Play", "Prostitution", "Public Sex", "Rape",
+	"Rimjob", "Sadism", "Scat", "Scissoring", "Sex Toys", "Shimaidon",
+	"Sixty-nine", "Squirting", "Sumata", "Swapping", "Sweat", "Tentacles",
+	"Threesome", "Virginity", "Vore", "Voyeur", "Watersports", "Zoophilia",
+}
+
+// AdultTagNames returns every tag/genre name a non-adult user must not see:
+// the baked-in seed plus any additional adult names the stored vocabulary
+// carries. It lazily fetches the vocabulary once when the store is empty, and
+// never returns an empty list, so the guard fails closed.
 func (s *JobService) AdultTagNames(ctx context.Context) []string {
 	s.adultMu.Lock()
-	defer s.adultMu.Unlock()
-	if time.Now().Before(s.adultExp) {
+	if time.Now().Before(s.adultExp) && s.adultTags != nil {
+		defer s.adultMu.Unlock()
 		return s.adultTags
 	}
+	s.adultMu.Unlock()
+
 	tags, err := s.want.catalog.ContentTags(ctx)
-	if err != nil {
-		return s.adultTags
-	}
-	s.adultTags = nil
-	for _, t := range tags {
-		if t.IsAdult {
-			s.adultTags = append(s.adultTags, t.Name)
+	if (err != nil || len(tags) == 0) && ctx.Err() == nil {
+		// Empty store: populate it once so subsequent guards see live flags.
+		if refreshErr := s.refreshTagVocabulary(ctx); refreshErr == nil {
+			tags, err = s.want.catalog.ContentTags(ctx)
 		}
 	}
-	if len(tags) > 0 {
+
+	names := make(map[string]bool, len(seedAdultTags)+len(tags))
+	for _, n := range seedAdultTags {
+		names[n] = true
+	}
+	if err == nil {
+		for _, t := range tags {
+			if t.IsAdult {
+				names[t.Name] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(names))
+	for n := range names {
+		out = append(out, n)
+	}
+
+	s.adultMu.Lock()
+	s.adultTags = out
+	if err == nil && len(tags) > 0 {
 		s.adultExp = time.Now().Add(10 * time.Minute)
 	}
-	return s.adultTags
+	s.adultMu.Unlock()
+	return out
 }
 
 // ContentTagOptions returns the stored tag/genre vocabulary for pickers,
