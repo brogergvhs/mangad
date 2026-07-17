@@ -463,9 +463,6 @@ func (u *webUI) guardedBrowse(ctx context.Context, c searchControls) mangaResult
 	}
 	if usr := auth.FromContext(ctx); usr != nil {
 		if options, err := u.svc.ContentTagOptions(ctx); err == nil && len(options) > 0 {
-			// AniList ANDs genre_in with tag_in while the allowlist is any-of,
-			// so only pre-filter when it maps to a single argument; stripItems
-			// stays authoritative either way.
 			genres, tags := splitByKind(usr.AllowedTags, options)
 			if len(genres) == 0 || len(tags) == 0 {
 				filter.GenreIn, filter.TagIn = genres, tags
@@ -666,7 +663,6 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 	view.ShowEditor = view.Screen != nil || view.OpenEditor
 	view.TagOptions, _ = u.svc.StoredContentTags(r.Context())
 	if len(view.TagOptions) == 0 && view.ShowEditor {
-		// Only the editor may block on the one-time AniList vocabulary fetch.
 		view.TagOptions, _ = u.svc.ContentTagOptions(r.Context())
 	}
 	view.TagOptions = visibleTagOptions(r.Context(), view.TagOptions)
@@ -1415,6 +1411,9 @@ func (u *webUI) chapterRead(read bool) http.HandlerFunc {
 			}
 		} else {
 			_, err = u.svc.MarkChapterUnread(r.Context(), chapterID)
+			if err == nil {
+				u.svc.PushAniListEntryExact(r.Context(), auth.UserID(r.Context()), titleID)
+			}
 		}
 		if err != nil {
 			u.fail(w, err)
@@ -1446,6 +1445,9 @@ func (u *webUI) chapterRangeRead(w http.ResponseWriter, r *http.Request) {
 		}
 	case "unread":
 		_, err = u.svc.MarkChapterRangeUnread(r.Context(), titleID, r.FormValue("from"), r.FormValue("to"))
+		if err == nil {
+			u.svc.PushAniListEntryExact(r.Context(), auth.UserID(r.Context()), titleID)
+		}
 	default:
 		err = fmt.Errorf("unknown read action")
 	}
@@ -1790,17 +1792,15 @@ func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 	}
 	filter := catalog.SearchFilter{Sort: anilistSort(c.Sort, c.Dir)}
 	if c.Q == "" && filter.Sort == "" {
-		filter.Sort = "POPULARITY_DESC" // a browse without a query has no relevance ranking
+		filter.Sort = "POPULARITY_DESC"
 	}
 	if filtered {
-		// Without the vocabulary genre names would go to tag_in and match nothing.
 		if options, err := u.svc.ContentTagOptions(r.Context()); err == nil && len(options) > 0 {
 			filter.GenreIn, filter.TagIn = splitByKind(c.IncludeTags, options)
 			filter.GenreNotIn, filter.TagNotIn = splitByKind(c.ExcludeTags, options)
 		}
 	}
 	view := searchResultsView{Controls: c, View: c.View, Append: page > 1}
-	// Scan ahead past pages the tag filter empties.
 	var items []catalog.Manga
 	more, last := false, page
 	for scan := 0; scan < 3; scan++ {

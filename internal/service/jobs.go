@@ -366,9 +366,6 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 		}
 	}()
 	go func() {
-		// Refresh the tag vocabulary when it is empty or predates the adult
-		// flag (a stored vocabulary always carries adult tags), so upgraded
-		// and fresh installs guard adult content without waiting for a sweep.
 		if tags, err := svc.want.catalog.ContentTags(ctx); err == nil && !hasAdultTag(tags) {
 			if err := svc.refreshTagVocabulary(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("startup tag vocabulary refresh failed: %v", err)
@@ -1009,9 +1006,8 @@ func (s *JobService) StoredContentTags(ctx context.Context) ([]catalog.ContentTa
 	return s.want.catalog.ContentTags(ctx)
 }
 
-// seedAdultTags is AniList's adult-flagged tag/genre vocabulary baked in, so a
-// non-adult user is protected even before the live vocabulary is fetched (or
-// when AniList is unreachable). Kept in sync with MediaTagCollection.isAdult.
+// seedAdultTags guards non-adult users before the live vocabulary loads or when
+// AniList is unreachable; mirrors MediaTagCollection.isAdult.
 var seedAdultTags = []string{
 	"Hentai",
 	"Ahegao", "Amputation", "Anal Sex", "Armpits", "Ashikoki", "Asphyxiation",
@@ -1028,10 +1024,8 @@ var seedAdultTags = []string{
 	"Threesome", "Virginity", "Vore", "Voyeur", "Watersports", "Zoophilia",
 }
 
-// AdultTagNames returns every tag/genre name a non-adult user must not see:
-// the baked-in seed plus any additional adult names the stored vocabulary
-// carries. It lazily fetches the vocabulary once when the store is empty, and
-// never returns an empty list, so the guard fails closed.
+// AdultTagNames returns the seed plus any stored adult names, fetching the
+// vocabulary when empty; it never returns nil, so the guard fails closed.
 func (s *JobService) AdultTagNames(ctx context.Context) []string {
 	s.adultMu.Lock()
 	if time.Now().Before(s.adultExp) && s.adultTags != nil {
@@ -1042,7 +1036,6 @@ func (s *JobService) AdultTagNames(ctx context.Context) []string {
 
 	tags, err := s.want.catalog.ContentTags(ctx)
 	if (err != nil || len(tags) == 0) && ctx.Err() == nil {
-		// Empty store: populate it once so subsequent guards see live flags.
 		if refreshErr := s.refreshTagVocabulary(ctx); refreshErr == nil {
 			tags, err = s.want.catalog.ContentTags(ctx)
 		}
@@ -1139,6 +1132,17 @@ func (s *JobService) AniListLibrary(ctx context.Context) ([]catalog.AniListEntry
 // title to AniList in the background, creating the entry if it doesn't exist.
 // Never downgrades remote progress or manual states. Failures are logged only.
 func (s *JobService) PushAniListEntry(ctx context.Context, userID, titleID int64) {
+	s.pushAniListEntry(ctx, userID, titleID, false)
+}
+
+// PushAniListEntryExact pushes local progress as authoritative, lowering the
+// remote entry when the user has explicitly unread chapters, so a later sync
+// does not pull the stale higher progress back in.
+func (s *JobService) PushAniListEntryExact(ctx context.Context, userID, titleID int64) {
+	s.pushAniListEntry(ctx, userID, titleID, true)
+}
+
+func (s *JobService) pushAniListEntry(ctx context.Context, userID, titleID int64, exact bool) {
 	ctx = context.WithoutCancel(ctx)
 	ctx, _, ok := s.aniListIdentity(ctx, userID)
 	if !ok {
@@ -1155,7 +1159,7 @@ func (s *JobService) PushAniListEntry(ctx context.Context, userID, titleID int64
 	go func() {
 		pctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancel()
-		if err := s.reconcileAniListEntry(pctx, mediaID, local, status); err != nil {
+		if err := s.reconcileAniListEntry(pctx, mediaID, local, status, exact); err != nil {
 			log.Printf("anilist entry push (media %d): %v", mediaID, err)
 			return
 		}
@@ -1164,8 +1168,10 @@ func (s *JobService) PushAniListEntry(ctx context.Context, userID, titleID int64
 }
 
 // reconcileAniListEntry raises the remote entry to at least the local
-// progress/status, creating it when absent.
-func (s *JobService) reconcileAniListEntry(ctx context.Context, mediaID, local int, desired string) error {
+// progress/status, creating it when absent. When exact is set, progress is
+// pushed even when it is lower than remote (an explicit unread). Manual list
+// statuses are never downgraded.
+func (s *JobService) reconcileAniListEntry(ctx context.Context, mediaID, local int, desired string, exact bool) error {
 	remote, rstatus, found, err := s.want.AniList().MediaEntry(ctx, mediaID)
 	if err != nil {
 		return err
@@ -1174,7 +1180,7 @@ func (s *JobService) reconcileAniListEntry(ctx context.Context, mediaID, local i
 		return s.want.AniList().SaveEntry(ctx, mediaID, local, desired)
 	}
 	progress := -1
-	if local > remote {
+	if (exact && local != remote) || local > remote {
 		progress = local
 	}
 	status := ""
@@ -1315,7 +1321,7 @@ func (s *JobService) SyncAniListTitle(ctx context.Context, titleID int64) error 
 	if err != nil {
 		return err
 	}
-	return s.reconcileAniListEntry(actx, mediaID, local, status)
+	return s.reconcileAniListEntry(actx, mediaID, local, status, false)
 }
 
 // RelatedManga returns AniList relations/recommendations for a catalog entry.

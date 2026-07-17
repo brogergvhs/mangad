@@ -284,6 +284,7 @@ func New(
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		svc.PushAniListEntryExact(r.Context(), auth.UserID(r.Context()), progress.TitleID)
 		writeJSON(w, http.StatusOK, progress)
 	})
 
@@ -315,6 +316,11 @@ func New(
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		if req.Read {
+			svc.PushAniListEntry(r.Context(), auth.UserID(r.Context()), titleID)
+		} else {
+			svc.PushAniListEntryExact(r.Context(), auth.UserID(r.Context()), titleID)
 		}
 		writeJSON(w, http.StatusOK, map[string]int{"chapters": count})
 	})
