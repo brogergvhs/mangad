@@ -752,14 +752,15 @@
       <label class="fieldset"><span class="fieldset-legend">Username</span><input class="input w-full" name="username" required autocomplete="off"></label>
       <label class="fieldset"><span class="fieldset-legend">Password</span><input class="input w-full" type="password" name="password" required autocomplete="new-password"></label>
       <label class="fieldset"><span class="fieldset-legend">Role</span>
-        <select name="role_id" class="select w-full">{{range .Roles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+        <select name="role_id" class="select w-full">{{range .Roles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+      </label>
+      {{template "tagPicker" tagPicker .TagOptions nil "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
+      {{template "tagPicker" tagPicker .TagOptions nil "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}
       <label class="label cursor-pointer justify-start gap-2">
         <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult">
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
       </label>
-      {{template "tagPicker" tagPicker .TagOptions nil "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
-      {{template "tagPicker" tagPicker .TagOptions nil "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="user_add_modal.close()">Cancel</button>
         <button class="btn btn-primary">Create user</button>
@@ -852,13 +853,13 @@
       <label class="fieldset"><span class="fieldset-legend">New password</span>
         <input class="input w-full" type="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
       {{end}}
+      {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
+      {{template "tagPicker" tagPicker .TagOptions .User.AllowedTags "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}
       <label class="label cursor-pointer justify-start gap-2">
         <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult"{{if .User.AllowAdult}} checked{{end}}>
         <span><span class="text-sm font-medium">Allow adult content</span>
         <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
       </label>
-      {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
-      {{template "tagPicker" tagPicker .TagOptions .User.AllowedTags "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}
       <div class="modal-action">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-edit-modal').remove()">Cancel</button>
         <button class="btn btn-primary">Save</button>
