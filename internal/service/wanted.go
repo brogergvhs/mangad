@@ -35,7 +35,7 @@ type WantedService struct {
 	sources *sources.Repository
 	library *library.Repository
 	anilist interface {
-		Search(context.Context, string, int) ([]catalog.Manga, error)
+		Search(context.Context, string, int, catalog.SearchFilter) ([]catalog.Manga, error)
 		Get(context.Context, int) (catalog.Manga, error)
 		TagVocabulary(context.Context) (genres, tags []string, err error)
 		Related(context.Context, int, int) ([]catalog.Manga, error)
@@ -91,8 +91,8 @@ func newWantedService(db *sql.DB) *WantedService {
 }
 
 // SearchAniList searches AniList and stores returned metadata locally.
-func (s *WantedService) SearchAniList(ctx context.Context, query string, limit int) ([]catalog.Manga, error) {
-	items, err := s.anilist.Search(ctx, strings.TrimSpace(query), limit)
+func (s *WantedService) SearchAniList(ctx context.Context, query string, limit int, filter catalog.SearchFilter) ([]catalog.Manga, error) {
+	items, err := s.anilist.Search(ctx, strings.TrimSpace(query), limit, filter)
 	if err != nil {
 		return nil, err
 	}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/brogergvhs/mangad/internal/auth"
+	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/jobs"
 	"github.com/brogergvhs/mangad/internal/library"
 	"github.com/brogergvhs/mangad/internal/service"
@@ -322,7 +323,7 @@ func New(
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		items, err := svc.SearchAniList(r.Context(), r.URL.Query().Get("q"), 10)
+		items, err := svc.SearchAniList(r.Context(), r.URL.Query().Get("q"), 10, catalog.SearchFilter{})
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return

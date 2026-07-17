@@ -28,9 +28,7 @@ func NewAniListClient(client *http.Client) *AniListClient {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	// AniList allows 90 req/min but runs degraded at 30/min: pace sustained
-	// traffic (sync sweeps, mass adds) under that while the burst lets
-	// interactive use (search, related) go through immediately.
+	// AniList allows 90 req/min but runs degraded at 30/min.
 	return &AniListClient{
 		endpoint: "https://graphql.anilist.co",
 		client:   client,
@@ -38,21 +36,63 @@ func NewAniListClient(client *http.Client) *AniListClient {
 	}
 }
 
-// Search returns manga results for a text query.
-func (c *AniListClient) Search(ctx context.Context, query string, limit int) ([]Manga, error) {
-	if limit <= 0 {
-		limit = 10
+// SearchFilter narrows an AniList search server-side.
+type SearchFilter struct {
+	GenreIn    []string
+	GenreNotIn []string
+	TagIn      []string
+	TagNotIn   []string
+	Sort       string
+}
+
+// searchQueryVars builds the GraphQL query and variables for Search.
+func searchQueryVars(query string, limit int, f SearchFilter) (string, map[string]any) {
+	varDefs := "$search: String, $perPage: Int"
+	mediaArgs := "search: $search, type: MANGA, format: MANGA"
+	vars := map[string]any{"search": query, "perPage": limit}
+	add := func(name, typ, arg string, val any) {
+		varDefs += ", $" + name + ": " + typ
+		mediaArgs += ", " + arg + ": $" + name
+		vars[name] = val
 	}
-	var resp anilistSearchResponse
-	if err := c.do(ctx, `
-		query ($search: String, $perPage: Int) {
+	if len(f.GenreIn) > 0 {
+		add("genreIn", "[String]", "genre_in", f.GenreIn)
+	}
+	if len(f.GenreNotIn) > 0 {
+		add("genreNotIn", "[String]", "genre_not_in", f.GenreNotIn)
+	}
+	if len(f.TagIn) > 0 {
+		add("tagIn", "[String]", "tag_in", f.TagIn)
+	}
+	if len(f.TagNotIn) > 0 {
+		add("tagNotIn", "[String]", "tag_not_in", f.TagNotIn)
+	}
+	if len(f.TagIn) > 0 || len(f.TagNotIn) > 0 {
+		add("minTagRank", "Int", "minimumTagRank", 0)
+	}
+	if f.Sort != "" {
+		add("sort", "[MediaSort]", "sort", []string{f.Sort})
+	}
+	gql := fmt.Sprintf(`
+		query (%s) {
 			Page(page: 1, perPage: $perPage) {
-				media(search: $search, type: MANGA, format: MANGA) {
+				media(%s) {
 					id title { romaji english native } description(asHtml: false)
 					coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
 				}
 			}
-		}`, map[string]any{"search": query, "perPage": limit}, &resp); err != nil {
+		}`, varDefs, mediaArgs)
+	return gql, vars
+}
+
+// Search returns manga results for a text query.
+func (c *AniListClient) Search(ctx context.Context, query string, limit int, filter SearchFilter) ([]Manga, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	gql, vars := searchQueryVars(query, limit, filter)
+	var resp anilistSearchResponse
+	if err := c.do(ctx, gql, vars, &resp); err != nil {
 		return nil, err
 	}
 	return anilistMediaToManga(resp.Data.Page.Media)

@@ -70,7 +70,7 @@ func init() {
 
 func runWantedSearch(_ *cobra.Command, args []string) error {
 	return withWanted(func(ctx context.Context, svc *service.WantedService) error {
-		items, err := svc.SearchAniList(ctx, args[0], flagWantedLimit)
+		items, err := svc.SearchAniList(ctx, args[0], flagWantedLimit, catalog.SearchFilter{})
 		if err != nil {
 			return err
 		}
