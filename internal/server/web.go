@@ -328,6 +328,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/sources/custom", u.srcAddCustom)
 	mux.HandleFunc("GET /ui/library/table", u.libraryTable)
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
+	mux.HandleFunc("POST /ui/jobs/start", u.jobStart)
 	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
 	mux.HandleFunc("GET /ui/sessions", u.sessionsFrag)
 	mux.HandleFunc("GET /ui/health", u.health)
@@ -418,7 +419,7 @@ func (u *webUI) relatedManga(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title, err := u.svc.GetTitle(r.Context(), id)
-	if err != nil || title.CatalogMangaID == nil {
+	if err != nil || title.CatalogMangaID == nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
 		u.frag(w, "mangaResults", mangaResults{})
 		return
 	}
@@ -462,7 +463,13 @@ func (u *webUI) guardedBrowse(ctx context.Context, c searchControls) mangaResult
 	}
 	if usr := auth.FromContext(ctx); usr != nil {
 		if options, err := u.svc.ContentTagOptions(ctx); err == nil && len(options) > 0 {
-			filter.GenreIn, filter.TagIn = splitByKind(usr.AllowedTags, options)
+			// AniList ANDs genre_in with tag_in while the allowlist is any-of,
+			// so only pre-filter when it maps to a single argument; stripItems
+			// stays authoritative either way.
+			genres, tags := splitByKind(usr.AllowedTags, options)
+			if len(genres) == 0 || len(tags) == 0 {
+				filter.GenreIn, filter.TagIn = genres, tags
+			}
 			filter.GenreNotIn, filter.TagNotIn = splitByKind(usr.BlockedTags, options)
 		}
 	}
@@ -489,7 +496,8 @@ func filterNSFWSources(ctx context.Context, list []sources.Source) []sources.Sou
 }
 
 // contentAllowed reports whether the acting user may see content with the
-// given adult flag and tag/genre set. The env admin is never restricted.
+// given adult flag and tag/genre set. Guards apply to every user; the env
+// admin's are simply unrestricted by default.
 func contentAllowed(ctx context.Context, isAdult bool, tags []string) bool {
 	u := auth.FromContext(ctx)
 	if u == nil {
@@ -507,6 +515,23 @@ func contentAllowed(ctx context.Context, isAdult bool, tags []string) bool {
 // mangaContentTags collects the tag/genre vocabulary a catalog entry carries.
 func mangaContentTags(m catalog.Manga) []string {
 	return append(append([]string{}, m.Tags...), m.Genres...)
+}
+
+// allowedManga drops catalog entries the acting user must not see.
+func allowedManga(ctx context.Context, items []catalog.Manga) []catalog.Manga {
+	out := items[:0]
+	for _, m := range items {
+		if contentAllowed(ctx, m.IsAdult, mangaContentTags(m)) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// titleAllowed reports whether the acting user may see the given title.
+func titleAllowed(ctx context.Context, svc *service.JobService, titleID int64) bool {
+	t, err := svc.GetTitle(ctx, titleID)
+	return err == nil && contentAllowed(ctx, t.IsAdult, t.ContentTags)
 }
 
 // visibleTagOptions hides the acting user's blocked tags from filter pickers.
@@ -1065,6 +1090,29 @@ func (u *webUI) jobCancel(w http.ResponseWriter, r *http.Request) {
 	u.jobsTable(w, r)
 }
 
+// globalJobTypes are the sweep jobs a user can start by hand.
+var globalJobTypes = []string{
+	jobs.TypeRefreshTitle,
+	jobs.TypeScanDownloads,
+	jobs.TypeDownloadMissing,
+	jobs.TypeCatalogRefresh,
+	jobs.TypeSyncAniList,
+}
+
+func (u *webUI) jobStart(w http.ResponseWriter, r *http.Request) {
+	typ := r.FormValue("type")
+	if !slices.Contains(globalJobTypes, typ) {
+		u.fail(w, fmt.Errorf("unknown job type"))
+		return
+	}
+	if _, err := u.svc.Enqueue(r.Context(), typ, 0, time.Now()); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.kick()
+	u.jobsTable(w, r)
+}
+
 func (u *webUI) jobsTable(w http.ResponseWriter, r *http.Request) {
 	page, key, dir := tableParams(r.URL.Query(), jobsPerPage)
 	all, _ := u.svc.List(r.Context())
@@ -1269,7 +1317,7 @@ func (u *webUI) titleContentFrag(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) writeTitleContent(w http.ResponseWriter, r *http.Request, titleID int64, tab string) {
 	title, err := u.svc.GetTitle(r.Context(), titleID)
-	if err != nil {
+	if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
 		http.NotFound(w, r)
 		return
 	}
@@ -1318,7 +1366,7 @@ func (u *webUI) titleProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title, err := u.svc.GetTitle(r.Context(), id)
-	if err != nil {
+	if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
 		http.NotFound(w, r)
 		return
 	}
@@ -1345,6 +1393,10 @@ func (u *webUI) chapterRead(read bool) http.HandlerFunc {
 		chapterID, err := parseInt64Path(r, "chapterID")
 		if err != nil {
 			u.fail(w, err)
+			return
+		}
+		if !titleAllowed(r.Context(), u.svc, titleID) {
+			http.NotFound(w, r)
 			return
 		}
 		if read {
@@ -1393,7 +1445,7 @@ func (u *webUI) chapterRangeRead(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) writeChaptersTable(w http.ResponseWriter, r *http.Request, titleID int64) {
 	title, err := u.svc.GetTitle(r.Context(), titleID)
-	if err != nil {
+	if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
 		http.NotFound(w, r)
 		return
 	}
@@ -1788,8 +1840,8 @@ func (u *webUI) libAction(typ, label string) http.HandlerFunc {
 			return
 		}
 		title, err := u.svc.GetTitle(r.Context(), id)
-		if err != nil {
-			u.fail(w, err)
+		if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
+			u.fail(w, fmt.Errorf("title not found"))
 			return
 		}
 		if _, err := u.svc.Enqueue(r.Context(), typ, id, time.Now()); err != nil {
@@ -1812,6 +1864,10 @@ func (u *webUI) libActivity(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
 		return
 	}
 	view := u.titleActivity(r.Context(), id)
@@ -1910,7 +1966,7 @@ func (u *webUI) importSearch(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "importPicker", importPickerView{Folder: folder, Query: query, Results: items})
+	u.frag(w, "importPicker", importPickerView{Folder: folder, Query: query, Results: allowedManga(r.Context(), items)})
 }
 
 func (u *webUI) importDo(w http.ResponseWriter, r *http.Request) {
@@ -1968,7 +2024,7 @@ func (u *webUI) titleSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title, err := u.svc.GetTitle(r.Context(), id)
-	if err != nil {
+	if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
 		u.frag(w, "matches", matchView{DomID: fmt.Sprintf("sources-%d", id), PollURL: fmt.Sprintf("/ui/library/%d/sources", id)})
 		return
 	}
@@ -2630,6 +2686,13 @@ func (u *webUI) funcs() template.FuncMap {
 				}
 			}
 			return map[string]any{"HasOptions": len(options) > 0, "SelectedOptions": chosen, "Options": rest, "Selected": selected, "Extras": extras, "Values": values, "Name": name, "Label": label, "Hint": hint}
+		},
+		"globalJobs": func() []map[string]string {
+			out := make([]map[string]string, 0, len(globalJobTypes))
+			for _, typ := range globalJobTypes {
+				out = append(out, map[string]string{"Type": typ, "Label": jobLabel(typ)})
+			}
+			return out
 		},
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },

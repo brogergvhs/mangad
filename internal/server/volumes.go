@@ -70,6 +70,10 @@ func (u *webUI) volumesRange(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
 	from, err1 := strconv.ParseFloat(r.FormValue("from"), 64)
 	to, err2 := strconv.ParseFloat(r.FormValue("to"), 64)
 	if err1 != nil || err2 != nil {

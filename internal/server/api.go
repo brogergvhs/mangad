@@ -71,7 +71,7 @@ func New(
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, titles)
+		writeJSON(w, http.StatusOK, filterRestrictedTitles(r.Context(), titles))
 	})
 
 	mux.HandleFunc("GET /api/reader/titles/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +83,10 @@ func New(
 		progress, err := svc.ReaderProgress(r.Context(), id)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !contentAllowed(r.Context(), progress.IsAdult, progress.ContentTags) {
+			writeError(w, http.StatusNotFound, "title not found")
 			return
 		}
 		writeJSON(w, http.StatusOK, progress)
@@ -97,6 +101,10 @@ func New(
 		progress, err := svc.ReaderProgress(r.Context(), id)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if !contentAllowed(r.Context(), progress.IsAdult, progress.ContentTags) {
+			writeError(w, http.StatusNotFound, "title not found")
 			return
 		}
 		volumes := r.URL.Query().Get("mode") == "volumes"
@@ -131,7 +139,12 @@ func New(
 			writeError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
-		vol, err := svc.MarkVolumePageRead(r.Context(), id, req.Page, req.TotalPages)
+		vol, err := svc.GetVolume(r.Context(), id)
+		if err != nil || !titleAllowed(r.Context(), svc, vol.TitleID) {
+			writeError(w, http.StatusNotFound, "volume not found")
+			return
+		}
+		vol, err = svc.MarkVolumePageRead(r.Context(), id, req.Page, req.TotalPages)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -153,7 +166,7 @@ func New(
 			return
 		}
 		vol, err := svc.GetVolume(r.Context(), id)
-		if err != nil {
+		if err != nil || !titleAllowed(r.Context(), svc, vol.TitleID) {
 			writeError(w, http.StatusNotFound, "volume not found")
 			return
 		}
@@ -182,6 +195,10 @@ func New(
 			writeError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
+		if status, err := svc.ChapterReadStatus(r.Context(), id); err != nil || !titleAllowed(r.Context(), svc, status.TitleID) {
+			writeError(w, http.StatusNotFound, "chapter not found")
+			return
+		}
 		progress, err := svc.MarkPageRead(r.Context(), id, req.Page, req.TotalPages)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -204,8 +221,8 @@ func New(
 			return
 		}
 		status, err := svc.ChapterReadStatus(r.Context(), id)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+		if err != nil || !titleAllowed(r.Context(), svc, status.TitleID) {
+			writeError(w, http.StatusNotFound, "chapter not found")
 			return
 		}
 		if !status.Downloaded || status.OutputFile == "" {
@@ -239,6 +256,10 @@ func New(
 			writeError(w, http.StatusBadRequest, "invalid chapter id")
 			return
 		}
+		if status, err := svc.ChapterReadStatus(r.Context(), id); err != nil || !titleAllowed(r.Context(), svc, status.TitleID) {
+			writeError(w, http.StatusNotFound, "chapter not found")
+			return
+		}
 		progress, err := svc.MarkChapterRead(r.Context(), id)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -252,6 +273,10 @@ func New(
 		id, err := parseInt64Path(r, "id")
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid chapter id")
+			return
+		}
+		if status, err := svc.ChapterReadStatus(r.Context(), id); err != nil || !titleAllowed(r.Context(), svc, status.TitleID) {
+			writeError(w, http.StatusNotFound, "chapter not found")
 			return
 		}
 		progress, err := svc.MarkChapterUnread(r.Context(), id)
@@ -277,6 +302,10 @@ func New(
 			writeError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
+		if !titleAllowed(r.Context(), svc, titleID) {
+			writeError(w, http.StatusNotFound, "title not found")
+			return
+		}
 		var count int
 		if req.Read {
 			count, err = svc.MarkChapterRangeRead(r.Context(), titleID, req.From, req.To)
@@ -298,7 +327,7 @@ func New(
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeJSON(w, http.StatusOK, items)
+			writeJSON(w, http.StatusOK, allowedManga(r.Context(), items))
 		case http.MethodPost:
 			var req struct {
 				AniListID int `json:"anilist_id"`
@@ -333,7 +362,7 @@ func New(
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, items)
+		writeJSON(w, http.StatusOK, allowedManga(r.Context(), items))
 	})
 
 	mux.HandleFunc("/api/wanted/matches", func(w http.ResponseWriter, r *http.Request) {
@@ -342,6 +371,10 @@ func New(
 			id, err := parseInt64Query(r, "catalog_id")
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if m, err := svc.GetManga(r.Context(), id); err != nil || !contentAllowed(r.Context(), m.IsAdult, mangaContentTags(m)) {
+				writeError(w, http.StatusNotFound, "not found")
 				return
 			}
 			matches, err := svc.ListMatches(r.Context(), id)

@@ -973,7 +973,16 @@ func (s *JobService) refreshTagVocabulary(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("tag vocabulary: %w", err)
 	}
-	return s.want.catalog.ReplaceContentTags(ctx, genres, tags)
+	if len(genres) == 0 && len(tags) == 0 {
+		return fmt.Errorf("tag vocabulary: anilist returned nothing; keeping the stored one")
+	}
+	if err := s.want.catalog.ReplaceContentTags(ctx, genres, tags); err != nil {
+		return err
+	}
+	s.adultMu.Lock()
+	s.adultExp = time.Time{}
+	s.adultMu.Unlock()
+	return nil
 }
 
 // StoredContentTags returns the stored vocabulary without remote fetching.
@@ -998,7 +1007,9 @@ func (s *JobService) AdultTagNames(ctx context.Context) []string {
 			s.adultTags = append(s.adultTags, t.Name)
 		}
 	}
-	s.adultExp = time.Now().Add(10 * time.Minute)
+	if len(tags) > 0 {
+		s.adultExp = time.Now().Add(10 * time.Minute)
+	}
 	return s.adultTags
 }
 

@@ -78,6 +78,8 @@ document.addEventListener("input", function (e) {
   list.querySelectorAll("label").forEach(function (row) {
     row.hidden = q !== "" && row.textContent.toLowerCase().indexOf(q) === -1;
   });
+  var divider = list.querySelector("[data-tag-divider]");
+  if (divider) divider.hidden = q !== "";
 });
 
 // Tag picker: keep the "N selected" summary in sync with the checkboxes.
