@@ -109,6 +109,20 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   history.replaceState(null, "", "/library" + (qs ? "?" + qs : ""));
 });
 
+// Search filters: mirror the form state into the URL on /search so reloads
+// and shared links reproduce the current query and filters.
+document.body.addEventListener("htmx:afterRequest", function (e) {
+  if (location.pathname !== "/search") return;
+  if (!e.detail.successful || !e.detail.xhr || !e.detail.xhr.responseURL) return;
+  var path;
+  try { path = new URL(e.detail.xhr.responseURL).pathname; } catch (err) { return; }
+  if (path !== "/ui/search" && path !== "/ui/search/trending") return;
+  var form = document.getElementById("search-form");
+  if (!form) return;
+  var qs = new URLSearchParams(new FormData(form)).toString();
+  history.replaceState(null, "", qs ? "/search?" + qs : "/search");
+});
+
 // Sidebar screen reordering: drag rows, persist the new order on drop.
 (function () {
   var list = document.querySelector("[data-screen-list]");

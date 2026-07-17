@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -271,7 +272,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 
 	mux.HandleFunc("GET /{$}", u.homePage)
 	mux.HandleFunc("GET /management", u.management)
-	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) { u.page(w, r, "search", "Search", nil) })
+	mux.HandleFunc("GET /search", u.searchPage)
 	mux.HandleFunc("GET /library", u.libraryPage)
 	mux.HandleFunc("GET /library/{id}", u.titlePage)
 	mux.HandleFunc("GET /reader/{id}", u.readerPage)
@@ -430,10 +431,17 @@ func (u *webUI) relatedManga(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
-	items, err := u.svc.RecommendedManga(r.Context(), 18)
+	_ = r.ParseForm()
+	// Over-fetch so include/exclude filters act on the full candidate pool
+	// rather than on an arbitrary 18-item cut.
+	items, err := u.svc.RecommendedManga(r.Context(), 54)
 	if err != nil {
 		u.frag(w, "mangaResults", mangaResults{})
 		return
+	}
+	items = filterSortManga(items, searchControlsFrom(r.Form))
+	if len(items) > 18 {
+		items = items[:18]
 	}
 	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), items))
 }
@@ -1526,19 +1534,155 @@ type searchResultView struct {
 	TitleID int64 // set when the manga is already in the library
 }
 
+type searchView struct {
+	Controls   searchControls
+	TagOptions []catalog.ContentTag
+}
+
+type searchControls struct {
+	Q           string
+	Sort        string // "" relevance, rating, title, year, chapters
+	Dir         string
+	View        string
+	IncludeTags []string
+	ExcludeTags []string
+}
+
+func searchControlsFrom(values url.Values) searchControls {
+	c := searchControls{
+		Q:           strings.TrimSpace(values.Get("q")),
+		Sort:        values.Get("sort"),
+		Dir:         values.Get("dir"),
+		View:        values.Get("view"),
+		IncludeTags: tagList(values["include_tags"]),
+		ExcludeTags: tagList(values["exclude_tags"]),
+	}
+	switch c.Sort {
+	case "rating", "title", "year", "chapters":
+	default:
+		c.Sort = ""
+	}
+	if c.Dir != "asc" {
+		c.Dir = "desc"
+	}
+	if c.View != "table" && c.View != "full" {
+		c.View = "cards"
+	}
+	return c
+}
+
+// anilistSort maps a search sort control to an AniList MediaSort enum; empty
+// keeps AniList's relevance ranking.
+func anilistSort(key, dir string) string {
+	enum, ok := map[string]string{
+		"rating":   "SCORE",
+		"title":    "TITLE_ROMAJI",
+		"year":     "START_DATE",
+		"chapters": "CHAPTERS",
+	}[key]
+	if !ok {
+		return ""
+	}
+	if dir == "desc" {
+		return enum + "_DESC"
+	}
+	return enum
+}
+
+// splitByKind partitions tag-filter values into AniList genres and tags via
+// the stored vocabulary; unknown names count as tags.
+func splitByKind(names []string, options []catalog.ContentTag) (genres, tags []string) {
+	kinds := make(map[string]string, len(options))
+	for _, o := range options {
+		kinds[strings.ToLower(o.Name)] = o.Kind
+	}
+	for _, n := range names {
+		if kinds[strings.ToLower(strings.TrimSpace(n))] == "genre" {
+			genres = append(genres, n)
+		} else {
+			tags = append(tags, n)
+		}
+	}
+	return genres, tags
+}
+
+// filterSortManga applies the search controls to catalog entries: every
+// include tag must be present, no exclude tag may be, then sorts. It is the
+// final authority over whatever pre-filtering AniList did.
+func filterSortManga(items []catalog.Manga, c searchControls) []catalog.Manga {
+	out := items[:0]
+	for _, m := range items {
+		tags := mangaContentTags(m)
+		keep := !library.HasAnyTag(tags, c.ExcludeTags)
+		for _, inc := range c.IncludeTags {
+			if !keep {
+				break
+			}
+			keep = library.HasAnyTag(tags, []string{inc})
+		}
+		if keep {
+			out = append(out, m)
+		}
+	}
+	chapters := func(m catalog.Manga) int {
+		if m.Chapters == nil {
+			return 0
+		}
+		return *m.Chapters
+	}
+	var less func(a, b catalog.Manga) bool
+	switch c.Sort {
+	case "rating":
+		less = func(a, b catalog.Manga) bool { return a.AverageScore < b.AverageScore }
+	case "title":
+		less = func(a, b catalog.Manga) bool { return strings.ToLower(mangaTitle(a)) < strings.ToLower(mangaTitle(b)) }
+	case "year":
+		less = func(a, b catalog.Manga) bool { return a.Year < b.Year }
+	case "chapters":
+		less = func(a, b catalog.Manga) bool { return chapters(a) < chapters(b) }
+	default:
+		return out
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if c.Dir == "desc" {
+			return less(out[j], out[i])
+		}
+		return less(out[i], out[j])
+	})
+	return out
+}
+
+func (u *webUI) searchPage(w http.ResponseWriter, r *http.Request) {
+	view := searchView{Controls: searchControlsFrom(r.URL.Query())}
+	view.TagOptions, _ = u.svc.StoredContentTags(r.Context())
+	u.page(w, r, "search", "Search", view)
+}
+
 func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
-	q := strings.TrimSpace(r.FormValue("q"))
-	if q == "" {
+	_ = r.ParseForm()
+	c := searchControlsFrom(r.Form)
+	if c.Q == "" {
 		// Cleared input: fall back to the recommendations grid.
 		u.trendingManga(w, r)
 		return
 	}
-	items, err := u.svc.SearchAniList(r.Context(), q, 12)
+	filter := catalog.SearchFilter{Sort: anilistSort(c.Sort, c.Dir)}
+	if len(c.IncludeTags) > 0 || len(c.ExcludeTags) > 0 {
+		// The vocabulary decides genre_in vs tag_in; without it genre names
+		// sent as tag_in silently match nothing on AniList, so skip the
+		// server-side pre-filter and let filterSortManga enforce the
+		// selection on the returned page instead.
+		if options, err := u.svc.ContentTagOptions(r.Context()); err == nil && len(options) > 0 {
+			filter.GenreIn, filter.TagIn = splitByKind(c.IncludeTags, options)
+			filter.GenreNotIn, filter.TagNotIn = splitByKind(c.ExcludeTags, options)
+		}
+	}
+	items, err := u.svc.SearchAniList(r.Context(), c.Q, 12, filter)
 	if err != nil {
 		u.fail(w, err)
 		return
 	}
-	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), items))
+	u.frag(w, "mangaResults", u.mangaResultsView(r.Context(), "", resultView(r), filterSortManga(items, c)))
 }
 
 func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
@@ -1687,7 +1831,7 @@ func (u *webUI) importSearch(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		query = importQuery(folder)
 	}
-	items, err := u.svc.SearchAniList(r.Context(), query, 10)
+	items, err := u.svc.SearchAniList(r.Context(), query, 10, catalog.SearchFilter{})
 	if err != nil {
 		u.fail(w, err)
 		return
@@ -2383,19 +2527,30 @@ func (u *webUI) funcs() template.FuncMap {
 		},
 		"tagPicker": func(options []catalog.ContentTag, values []string, name, label, hint string) map[string]any {
 			// Selected keys are canonicalized to option names so values from
-			// hand-typed URLs or the text fallback render checked.
+			// hand-typed URLs or the text fallback render checked; values
+			// matching no option render as extra checked entries so they
+			// survive the next form serialization.
 			selected := make(map[string]bool, len(values))
+			var extras []string
 			for _, v := range values {
 				key := strings.TrimSpace(v)
+				if key == "" {
+					continue
+				}
+				matched := false
 				for _, o := range options {
 					if strings.EqualFold(o.Name, key) {
 						key = o.Name
+						matched = true
 						break
 					}
 				}
+				if !matched && len(options) > 0 && !selected[key] {
+					extras = append(extras, key)
+				}
 				selected[key] = true
 			}
-			return map[string]any{"Options": options, "Selected": selected, "Values": values, "Name": name, "Label": label, "Hint": hint}
+			return map[string]any{"Options": options, "Selected": selected, "Extras": extras, "Values": values, "Name": name, "Label": label, "Hint": hint}
 		},
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },

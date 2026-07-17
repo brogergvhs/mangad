@@ -78,19 +78,40 @@
 {{end}}
 
 {{define "search"}}
-<form id="search-form" class="mb-4 flex items-center gap-2" hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML" hx-indicator="#search-spin"
-  hx-trigger="submit, change from:select, keyup changed delay:400ms from:input[name='q']">
-  <input name="q" class="input w-full" placeholder="Search AniList…" autofocus>
-  <select name="view" class="select w-28 shrink-0" aria-label="Results view">
-    <option value="cards">Cards</option>
-    <option value="table">Table</option>
-    <option value="full">Full</option>
-  </select>
+<form id="search-form" class="mb-4 grid gap-3" hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML" hx-indicator="#search-spin"
+  hx-trigger="submit, change[event.target.name && event.target.name !== 'q'], keyup changed delay:400ms from:input[name='q']">
+  <input type="checkbox" id="search-filters" class="peer sr-only">
+  <div class="flex items-center gap-2">
+    <input name="q" class="input w-full" placeholder="Search AniList…" value="{{.Controls.Q}}" autofocus>
+    <select name="view" class="select w-28 shrink-0" aria-label="Results view">
+      <option value="cards" {{if eq .Controls.View "cards"}}selected{{end}}>Cards</option>
+      <option value="table" {{if eq .Controls.View "table"}}selected{{end}}>Table</option>
+      <option value="full" {{if eq .Controls.View "full"}}selected{{end}}>Full</option>
+    </select>
+    <label for="search-filters" class="btn btn-outline shrink-0">Filters {{template "iconChevron"}}</label>
+  </div>
+  <div class="hidden peer-checked:grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <label class="fieldset"><span class="fieldset-legend">Sort</span>
+      <select name="sort" class="select select-sm w-full">
+        <option value="" {{if eq .Controls.Sort ""}}selected{{end}}>Relevance</option>
+        <option value="rating" {{if eq .Controls.Sort "rating"}}selected{{end}}>Rating</option>
+        <option value="title" {{if eq .Controls.Sort "title"}}selected{{end}}>Title</option>
+        <option value="year" {{if eq .Controls.Sort "year"}}selected{{end}}>Year</option>
+        <option value="chapters" {{if eq .Controls.Sort "chapters"}}selected{{end}}>Chapters</option>
+      </select></label>
+    <label class="fieldset"><span class="fieldset-legend">Direction</span>
+      <select name="dir" class="select select-sm w-full">
+        <option value="desc" {{if eq .Controls.Dir "desc"}}selected{{end}}>Descending</option>
+        <option value="asc" {{if eq .Controls.Dir "asc"}}selected{{end}}>Ascending</option>
+      </select></label>
+    <div class="col-span-2">{{template "tagPicker" tagPicker .TagOptions .Controls.IncludeTags "include_tags" "Include tags/genres (all of)" ""}}</div>
+    <div class="col-span-2">{{template "tagPicker" tagPicker .TagOptions .Controls.ExcludeTags "exclude_tags" "Exclude tags/genres" ""}}</div>
+  </div>
 </form>
 <div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
 <div hx-get="/ui/anilist/suggestions" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div>
-<div id="search-results"><div hx-get="/ui/search/trending" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML">
-  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading suggestions…</div>
+<div id="search-results"><div hx-post="/ui/search" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading…</div>
 </div></div>
 {{end}}
 
@@ -180,7 +201,7 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 {{end}}
-<form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change[!!event.target.name], keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
+<form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change[event.target.name && event.target.name !== 'q'], keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
   <button type="submit" class="sr-only" tabindex="-1">Apply filters</button>
   {{if .Screen}}<input type="hidden" name="screen" value="{{.Screen.ID}}">{{end}}
   <input type="checkbox" id="lib-filters" class="peer sr-only">
@@ -793,6 +814,12 @@
           <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.Name}}" {{if index $sel .Name}}checked{{end}}>
           <span class="truncate">{{.Name}}</span>
           {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
+        </label>
+        {{end}}
+        {{range .Extras}}
+        <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.}}" checked>
+          <span class="truncate">{{.}}</span>
         </label>
         {{end}}
       </div>
