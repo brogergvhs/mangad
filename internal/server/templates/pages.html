@@ -805,16 +805,16 @@
 
 {{define "tagPicker"}}
 <div class="fieldset"><span class="fieldset-legend">{{.Label}}</span>
-  {{if .Options}}
+  {{if .HasOptions}}
   <details class="dropdown w-full">
     <summary class="select select-sm w-full flex cursor-pointer items-center" data-tag-count>{{if .Selected}}{{len .Selected}} selected{{else}}None selected{{end}}</summary>
     <div class="dropdown-content z-30 mt-1 w-full rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
       <input class="input input-sm mb-2 w-full" placeholder="Filter tags…" data-tag-filter form="">
       <div class="grid max-h-52 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto" data-tag-list>
-        {{$sel := .Selected}}{{range .Options}}
+        {{range .SelectedOptions}}
         <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
-          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.Name}}" {{if index $sel .Name}}checked{{end}}>
-          <span class="truncate">{{.Name}}</span>
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.Name}}" checked>
+          <span class="truncate{{if .IsAdult}} text-error{{end}}">{{.Name}}</span>
           {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
         </label>
         {{end}}
@@ -822,6 +822,14 @@
         <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
           <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.}}" checked>
           <span class="truncate">{{.}}</span>
+        </label>
+        {{end}}
+        {{if and (or .SelectedOptions .Extras) .Options}}<div class="col-span-2 my-1 border-t border-base-300"></div>{{end}}
+        {{range .Options}}
+        <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.Name}}">
+          <span class="truncate{{if .IsAdult}} text-error{{end}}">{{.Name}}</span>
+          {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
         </label>
         {{end}}
       </div>

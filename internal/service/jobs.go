@@ -44,6 +44,9 @@ type JobService struct {
 	auth       *auth.Service
 	recMu      sync.Mutex
 	recCache   map[int64]cachedRecs // user ID -> recommendation grid
+	adultMu    sync.Mutex
+	adultTags  []string // vocabulary names flagged adult, briefly cached
+	adultExp   time.Time
 }
 
 // cachedRecs is a user's recommendation pool, cached to spare AniList calls.
@@ -976,6 +979,27 @@ func (s *JobService) refreshTagVocabulary(ctx context.Context) error {
 // StoredContentTags returns the stored vocabulary without remote fetching.
 func (s *JobService) StoredContentTags(ctx context.Context) ([]catalog.ContentTag, error) {
 	return s.want.catalog.ContentTags(ctx)
+}
+
+// AdultTagNames returns the vocabulary names flagged adult, briefly cached.
+func (s *JobService) AdultTagNames(ctx context.Context) []string {
+	s.adultMu.Lock()
+	defer s.adultMu.Unlock()
+	if time.Now().Before(s.adultExp) {
+		return s.adultTags
+	}
+	tags, err := s.want.catalog.ContentTags(ctx)
+	if err != nil {
+		return s.adultTags
+	}
+	s.adultTags = nil
+	for _, t := range tags {
+		if t.IsAdult {
+			s.adultTags = append(s.adultTags, t.Name)
+		}
+	}
+	s.adultExp = time.Now().Add(10 * time.Minute)
+	return s.adultTags
 }
 
 // ContentTagOptions returns the stored tag/genre vocabulary for pickers,

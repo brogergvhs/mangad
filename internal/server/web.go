@@ -2621,7 +2621,15 @@ func (u *webUI) funcs() template.FuncMap {
 				}
 				selected[key] = true
 			}
-			return map[string]any{"Options": options, "Selected": selected, "Extras": extras, "Values": values, "Name": name, "Label": label, "Hint": hint}
+			var chosen, rest []catalog.ContentTag
+			for _, o := range options {
+				if selected[o.Name] {
+					chosen = append(chosen, o)
+				} else {
+					rest = append(rest, o)
+				}
+			}
+			return map[string]any{"HasOptions": len(options) > 0, "SelectedOptions": chosen, "Options": rest, "Selected": selected, "Extras": extras, "Values": values, "Name": name, "Label": label, "Hint": hint}
 		},
 		"since":      since,
 		"confidence": func(c float64) string { return fmt.Sprintf("%.0f%%", c*100) },

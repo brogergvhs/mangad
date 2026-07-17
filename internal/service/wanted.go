@@ -37,7 +37,7 @@ type WantedService struct {
 	anilist interface {
 		Search(context.Context, string, int, catalog.SearchFilter) ([]catalog.Manga, bool, error)
 		Get(context.Context, int) (catalog.Manga, error)
-		TagVocabulary(context.Context) (genres, tags []string, err error)
+		TagVocabulary(context.Context) (genres []string, tags []catalog.ContentTag, err error)
 		Related(context.Context, int, int) ([]catalog.Manga, error)
 		Trending(context.Context, int) ([]catalog.Manga, error)
 		UserList(context.Context, int) ([]catalog.AniListEntry, error)
@@ -52,7 +52,7 @@ type WantedService struct {
 // AniListAPI is the catalog metadata client surface used by services.
 type AniListAPI interface {
 	Get(context.Context, int) (catalog.Manga, error)
-	TagVocabulary(context.Context) (genres, tags []string, err error)
+	TagVocabulary(context.Context) (genres []string, tags []catalog.ContentTag, err error)
 	Related(context.Context, int, int) ([]catalog.Manga, error)
 	Trending(context.Context, int) ([]catalog.Manga, error)
 	UserList(context.Context, int) ([]catalog.AniListEntry, error)

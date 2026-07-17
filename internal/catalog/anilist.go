@@ -224,21 +224,22 @@ func (c *AniListClient) Get(ctx context.Context, id int) (Manga, error) {
 }
 
 // TagVocabulary returns AniList's global genre and tag name lists.
-func (c *AniListClient) TagVocabulary(ctx context.Context) (genres, tags []string, err error) {
+func (c *AniListClient) TagVocabulary(ctx context.Context) (genres []string, tags []ContentTag, err error) {
 	var resp struct {
 		Data struct {
 			GenreCollection    []string `json:"GenreCollection"`
 			MediaTagCollection []struct {
-				Name string `json:"name"`
+				Name    string `json:"name"`
+				IsAdult bool   `json:"isAdult"`
 			} `json:"MediaTagCollection"`
 		} `json:"data"`
 	}
-	if err := c.do(ctx, `query { GenreCollection MediaTagCollection { name } }`, nil, &resp); err != nil {
+	if err := c.do(ctx, `query { GenreCollection MediaTagCollection { name isAdult } }`, nil, &resp); err != nil {
 		return nil, nil, err
 	}
 	for _, t := range resp.Data.MediaTagCollection {
 		if t.Name != "" {
-			tags = append(tags, t.Name)
+			tags = append(tags, ContentTag{Name: t.Name, Kind: "tag", IsAdult: t.IsAdult})
 		}
 	}
 	return resp.Data.GenreCollection, tags, nil

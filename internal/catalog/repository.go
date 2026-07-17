@@ -97,12 +97,13 @@ func (r *Repository) DeleteMatches(ctx context.Context, catalogMangaID int64) er
 
 // ContentTag is one AniList genre or tag name, for content-guard pickers.
 type ContentTag struct {
-	Name string
-	Kind string // "genre" or "tag"
+	Name    string
+	Kind    string // "genre" or "tag"
+	IsAdult bool
 }
 
 // ReplaceContentTags swaps the stored tag/genre vocabulary.
-func (r *Repository) ReplaceContentTags(ctx context.Context, genres, tags []string) error {
+func (r *Repository) ReplaceContentTags(ctx context.Context, genres []string, tags []ContentTag) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -111,26 +112,25 @@ func (r *Repository) ReplaceContentTags(ctx context.Context, genres, tags []stri
 	if _, err := tx.ExecContext(ctx, `DELETE FROM content_tags`); err != nil {
 		return err
 	}
-	insert := func(names []string, kind string) error {
-		for _, name := range cleanStrings(names) {
-			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO content_tags (name, kind) VALUES (?, ?)`, name, kind); err != nil {
+	for _, name := range cleanStrings(genres) {
+		adult := strings.EqualFold(name, "Hentai")
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO content_tags (name, kind, is_adult) VALUES (?, 'genre', ?)`, name, adult); err != nil {
+			return err
+		}
+	}
+	for _, t := range tags {
+		if name := strings.TrimSpace(t.Name); name != "" {
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO content_tags (name, kind, is_adult) VALUES (?, 'tag', ?)`, name, t.IsAdult); err != nil {
 				return err
 			}
 		}
-		return nil
-	}
-	if err := insert(genres, "genre"); err != nil {
-		return err
-	}
-	if err := insert(tags, "tag"); err != nil {
-		return err
 	}
 	return tx.Commit()
 }
 
 // ContentTags lists the stored vocabulary, genres first, alphabetical within.
 func (r *Repository) ContentTags(ctx context.Context) ([]ContentTag, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT name, kind FROM content_tags ORDER BY kind = 'genre' DESC, name COLLATE NOCASE`)
+	rows, err := r.db.QueryContext(ctx, `SELECT name, kind, is_adult FROM content_tags ORDER BY kind = 'genre' DESC, name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (r *Repository) ContentTags(ctx context.Context) ([]ContentTag, error) {
 	var out []ContentTag
 	for rows.Next() {
 		var t ContentTag
-		if err := rows.Scan(&t.Name, &t.Kind); err != nil {
+		if err := rows.Scan(&t.Name, &t.Kind, &t.IsAdult); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

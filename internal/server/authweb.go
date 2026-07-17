@@ -39,6 +39,11 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 			writeError(w, http.StatusForbidden, "missing permission: "+p)
 			return
 		}
+		if !user.AllowAdult {
+			if adult := svc.AdultTagNames(r.Context()); len(adult) > 0 {
+				user.BlockedTags = append(append([]string{}, user.BlockedTags...), adult...)
+			}
+		}
 		ctx := auth.WithUser(r.Context(), user)
 		if c, err := r.Cookie("mangad_session"); err == nil {
 			ctx = withSessionKey(ctx, c.Value)
