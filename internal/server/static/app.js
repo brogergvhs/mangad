@@ -11,6 +11,84 @@ if ("serviceWorker" in navigator) {
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible") flushWrites();
   });
+
+  // --- offline chapter downloads: the SW owns the caches (it knows the shell
+  // vs pages cache names), so save/remove go through it; "downloaded" state is
+  // read straight from Cache Storage, which the window shares with the SW ---
+  function swSend(msg) {
+    return new Promise(function (resolve) {
+      navigator.serviceWorker.ready.then(function (reg) {
+        var target = reg.active || navigator.serviceWorker.controller;
+        if (!target) { resolve(false); return; }
+        var ch = new MessageChannel();
+        ch.port1.onmessage = function (ev) { resolve(ev.data); };
+        target.postMessage(msg, [ch.port2]);
+      });
+    });
+  }
+  function chapterUrls(title, chapter, pages) {
+    var urls = ["/reader/" + title + "?chapter=" + chapter, "/api/reader/titles/" + title + "/manifest?chapter=" + chapter];
+    for (var p = 1; p <= pages; p++) urls.push("/api/reader/chapters/" + chapter + "/pages/" + p);
+    return urls;
+  }
+  function refreshOffline(btn) {
+    if (typeof caches === "undefined") return;
+    caches.match("/api/reader/chapters/" + btn.dataset.chapter + "/pages/1").then(function (hit) {
+      btn.classList.toggle("is-downloaded", !!hit);
+      btn.hidden = false;
+    });
+  }
+  function refreshOfflineAll() {
+    if (typeof caches === "undefined") return;
+    document.querySelectorAll("[data-offline]").forEach(refreshOffline);
+    var bulk = document.querySelector("[data-offline-bulk]");
+    if (bulk) bulk.hidden = false;
+  }
+  function toggleOffline(btn) {
+    if (btn.dataset.busy) return Promise.resolve();
+    btn.dataset.busy = "1";
+    var remove = btn.classList.contains("is-downloaded");
+    var urls = chapterUrls(btn.dataset.title, btn.dataset.chapter, parseInt(btn.dataset.pages || "0", 10));
+    return swSend({ type: remove ? "remove" : "save", urls: urls }).then(function (ok) {
+      delete btn.dataset.busy;
+      btn.title = ok === false ? "Save failed — tap to retry" : "";
+      refreshOffline(btn);
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-offline]");
+    if (!btn) return;
+    e.preventDefault();
+    toggleOffline(btn);
+  });
+  // Bulk save/remove covers the whole from–to range across every page by
+  // asking the server for the title's downloaded chapters, not just the DOM.
+  document.addEventListener("submit", function (e) {
+    var host = e.target.closest("[data-offline-bulk]");
+    if (!host) return;
+    e.preventDefault();
+    var from = parseInt(e.target.from.value, 10), to = parseInt(e.target.to.value, 10);
+    if (isNaN(from) || isNaN(to)) return;
+    if (from > to) { var s = from; from = to; to = s; }
+    var remove = e.submitter && e.submitter.value === "remove";
+    host.removeAttribute("open");
+    fetch("/ui/library/" + host.dataset.title + "/chapters/offline", { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (list) {
+        list.filter(function (c) { return c.num >= from && c.num <= to; })
+          .reduce(function (chain, c) {
+            return chain.then(function () {
+              return swSend({ type: remove ? "remove" : "save", urls: chapterUrls(host.dataset.title, c.id, c.pages) }).then(function () {
+                var btn = document.querySelector('[data-offline][data-chapter="' + c.id + '"]');
+                if (btn) refreshOffline(btn);
+              });
+            });
+          }, Promise.resolve());
+      });
+  });
+  document.addEventListener("DOMContentLoaded", refreshOfflineAll);
+  document.body.addEventListener("htmx:afterSwap", refreshOfflineAll);
+  refreshOfflineAll();
 }
 
 // --- dropdowns: close any open <details.dropdown> on outside click or action ---
@@ -221,21 +299,6 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
     return;
   }
 
-  var saveBtn = document.querySelector("[data-reader-download]");
-  if (saveBtn && navigator.serviceWorker) {
-    saveBtn.addEventListener("click", function () {
-      var urls = [location.href];
-      (manifest.chapters || []).forEach(function (ch) {
-        if (manifest.extend_base) urls.push(manifest.extend_base + ch.id);
-        (ch.pages || []).forEach(function (p) { urls.push(p.url); });
-      });
-      navigator.serviceWorker.ready.then(function (reg) {
-        (reg.active || navigator.serviceWorker.controller).postMessage({ type: "save", urls: urls });
-      });
-      saveBtn.textContent = "Saved for offline";
-      saveBtn.disabled = true;
-    });
-  }
 
   // Flatten the manifest into an ordered build queue. Elements are appended
   // strictly in order, and each image is appended only after it has fully

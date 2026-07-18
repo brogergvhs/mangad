@@ -2,7 +2,7 @@
 <html lang="en" data-theme="{{.Theme}}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{{.Title}} · MangaD</title>
   <link rel="manifest" href="/static/manifest.webmanifest?v={{assetVer}}">
   <meta name="theme-color" content="#1e1e2e">
@@ -28,7 +28,7 @@
   </div>
   <div class="drawer-side z-40">
     <label for="app-drawer" aria-label="Close menu" class="drawer-overlay"></label>
-    <div class="flex min-h-full w-64 flex-col bg-base-300">
+    <div class="app-sidebar flex min-h-full w-64 flex-col bg-base-300">
       <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Manga<span class="text-primary">D</span></a>
       <ul class="menu w-full grow px-4">
         <li><a href="/" class="{{if eq .Nav "home"}}menu-active{{end}}">{{template "iconHome"}}Home</a></li>

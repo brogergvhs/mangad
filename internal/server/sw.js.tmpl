@@ -152,22 +152,33 @@ async function flush() {
 
 self.addEventListener("message", function (e) {
   const msg = e.data || {};
+  const reply = e.ports && e.ports[0];
   if (msg.type === "flush") {
     flush();
   } else if (msg.type === "save" && Array.isArray(msg.urls)) {
-    e.waitUntil(saveForOffline(msg.urls));
+    e.waitUntil(saveForOffline(msg.urls).then((ok) => reply && reply.postMessage(ok)));
+  } else if (msg.type === "remove" && Array.isArray(msg.urls)) {
+    e.waitUntil(removeOffline(msg.urls).then(() => reply && reply.postMessage(true)));
   }
 });
 
 async function saveForOffline(urls) {
   const shell = await caches.open(SHELL);
   const pages = await caches.open(PAGES);
+  let ok = true;
   await Promise.all(urls.map(async (u) => {
     try {
       const res = await fetch(u, { credentials: "same-origin" });
-      if (!res.ok || res.redirected) return;
+      if (!res.ok || res.redirected) { ok = false; return; }
       const target = isPageImage(new URL(u, self.location.origin)) ? pages : shell;
       await target.put(u, res.clone());
-    } catch (err) { /* skip unreachable */ }
+    } catch (err) { ok = false; }
   }));
+  return ok;
+}
+
+async function removeOffline(urls) {
+  const shell = await caches.open(SHELL);
+  const pages = await caches.open(PAGES);
+  await Promise.all(urls.map((u) => Promise.all([shell.delete(u), pages.delete(u)])));
 }

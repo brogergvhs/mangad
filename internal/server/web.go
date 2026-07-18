@@ -307,6 +307,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
+	mux.HandleFunc("GET /ui/library/{id}/chapters/offline", u.offlineChapters)
 	mux.HandleFunc("POST /ui/screens", u.screenSave)
 	mux.HandleFunc("POST /ui/screens/{id}", u.screenSave)
 	mux.HandleFunc("POST /ui/screens/{id}/delete", u.screenDelete)
@@ -1398,6 +1399,30 @@ func (u *webUI) chaptersTable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.writeChaptersTable(w, r, id)
+}
+
+// offlineChapters lists a title's downloaded chapters so the client can save
+// or remove whole from–to ranges regardless of chapter-list pagination.
+func (u *webUI) offlineChapters(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil || !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
+	chs, _ := u.svc.TitleChapters(r.Context(), id)
+	type row struct {
+		ID    int64 `json:"id"`
+		Num   int   `json:"num"`
+		Pages int   `json:"pages"`
+	}
+	out := make([]row, 0, len(chs))
+	for _, c := range chs {
+		if c.Downloaded {
+			out = append(out, row{ID: c.ID, Num: c.NumberMain, Pages: c.Pages})
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (u *webUI) chapterRead(read bool) http.HandlerFunc {

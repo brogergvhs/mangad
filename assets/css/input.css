@@ -726,7 +726,17 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
+    /* Fill the status-bar / Dynamic Island strip so nothing shows through it,
+       and keep controls clear of the notch and rounded corners in landscape. */
+    padding-top: calc(0.5rem + env(safe-area-inset-top));
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
     min-height: 3.5rem;
+  }
+  /* Keep the open drawer clear of the island (top) and home indicator (bottom). */
+  .app-sidebar {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   /* ---- drawer (sidebar shell) ---- */
@@ -834,8 +844,21 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
+  padding-top: calc(10px + env(safe-area-inset-top));
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
   background: var(--color-base-300);
   border-bottom: 1px solid var(--color-neutral);
+}
+[data-offline] .offline-rm {
+  display: none;
+}
+[data-offline].is-downloaded .offline-dl {
+  display: none;
+}
+[data-offline].is-downloaded .offline-rm {
+  display: inline-flex;
+  color: var(--color-success);
 }
 .reader-nav-left {
   justify-self: start;
