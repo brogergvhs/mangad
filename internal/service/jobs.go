@@ -1513,12 +1513,25 @@ func (s *JobService) PinToSmart(ctx context.Context, smartKey string, titleID in
 	return s.want.library.AddSmartPin(ctx, smartKey, titleID)
 }
 
-func (s *JobService) UnpinFromSmart(ctx context.Context, smartKey string, titleID int64) error {
-	return s.want.library.RemoveSmartPin(ctx, smartKey, titleID)
-}
-
 func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {
 	return s.want.GetManga(ctx, catalogID)
+}
+
+// CatalogMangaByAniList returns catalog metadata for an AniList id, fetching and
+// caching it from AniList when it is not yet in the local catalog. Lets users
+// view a manga's detail page before it is added to the library.
+func (s *JobService) CatalogMangaByAniList(ctx context.Context, anilistID int) (catalog.Manga, error) {
+	pid := strconv.Itoa(anilistID)
+	if m, ok, err := s.want.catalog.MangaByProvider(ctx, catalog.AniListProvider, pid); err != nil {
+		return catalog.Manga{}, err
+	} else if ok {
+		return m, nil
+	}
+	m, err := s.want.AniList().Get(ctx, anilistID)
+	if err != nil {
+		return catalog.Manga{}, err
+	}
+	return s.want.catalog.UpsertManga(ctx, m)
 }
 
 // RemoveTitleFiles removes a title and, when deleteFiles is set, its

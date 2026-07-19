@@ -418,6 +418,21 @@
 </div>
 {{end}}
 
+{{define "catalogManga"}}
+<div class="flex gap-5 mb-4 max-lg:flex-col">
+  <figure class="shrink-0 max-lg:self-center"><img class="h-72 w-48 rounded-lg bg-base-300 object-cover" src="{{.Manga.CoverImage}}" alt="" loading="lazy"></figure>
+  <div class="flex min-w-0 flex-1 flex-col gap-3">
+    <h1 class="text-2xl font-bold text-balance">{{mangaTitle .Manga}}</h1>
+    {{template "mangaDetail" .Manga}}
+  </div>
+</div>
+{{if .CanAdd}}
+<div class="mt-8 flex justify-center">
+  <button class="btn btn-primary btn-wide" hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.Manga.ProviderID}}","redirect":"1"}' hx-swap="none">Add to Library</button>
+</div>
+{{end}}
+{{end}}
+
 {{define "title"}}
 <div class="flex gap-5 mb-4 max-lg:flex-col">
   <figure class="shrink-0 max-lg:self-center"><img class="rounded-lg bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>

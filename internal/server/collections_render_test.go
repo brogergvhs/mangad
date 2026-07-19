@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brogergvhs/mangad/internal/catalog"
 	"github.com/brogergvhs/mangad/internal/library"
 )
 
@@ -84,5 +85,29 @@ func TestTitleActionsTemplatesRender(t *testing.T) {
 		if !strings.Contains(settings, want) {
 			t.Errorf("settings dialog missing %q in:\n%s", want, settings)
 		}
+	}
+}
+
+// The catalog-manga page shows a not-in-library title's details and a single
+// Add to Library action gated on the add permission.
+func TestCatalogMangaTemplateRenders(t *testing.T) {
+	u := &webUI{}
+	u.tmpl = template.Must(template.New("").Funcs(u.funcs()).ParseFS(templateFS, "templates/*.html"))
+	render := func(v catalogMangaView) string {
+		var buf bytes.Buffer
+		if err := u.tmpl.ExecuteTemplate(&buf, "catalogManga", v); err != nil {
+			t.Fatalf("render catalogManga: %v", err)
+		}
+		return buf.String()
+	}
+	m := catalog.Manga{ProviderID: "42", TitleRomaji: "Berserk", Description: "A dark fantasy.", Status: "FINISHED"}
+	out := render(catalogMangaView{Manga: m, CanAdd: true})
+	for _, want := range []string{"Berserk", "A dark fantasy.", `"provider_id":"42"`, `"redirect":"1"`, "Add to Library"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("catalogManga missing %q in:\n%s", want, out)
+		}
+	}
+	if out := render(catalogMangaView{Manga: m, CanAdd: false}); strings.Contains(out, "Add to Library") {
+		t.Error("Add to Library button should be hidden without add permission")
 	}
 }

@@ -131,9 +131,3 @@ func (r *Repository) AddSmartPin(ctx context.Context, smartKey string, titleID i
 	_, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO collection_smart_pins (user_id, smart_key, title_id) VALUES (?, ?, ?)`, auth.UserID(ctx), smartKey, titleID)
 	return err
 }
-
-// RemoveSmartPin unpins a title from a smart collection.
-func (r *Repository) RemoveSmartPin(ctx context.Context, smartKey string, titleID int64) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM collection_smart_pins WHERE user_id = ? AND smart_key = ? AND title_id = ?`, auth.UserID(ctx), smartKey, titleID)
-	return err
-}

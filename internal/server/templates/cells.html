@@ -405,9 +405,9 @@
     <tbody>
       {{$canAdd := .CanAdd}}{{range .Items}}
       <tr {{if .IsAdult}}class="outline outline-1 -outline-offset-1 outline-error"{{end}}>
-        <td class="w-12"><img class="h-14 w-10 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></td>
+        <td class="w-12"><a href="{{if .TitleID}}/library/{{.TitleID}}{{else}}/manga/{{.ProviderID}}{{end}}"><img class="h-14 w-10 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></a></td>
         <td class="min-w-0">
-          <div class="font-medium">{{mangaTitle .Manga}}</div>
+          <a class="font-medium link-hover" href="{{if .TitleID}}/library/{{.TitleID}}{{else}}/manga/{{.ProviderID}}{{end}}">{{mangaTitle .Manga}}</a>
           <div class="text-xs text-base-content/50">{{.Format}}{{if .Status}} · {{.Status}}{{end}}{{if .Chapters}} · {{.Chapters}} ch{{end}}{{if .AverageScore}} · ★ {{.AverageScore}}%{{end}}</div>
         </td>
         <td class="whitespace-nowrap text-right">
@@ -426,7 +426,7 @@
     <div class="flex gap-5 max-sm:flex-col">
       <figure class="shrink-0 max-sm:self-center">
         {{if .TitleID}}<a href="/library/{{.TitleID}}"><img class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></a>
-        {{else}}<img class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">{{end}}
+        {{else}}<a href="/manga/{{.ProviderID}}"><img class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></a>{{end}}
       </figure>
       <div class="flex min-w-0 flex-1 flex-col gap-2">
         <div class="flex items-center justify-between gap-3">
@@ -448,7 +448,7 @@
   <div class="flex min-w-0 flex-col">
     <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300{{if .IsAdult}} outline outline-2 -outline-offset-2 outline-error{{end}}">
       {{if .TitleID}}<a href="/library/{{.TitleID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>
-      {{else}}<img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy">{{end}}
+      {{else}}<a href="/manga/{{.ProviderID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>{{end}}
     </div>
     <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{mangaTitle .Manga}}</div>
     <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">

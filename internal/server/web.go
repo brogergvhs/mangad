@@ -284,6 +284,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /search", u.searchPage)
 	mux.HandleFunc("GET /library", u.libraryPage)
 	mux.HandleFunc("GET /library/{id}", u.titlePage)
+	mux.HandleFunc("GET /manga/{id}", u.catalogMangaPage)
 	mux.HandleFunc("GET /reader/{id}", u.readerPage)
 	mux.HandleFunc("GET /import", u.importPage)
 	mux.HandleFunc("GET /sources", u.sourcesPage)
@@ -430,6 +431,37 @@ func (u *webUI) stripItems(ctx context.Context, items []catalog.Manga) []searchR
 		views = append(views, searchResultView{Manga: m, TitleID: inLibrary[m.ProviderID]})
 	}
 	return views
+}
+
+type catalogMangaView struct {
+	Manga  catalog.Manga
+	CanAdd bool
+}
+
+// catalogMangaPage shows an AniList manga that is not (yet) in the library:
+// cover, title, description and stats, with a single Add to Library action.
+func (u *webUI) catalogMangaPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	pid := r.PathValue("id")
+	if inLib, _ := u.svc.TitlesByProvider(ctx, catalog.AniListProvider); inLib[pid] > 0 {
+		http.Redirect(w, r, fmt.Sprintf("/library/%d", inLib[pid]), http.StatusSeeOther)
+		return
+	}
+	id, err := strconv.Atoi(pid)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	m, err := u.svc.CatalogMangaByAniList(ctx, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !contentAllowed(ctx, m.IsAdult, mangaContentTags(m)) {
+		http.Error(w, "this title is not available for your account", http.StatusForbidden)
+		return
+	}
+	u.page(w, r, "catalogManga", mangaTitle(m), catalogMangaView{Manga: m, CanAdd: userFrom(ctx).Can(auth.PermLibraryAdd)})
 }
 
 func (u *webUI) relatedManga(w http.ResponseWriter, r *http.Request) {
@@ -2602,6 +2634,10 @@ func (u *webUI) addToLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.kick()
+	if r.FormValue("redirect") != "" {
+		w.Header().Set("HX-Redirect", fmt.Sprintf("/library/%d", title.ID))
+		return
+	}
 	if r.FormValue("card") != "" {
 		u.frag(w, "addedButtonCard", title)
 		return

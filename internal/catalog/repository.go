@@ -242,6 +242,20 @@ func (r *Repository) GetManga(ctx context.Context, id int64) (Manga, error) {
 	return m, nil
 }
 
+// MangaByProvider returns a cached manga by its provider id, or ok=false if it
+// has not been fetched into the local catalog yet.
+func (r *Repository) MangaByProvider(ctx context.Context, provider, providerID string) (Manga, bool, error) {
+	row := r.db.QueryRowContext(ctx, mangaSelect()+` WHERE provider = ? AND provider_id = ?`, provider, providerID)
+	m, err := scanManga(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Manga{}, false, nil
+		}
+		return Manga{}, false, fmt.Errorf("get manga by provider: %w", err)
+	}
+	return m, true, nil
+}
+
 // ListWanted returns wanted canonical titles.
 func (r *Repository) ListWanted(ctx context.Context) ([]Manga, error) {
 	rows, err := r.db.QueryContext(ctx, mangaSelect()+` WHERE wanted = 1 ORDER BY title_english COLLATE NOCASE, title_romaji COLLATE NOCASE`)
