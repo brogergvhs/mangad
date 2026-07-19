@@ -87,6 +87,13 @@ CREATE TABLE IF NOT EXISTS content_tags (
 	name TEXT PRIMARY KEY,
 	kind TEXT NOT NULL DEFAULT 'tag'
 );
+CREATE TABLE IF NOT EXISTS catalog_relations (
+	from_id TEXT NOT NULL,
+	to_id TEXT NOT NULL,
+	relation TEXT NOT NULL,
+	PRIMARY KEY (from_id, to_id)
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_relations_from ON catalog_relations(from_id);
 
 CREATE TABLE IF NOT EXISTS catalog_manga (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,

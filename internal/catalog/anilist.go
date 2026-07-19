@@ -206,16 +206,13 @@ func (c *AniListClient) Trending(ctx context.Context, limit int) ([]Manga, error
 	return anilistMediaToManga(resp.Data.Page.Media)
 }
 
+const mediaFields = `id title { romaji english native } description(asHtml: false)
+	coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }`
+
 // Get returns one AniList manga by ID.
 func (c *AniListClient) Get(ctx context.Context, id int) (Manga, error) {
 	var resp anilistGetResponse
-	if err := c.do(ctx, `
-		query ($id: Int) {
-			Media(id: $id, type: MANGA) {
-				id title { romaji english native } description(asHtml: false)
-				coverImage { large } status format chapters volumes synonyms genres averageScore startDate { year } isAdult tags { name } staff(sort: RELEVANCE, perPage: 8) { edges { role node { name { full } } } }
-			}
-		}`, map[string]any{"id": id}, &resp); err != nil {
+	if err := c.do(ctx, fmt.Sprintf(`query ($id: Int) { Media(id: $id, type: MANGA) { %s } }`, mediaFields), map[string]any{"id": id}, &resp); err != nil {
 		return Manga{}, err
 	}
 	items, err := anilistMediaToManga([]anilistMedia{resp.Data.Media})
@@ -226,6 +223,45 @@ func (c *AniListClient) Get(ctx context.Context, id int) (Manga, error) {
 		return Manga{}, fmt.Errorf("anilist manga %d not found", id)
 	}
 	return items[0], nil
+}
+
+// GetWithRelations returns a manga plus its same-collection relations to other
+// manga in one request, so a catalog refresh needs no extra round-trip.
+func (c *AniListClient) GetWithRelations(ctx context.Context, id int) (Manga, []Relation, error) {
+	var resp struct {
+		Data struct {
+			Media struct {
+				anilistMedia
+				Relations struct {
+					Edges []struct {
+						RelationType string `json:"relationType"`
+						Node         struct {
+							ID   int    `json:"id"`
+							Type string `json:"type"`
+						} `json:"node"`
+					} `json:"edges"`
+				} `json:"relations"`
+			} `json:"Media"`
+		} `json:"data"`
+	}
+	q := fmt.Sprintf(`query ($id: Int) { Media(id: $id, type: MANGA) { %s relations { edges { relationType node { id type } } } } }`, mediaFields)
+	if err := c.do(ctx, q, map[string]any{"id": id}, &resp); err != nil {
+		return Manga{}, nil, err
+	}
+	items, err := anilistMediaToManga([]anilistMedia{resp.Data.Media.anilistMedia})
+	if err != nil {
+		return Manga{}, nil, err
+	}
+	if len(items) == 0 {
+		return Manga{}, nil, fmt.Errorf("anilist manga %d not found", id)
+	}
+	var rels []Relation
+	for _, e := range resp.Data.Media.Relations.Edges {
+		if e.Node.Type == "MANGA" && CollectionRelation(e.RelationType) {
+			rels = append(rels, Relation{ProviderID: strconv.Itoa(e.Node.ID), Type: e.RelationType})
+		}
+	}
+	return items[0], rels, nil
 }
 
 // TagVocabulary returns AniList's global genre and tag name lists.

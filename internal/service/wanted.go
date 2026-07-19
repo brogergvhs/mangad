@@ -40,6 +40,7 @@ type WantedService struct {
 		TagVocabulary(context.Context) (genres []string, tags []catalog.ContentTag, err error)
 		Related(context.Context, int, int) ([]catalog.Manga, error)
 		Trending(context.Context, int) ([]catalog.Manga, error)
+		GetWithRelations(context.Context, int) (catalog.Manga, []catalog.Relation, error)
 		UserList(context.Context, int) ([]catalog.AniListEntry, error)
 		MediaEntry(context.Context, int) (int, string, bool, error)
 		SaveEntry(context.Context, int, int, string) error
@@ -56,6 +57,7 @@ type AniListAPI interface {
 	TagVocabulary(context.Context) (genres []string, tags []catalog.ContentTag, err error)
 	Related(context.Context, int, int) ([]catalog.Manga, error)
 	Trending(context.Context, int) ([]catalog.Manga, error)
+	GetWithRelations(context.Context, int) (catalog.Manga, []catalog.Relation, error)
 	UserList(context.Context, int) ([]catalog.AniListEntry, error)
 	MediaEntry(context.Context, int) (int, string, bool, error)
 	SaveEntry(context.Context, int, int, string) error

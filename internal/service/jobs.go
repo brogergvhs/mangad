@@ -962,13 +962,8 @@ func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressMan
 		if err != nil {
 			continue
 		}
-		m, err := s.want.AniList().Get(ctx, mediaID)
-		if err != nil {
+		if err := s.want.RefreshManga(ctx, mediaID); err != nil {
 			errs = append(errs, fmt.Errorf("refresh %s: %w", pid, err))
-			continue
-		}
-		if _, err := s.want.catalog.UpsertManga(ctx, m); err != nil {
-			errs = append(errs, fmt.Errorf("store %s: %w", pid, err))
 		}
 	}
 	return errs2err(errs)
@@ -1472,6 +1467,11 @@ func (s *JobService) recommendedManga(ctx context.Context, limit int) ([]catalog
 // MangaByIDs returns catalog manga keyed by ID in one query.
 func (s *JobService) MangaByIDs(ctx context.Context, ids []int64) (map[int64]catalog.Manga, error) {
 	return s.want.catalog.MangaByIDs(ctx, ids)
+}
+
+// CollectionEdges returns the stored relation graph as (from, to) provider-id pairs.
+func (s *JobService) CollectionEdges(ctx context.Context) ([][2]string, error) {
+	return s.want.catalog.CollectionEdges(ctx)
 }
 
 func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {

@@ -138,6 +138,19 @@ func (s *WantedService) ImportFolder(ctx context.Context, root, folder string, a
 	return s.library.GetTitle(ctx, title.ID)
 }
 
+// RefreshManga re-fetches a manga's metadata and its collection relations in
+// one AniList request and stores both.
+func (s *WantedService) RefreshManga(ctx context.Context, anilistID int) error {
+	m, rels, err := s.anilist.GetWithRelations(ctx, anilistID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.catalog.UpsertManga(ctx, m); err != nil {
+		return err
+	}
+	return s.catalog.ReplaceRelations(ctx, strconv.Itoa(anilistID), rels)
+}
+
 // AddCatalogTitle adds an AniList manga to the library as a source-less title
 // (deduped per manga) so its sources can be linked later.
 func (s *WantedService) AddCatalogTitle(ctx context.Context, anilistID int) (library.Title, error) {

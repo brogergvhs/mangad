@@ -95,6 +95,63 @@ func (r *Repository) DeleteMatches(ctx context.Context, catalogMangaID int64) er
 	return err
 }
 
+// Relation is an AniList media relation to another manga, kept for grouping
+// connected titles into collections.
+type Relation struct {
+	ProviderID string
+	Type       string
+}
+
+// CollectionRelation reports whether a MediaRelation type links entries that
+// belong to the same work/collection (vs cross-media or incidental links).
+func CollectionRelation(t string) bool {
+	switch t {
+	case "SEQUEL", "PREQUEL", "PARENT", "SIDE_STORY", "ALTERNATIVE", "SPIN_OFF", "SUMMARY", "COMPILATION", "CONTAINS":
+		return true
+	}
+	return false
+}
+
+// ReplaceRelations swaps the stored collection relations for one media.
+func (r *Repository) ReplaceRelations(ctx context.Context, fromID string, rels []Relation) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM catalog_relations WHERE from_id = ?`, fromID); err != nil {
+		return err
+	}
+	for _, rel := range rels {
+		if rel.ProviderID == "" || rel.ProviderID == fromID {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO catalog_relations (from_id, to_id, relation) VALUES (?, ?, ?)`, fromID, rel.ProviderID, rel.Type); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// CollectionEdges returns every stored relation as an (from, to) provider-id
+// pair for building the collection graph.
+func (r *Repository) CollectionEdges(ctx context.Context) ([][2]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT from_id, to_id FROM catalog_relations`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][2]string
+	for rows.Next() {
+		var a, b string
+		if err := rows.Scan(&a, &b); err != nil {
+			return nil, err
+		}
+		out = append(out, [2]string{a, b})
+	}
+	return out, rows.Err()
+}
+
 // ContentTag is one AniList genre or tag name, for content-guard pickers.
 type ContentTag struct {
 	Name    string
