@@ -686,10 +686,25 @@ type collection struct {
 	Members []library.Title
 }
 
+// collectionCard is one collection rendered as a single library-style card:
+// combined stats, a blended progress bar, and a cover collage of members.
+type collectionCard struct {
+	Name      string
+	Count     int
+	Chapters  int64
+	Volumes   int64
+	Pages     int64
+	SizeBytes int64
+	ReadPct   int64
+	FullPct   int64
+	Covers    []string // up to 3 member covers
+	Extra     int      // remaining members beyond the shown covers
+	Stacked   bool     // exactly 2 members
+}
+
 type collectionsView struct {
 	ByRelation   bool
-	Collections  []collection
-	CanManage    bool
+	Cards        []collectionCard
 	HasRelations bool
 }
 
@@ -708,10 +723,41 @@ func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 	byRelation := r.URL.Query().Get("by") == "relation"
 	u.page(w, r, "collections", "Collections", collectionsView{
 		ByRelation:   byRelation,
-		Collections:  buildCollections(titles, mangas, edges, byRelation),
-		CanManage:    auth.FromContext(ctx).Can(auth.PermLibraryManage),
+		Cards:        collectionCards(buildCollections(titles, mangas, edges, byRelation)),
 		HasRelations: len(edges) > 0,
 	})
+}
+
+func collectionCards(cols []collection) []collectionCard {
+	out := make([]collectionCard, 0, len(cols))
+	for _, c := range cols {
+		card := collectionCard{Name: c.Name, Count: len(c.Members)}
+		var total, read int64
+		for _, m := range c.Members {
+			card.Chapters += m.DiscoveredCount
+			card.Volumes += m.VolumeCount
+			card.Pages += m.Pages + m.VolumePages
+			card.SizeBytes += m.SizeBytes + m.VolumeBytes
+			total += m.DiscoveredCount + m.VolumeCount
+			read += m.ReadCount + m.VolumeReadCount
+		}
+		card.ReadPct = percent(read, total)
+		if total > 0 {
+			card.FullPct = 100 // blue fills the whole bar: the combined total
+		}
+		n := len(c.Members)
+		if n == 2 {
+			card.Stacked = true
+		} else if n > 3 {
+			n = 3
+			card.Extra = len(c.Members) - 3
+		}
+		for _, m := range c.Members[:n] {
+			card.Covers = append(card.Covers, m.CoverImage)
+		}
+		out = append(out, card)
+	}
+	return out
 }
 
 // buildCollections groups library titles either by shared author or by AniList
@@ -741,24 +787,61 @@ func authorCollections(titles []library.Title, mangas map[int64]catalog.Manga) [
 				continue
 			}
 			seen[dedupe] = true
+			disp := strings.TrimSpace(author)
 			g := groups[key]
 			if g == nil {
-				g = &collection{Name: strings.TrimSpace(author)}
+				g = &collection{Name: disp}
 				groups[key] = g
 				order = append(order, key)
+			} else if disp < g.Name {
+				g.Name = disp
 			}
 			g.Members = append(g.Members, t)
 		}
 	}
-	var out []collection
+
+	bySig := map[string]*collection{}
+	sigAuthors := map[string][]string{}
+	var sigOrder []string
 	for _, key := range order {
-		if g := groups[key]; len(g.Members) >= 2 {
-			sortByTitle(g.Members)
-			out = append(out, *g)
+		g := groups[key]
+		if len(g.Members) < 2 {
+			continue
 		}
+		sortByTitle(g.Members)
+		sig := memberSignature(g.Members)
+		if _, ok := bySig[sig]; !ok {
+			bySig[sig] = &collection{Members: g.Members}
+			sigOrder = append(sigOrder, sig)
+		}
+		sigAuthors[sig] = append(sigAuthors[sig], g.Name)
+	}
+	var out []collection
+	for _, sig := range sigOrder {
+		authors := sigAuthors[sig]
+		sort.SliceStable(authors, func(i, j int) bool {
+			return strings.ToLower(authors[i]) < strings.ToLower(authors[j])
+		})
+		c := bySig[sig]
+		c.Name = strings.Join(authors, ", ")
+		out = append(out, *c)
 	}
 	sortByName(out)
 	return out
+}
+
+func memberSignature(members []library.Title) string {
+	ids := make([]int64, len(members))
+	for i, m := range members {
+		ids[i] = m.ID
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	var b strings.Builder
+	for _, id := range ids {
+		b.WriteString(strconv.FormatInt(id, 10))
+		b.WriteByte(',')
+	}
+	return b.String()
 }
 
 func relationCollections(titles []library.Title, mangas map[int64]catalog.Manga, edges [][2]string) []collection {

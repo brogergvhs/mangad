@@ -299,23 +299,33 @@
   <a href="/collections" class="btn btn-sm {{if .ByRelation}}btn-outline{{else}}btn-primary{{end}}">By author</a>
   <a href="/collections?by=relation" class="btn btn-sm {{if .ByRelation}}btn-primary{{else}}btn-outline{{end}}">Smart</a>
 </div>
-{{if .Collections}}
-{{$cm := .CanManage}}
-<div class="grid gap-8">
-  {{range .Collections}}
-  <section>
-    <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.Name}} <span class="text-base-content/40">· {{len .Members}}</span></h2>
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-      {{range .Members}}{{template "libraryCard" cardView . $cm 0}}{{end}}
-    </div>
-  </section>
-  {{end}}
+{{if .Cards}}
+<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+  {{range .Cards}}{{template "collectionCard" .}}{{end}}
 </div>
 {{else if and .ByRelation (not .HasRelations)}}
 <p class="py-3 text-base-content/60">No connections stored yet. Run a Catalog refresh (Management → Recent jobs → Start new job) to fetch AniList relations, then check back.</p>
 {{else}}
 <p class="py-3 text-base-content/60">Nothing to collect yet — you need two or more {{if .ByRelation}}connected titles{{else}}titles by the same author{{end}} in your library.</p>
 {{end}}
+{{end}}
+
+{{define "collectionCard"}}
+<div class="min-w-0">
+  <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
+    <div class="grid h-full gap-px {{if .Stacked}}grid-rows-2{{else}}grid-cols-2 grid-rows-2{{end}}">
+      {{range .Covers}}<img class="h-full w-full object-cover" src="{{.}}" alt="" loading="lazy">{{end}}
+      {{if .Extra}}<div class="flex items-center justify-center bg-base-200 text-lg font-semibold text-base-content/70">+{{.Extra}}</div>{{end}}
+    </div>
+  </div>
+  <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Name}}</div>
+  <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
+    <span class="truncate">{{.Count}} titles</span>
+    <span class="shrink-0">{{humanBytes .SizeBytes}}</span>
+  </div>
+  <div class="mt-0.5 truncate text-xs text-base-content/50">{{if .Chapters}}{{.Chapters}} ch{{end}}{{if .Volumes}} · {{.Volumes}} vol{{end}}{{if .Pages}} · {{.Pages}} pages{{end}}</div>
+  <div class="mt-1">{{template "bar" bar .ReadPct .FullPct}}</div>
+</div>
 {{end}}
 
 {{define "title"}}

@@ -37,6 +37,25 @@ func TestAuthorCollections(t *testing.T) {
 	}
 }
 
+func TestAuthorCollectionsMergesIdenticalMemberSets(t *testing.T) {
+	t.Parallel()
+	titles := []library.Title{title(1, 10, "Gunggwigeomsin 1-bu"), title(2, 20, "Madojeilgeom")}
+	mangas := map[int64]catalog.Manga{
+		10: {Authors: []string{"Don-Hyeong Jo", "Gwang-Jin Park"}},
+		20: {Authors: []string{"Gwang-Jin Park", "Don-Hyeong Jo"}},
+	}
+	cs := authorCollections(titles, mangas)
+	if len(cs) != 1 {
+		t.Fatalf("author collections = %+v, want 1 merged", collectionNames(cs))
+	}
+	if cs[0].Name != "Don-Hyeong Jo, Gwang-Jin Park" {
+		t.Errorf("merged name = %q", cs[0].Name)
+	}
+	if len(cs[0].Members) != 2 {
+		t.Errorf("members = %d, want 2", len(cs[0].Members))
+	}
+}
+
 func TestRelationCollectionsComponentsAndSingletons(t *testing.T) {
 	t.Parallel()
 	// Ghost in the Shell cluster (100,101,102) + an isolated Overgeared (200)
