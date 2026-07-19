@@ -80,6 +80,31 @@
     outline: 2px solid color-mix(in srgb, var(--color-primary) 60%, transparent);
     outline-offset: 1px;
   }
+
+  /* Thin, themed scrollbars: transparent track, subtle thumb. Firefox uses
+     `scrollbar-width: thin` (overlaid, no reserved gutter); WebKit gets a
+     narrow styled bar over a transparent track. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-muted) 40%, transparent)
+      transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    background: transparent;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-muted) 38%, transparent);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-muted) 62%, transparent);
+  }
 }
 
 @layer components {
