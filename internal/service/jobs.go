@@ -798,7 +798,11 @@ func (s *JobService) expandAniListSync(ctx context.Context, parentID int64) erro
 // remote > local pulls read marks down; local > remote pushes up; tracked
 // titles missing from the remote list are added with their computed status.
 func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress ProgressManager) error {
-	ctx = auth.WithUser(ctx, &auth.User{ID: userID})
+	user, err := s.auth.GetUser(ctx, userID)
+	if err != nil || user == nil {
+		user = &auth.User{ID: userID}
+	}
+	ctx = auth.WithUser(ctx, user)
 	actx, aid, ok := s.aniListIdentity(ctx, userID)
 	if !ok {
 		return nil // disconnected since the sweep expanded
@@ -812,6 +816,18 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 		remote[e.Manga.ProviderID] = e
 	}
 	tracked, err := s.lib.TitlesByProvider(ctx, catalog.AniListProvider)
+	if err != nil {
+		return err
+	}
+	titles, err := s.lib.ListTitles(ctx)
+	if err != nil {
+		return err
+	}
+	byID := make(map[int64]library.Title, len(titles))
+	for _, t := range titles {
+		byID[t.ID] = t
+	}
+	owners, err := s.lib.TitleOwners(ctx)
 	if err != nil {
 		return err
 	}
@@ -839,6 +855,10 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 		handle.Update(n, len(tracked), 0)
 		mediaID, err := strconv.Atoi(pid)
 		if err != nil {
+			continue
+		}
+		t := byID[titleID]
+		if !contentAllowedFor(user, t.IsAdult, t.ContentTags) {
 			continue
 		}
 		if remoteFav[pid] && !localFav[pid] {
@@ -870,6 +890,9 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 			continue
 		}
 		if !listed {
+			if status == "PLANNING" && !ownsTitle(userID, owners[titleID]) {
+				continue
+			}
 			if err := s.want.AniList().SaveEntry(actx, mediaID, local, status); err != nil {
 				errs = append(errs, fmt.Errorf("add %s: %w", pid, err))
 			}
@@ -891,6 +914,27 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 	}
 	s.invalidateRecs(userID)
 	return errs2err(errs)
+}
+
+// contentAllowedFor mirrors the server's per-user content guard so AniList
+// sync never surfaces a title the user cannot view in the app.
+func contentAllowedFor(u *auth.User, isAdult bool, tags []string) bool {
+	if u == nil {
+		return false
+	}
+	if isAdult && !u.AllowAdult {
+		return false
+	}
+	if len(u.AllowedTags) > 0 && !library.HasAnyTag(tags, u.AllowedTags) {
+		return false
+	}
+	return !library.HasAnyTag(tags, u.BlockedTags)
+}
+
+// ownsTitle reports whether the user added the title. Titles added before
+// ownership was tracked (added_by 0) belong to the env admin.
+func ownsTitle(userID, addedBy int64) bool {
+	return addedBy == userID || (addedBy == 0 && userID == auth.EnvAdminID)
 }
 
 // localAniListState computes the user's progress and list status for a title:

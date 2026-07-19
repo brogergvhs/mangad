@@ -381,6 +381,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"volume_read_progress", "last_page", "INTEGER NOT NULL DEFAULT 0"},
 		{"titles", "language_mode", "TEXT NOT NULL DEFAULT ''"},
 		{"titles", "language_gap", "INTEGER NOT NULL DEFAULT 0"},
+		{"titles", "added_by", "INTEGER NOT NULL DEFAULT 0"},
 		{"library_screens", "position", "INTEGER NOT NULL DEFAULT 0"},
 		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
 		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},

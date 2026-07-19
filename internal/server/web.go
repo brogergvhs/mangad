@@ -1408,7 +1408,7 @@ func (u *webUI) readerPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !contentAllowed(r.Context(), progress.Title.IsAdult, progress.Title.ContentTags) {
-		http.Error(w, "adult content is not available for this account", http.StatusForbidden)
+		http.Error(w, "This content is not available for this account", http.StatusForbidden)
 		return
 	}
 	presence.SetTitle(r.Context(), auth.UserID(r.Context()), progress.ID, progress.DisplayTitle)
@@ -1840,7 +1840,7 @@ func (u *webUI) titlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
-		http.Error(w, "adult content is not available for this account", http.StatusForbidden)
+		http.Error(w, "This content is not available for this account", http.StatusForbidden)
 		return
 	}
 	view := u.titleActivity(r.Context(), id)

@@ -252,6 +252,11 @@ func (s *LibraryService) RenameChapter(ctx context.Context, chapterID int64, tit
 	return s.repo.RenameChapter(ctx, chapterID, title)
 }
 
+// TitleOwners maps title id to the user that added it.
+func (s *LibraryService) TitleOwners(ctx context.Context) (map[int64]int64, error) {
+	return s.repo.TitleOwners(ctx)
+}
+
 // MarkChapterRangeRead marks downloaded chapters in a title range read.
 // MarkChaptersReadThrough marks chapters up to a number read (AniList pull).
 func (s *LibraryService) MarkChaptersReadThrough(ctx context.Context, titleID int64, maxNumber int) (int, error) {

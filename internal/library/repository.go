@@ -71,8 +71,9 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 			output_path,
 			monitored,
 			refresh_interval,
+			added_by,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(source_url) DO UPDATE SET
 			catalog_manga_id = COALESCE(excluded.catalog_manga_id, titles.catalog_manga_id),
 			source_id = COALESCE(excluded.source_id, titles.source_id),
@@ -82,7 +83,7 @@ func (r *Repository) AddTitle(ctx context.Context, params AddTitleParams) (Title
 			refresh_interval = excluded.refresh_interval,
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
-	`, catalogID, sourceID, params.SourceURL, params.DisplayTitle, params.OutputPath, database.BoolToInt(params.Monitored), params.RefreshInterval)
+	`, catalogID, sourceID, params.SourceURL, params.DisplayTitle, params.OutputPath, database.BoolToInt(params.Monitored), params.RefreshInterval, auth.UserID(ctx))
 
 	var id int64
 	if err := row.Scan(&id); err != nil {
@@ -214,6 +215,25 @@ func (r *Repository) ListTitleSources(ctx context.Context, titleID int64) ([]Lin
 func (r *Repository) UpdateDownloadFile(ctx context.Context, chapterID int64, file string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE downloads SET output_file = ? WHERE chapter_id = ? AND status = 'completed'`, file, chapterID)
 	return err
+}
+
+// TitleOwners maps title id to the user id that added it (0 = added before
+// ownership was tracked).
+func (r *Repository) TitleOwners(ctx context.Context) (map[int64]int64, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, added_by FROM titles`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int64{}
+	for rows.Next() {
+		var id, addedBy int64
+		if err := rows.Scan(&id, &addedBy); err != nil {
+			return nil, err
+		}
+		out[id] = addedBy
+	}
+	return out, rows.Err()
 }
 
 // DeleteDownload drops a chapter's download record so the chapter counts as
