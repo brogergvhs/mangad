@@ -99,20 +99,20 @@
       <li><a href="/ui/library/{{.TitleID}}/chapters/{{.ID}}/download" download target="_blank" rel="noopener">{{template "iconDownload"}}Download .cbz</a></li>
       {{if .CanManage}}<li><button class="text-error" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/remove" hx-target="#chapters-table" hx-swap="outerHTML" hx-confirm="Remove this chapter from disk? It will show as missing.">{{template "iconTrash"}}Remove from disk</button></li>{{end}}
     {{end}}
-    {{if .CanManage}}
-    <li class="mt-1 border-t border-base-300 pt-1">
-      <form class="grid gap-1 px-3 py-1.5" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename" hx-target="#chapters-table" hx-swap="outerHTML">
-        <span class="text-xs font-medium text-base-content/50">Rename</span>
-        <div class="flex gap-1">
-          <input name="title" value="{{.Title}}" class="input input-xs w-full" placeholder="Chapter name">
-          <button class="btn btn-xs btn-primary shrink-0">Save</button>
-        </div>
-      </form>
-    </li>
-    {{end}}
+    {{if .CanManage}}<li><button hx-get="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename-dialog" hx-target="#chapter-rename-body" hx-swap="innerHTML" onclick="chapter_rename_modal.showModal()">{{template "iconEdit"}}Rename</button></li>{{end}}
   </ul>
 </details>
 {{else}}<span class="text-base-content/30">—</span>{{end}}
+{{end}}
+
+{{define "chapterRenameDialog"}}
+<form class="grid gap-3" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename" hx-target="#chapters-table" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful){chapter_rename_modal.close()}">
+  <input name="title" value="{{.Title}}" class="input w-full" placeholder="Chapter name" autofocus>
+  <div class="modal-action">
+    <button type="button" class="btn btn-ghost" onclick="chapter_rename_modal.close()">Cancel</button>
+    <button class="btn btn-primary">Save</button>
+  </div>
+</form>
 {{end}}
 
 {{define "jobCancel"}}<button class="btn btn-error btn-soft btn-xs" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
@@ -599,6 +599,15 @@
     </select>
   </form>
   {{template "chaptersList" .ChaptersTable}}
+  {{if .CanManage}}
+  <dialog id="chapter_rename_modal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="text-lg font-bold mb-3">Rename chapter</h3>
+      <div id="chapter-rename-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+  {{end}}
   {{end}}
 </div>
 {{end}}

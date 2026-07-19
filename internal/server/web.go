@@ -331,6 +331,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/read", u.chapterRead(true))
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/unread", u.chapterRead(false))
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/remove", u.chapterRemove)
+	mux.HandleFunc("GET /ui/library/{id}/chapters/{chapterID}/rename-dialog", u.chapterRenameDialog)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/rename", u.chapterRename)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/range", u.chapterRangeRead)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/delete-range", u.chapterDeleteRange)
@@ -2268,6 +2269,20 @@ func (u *webUI) chapterRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.writeChaptersTable(w, r, titleID)
+}
+
+// chapterRenameDialog returns the rename form pre-filled with the chapter's title.
+func (u *webUI) chapterRenameDialog(w http.ResponseWriter, r *http.Request) {
+	_, chapterID, ok := u.chapterOwned(w, r)
+	if !ok {
+		return
+	}
+	st, err := u.svc.ChapterReadStatus(r.Context(), chapterID)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "chapterRenameDialog", st)
 }
 
 // chapterRename edits one chapter's descriptive title.

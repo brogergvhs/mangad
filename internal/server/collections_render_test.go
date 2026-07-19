@@ -149,7 +149,20 @@ func TestChapterActionsTemplate(t *testing.T) {
 		t.Errorf("missing chapter for reader should collapse to a dash, got:\n%s", out)
 	}
 
-	if out := render(row(false, true)); !strings.Contains(out, "/chapters/5/rename") || strings.Contains(out, "/download") {
+	if out := render(row(false, true)); !strings.Contains(out, "/chapters/5/rename-dialog") || strings.Contains(out, "/download") {
 		t.Errorf("missing chapter for manager should offer rename only, got:\n%s", out)
+	}
+
+	var st library.ChapterReadStatus
+	st.ID, st.TitleID, st.Title = 5, 3, "Dark"
+	var buf bytes.Buffer
+	if err := u.tmpl.ExecuteTemplate(&buf, "chapterRenameDialog", st); err != nil {
+		t.Fatalf("render chapterRenameDialog: %v", err)
+	}
+	dlg := buf.String()
+	for _, want := range []string{"/ui/library/3/chapters/5/rename", `value="Dark"`, "chapter_rename_modal.close()", "Save"} {
+		if !strings.Contains(dlg, want) {
+			t.Errorf("rename dialog missing %q in:\n%s", want, dlg)
+		}
 	}
 }
