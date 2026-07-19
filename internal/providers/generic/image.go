@@ -12,6 +12,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/brogergvhs/mangad/internal/ui"
+	"golang.org/x/net/publicsuffix"
 )
 
 var (
@@ -384,6 +385,7 @@ func (c *imageCollector) Finalize() []string {
 	groups := groupCollectedItems(c.items)
 	chosenList := chooseBestImages(groups)
 	sortChosen(chosenList)
+	chosenList = c.dropForeignDomainImages(chosenList)
 
 	out := make([]string, len(chosenList))
 	for i := range chosenList {
@@ -391,6 +393,51 @@ func (c *imageCollector) Finalize() []string {
 	}
 
 	return out
+}
+
+// dropForeignDomainImages removes stray images served from a different site
+// than the pages.
+func (c *imageCollector) dropForeignDomainImages(list []chosenItem) []chosenItem {
+	if len(list) < 5 {
+		return list
+	}
+	counts := map[string]int{}
+	for _, it := range list {
+		counts[registrableDomain(it.URL)]++
+	}
+	dominant, dominantCount := "", 0
+	for domain, n := range counts {
+		if domain != "" && n > dominantCount {
+			dominant, dominantCount = domain, n
+		}
+	}
+	if dominant == "" || dominantCount*100 < 85*len(list) {
+		return list
+	}
+	out := make([]chosenItem, 0, len(list))
+	for _, it := range list {
+		if d := registrableDomain(it.URL); d != "" && d != dominant {
+			if c.log != nil {
+				c.log.Infof("Dropping off-site image (chapter pages are on %s): %s\n", dominant, it.URL)
+			}
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// registrableDomain returns a URL's eTLD+1 (e.g. storage.vortexscans.org ->
+// vortexscans.org), so numbered CDN subdomains of one site group together.
+func registrableDomain(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u == nil || u.Hostname() == "" {
+		return ""
+	}
+	if d, err := publicsuffix.EffectiveTLDPlusOne(u.Hostname()); err == nil {
+		return d
+	}
+	return u.Hostname()
 }
 
 // groupCollectedItems groups collected images by their normalized base URL.

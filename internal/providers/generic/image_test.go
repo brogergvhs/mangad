@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -37,6 +38,58 @@ func TestImageCollectorSkipsShareAssets(t *testing.T) {
 	got := col.Finalize()
 	if len(got) != 1 || got[0] != "https://zjcdn.mangahere.org/store/manga/29763/030.0/compressed/n000.jpg" {
 		t.Fatalf("Finalize() = %#v", got)
+	}
+}
+
+func TestImageCollectorDropsForeignDomainBanner(t *testing.T) {
+	col := newImageCollector(buildExtRegex([]string{"jpg", "webp"}), nil)
+	// A VortexScans-style chapter: a foreign credit banner as page 1, then the
+	// real pages on the site's own storage domain.
+	col.add("https://storage.mangagalaxy.net/public/upload/2024/07/19/image19.webp", -1)
+	for i := 1; i <= 12; i++ {
+		col.add(fmt.Sprintf("https://storage.vortexscans.org/upload/series/x/%02d.jpg", i), -1)
+	}
+	got := col.Finalize()
+	if len(got) != 12 {
+		t.Fatalf("want 12 pages (foreign banner dropped), got %d: %#v", len(got), got)
+	}
+	for _, u := range got {
+		if strings.Contains(u, "mangagalaxy.net") {
+			t.Errorf("foreign-domain banner should be dropped: %s", u)
+		}
+	}
+}
+
+func TestImageCollectorKeepsSubdomainShardedPages(t *testing.T) {
+	col := newImageCollector(buildExtRegex([]string{"webp"}), nil)
+	// Pages sharded across numbered CDN subdomains of one site, plus one foreign
+	// banner. The subdomains share a registrable domain, so all pages survive
+	// and only the true outlier is dropped.
+	col.add("https://ads.example-cdn.net/promo/credits.webp", -1)
+	for i := 1; i <= 12; i++ {
+		col.add(fmt.Sprintf("https://cdn%d.zinmanga1.com/series/x/%02d.webp", (i%5)+1, i), -1)
+	}
+	got := col.Finalize()
+	if len(got) != 12 {
+		t.Fatalf("want 12 sharded pages kept, got %d: %#v", len(got), got)
+	}
+	for _, u := range got {
+		if strings.Contains(u, "example-cdn.net") {
+			t.Errorf("foreign banner should be dropped: %s", u)
+		}
+	}
+}
+
+func TestImageCollectorKeepsGenuineMultiDomainSplit(t *testing.T) {
+	col := newImageCollector(buildExtRegex([]string{"webp"}), nil)
+	// No single domain dominates (3/3): don't prune — this could be a real
+	// chapter split across two CDNs.
+	for i := 1; i <= 3; i++ {
+		col.add(fmt.Sprintf("https://a-cdn.com/x/%02d.webp", i), -1)
+		col.add(fmt.Sprintf("https://b-cdn.net/x/%02d.webp", i), -1)
+	}
+	if got := col.Finalize(); len(got) != 6 {
+		t.Fatalf("want all 6 kept when no domain dominates, got %d: %#v", len(got), got)
 	}
 }
 

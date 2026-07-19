@@ -1,7 +1,7 @@
 {{define "home"}}
 {{range .Rows}}
 <h2 class="mb-2 mt-6 first:mt-0 text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.Heading}}</h2>
-<div class="flex gap-3 overflow-x-auto pb-2">
+<div class="flex gap-3 overflow-x-auto">
   {{range .Cards}}
   <a href="{{.Href}}" class="w-40 shrink-0">
     <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
