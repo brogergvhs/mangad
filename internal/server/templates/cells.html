@@ -85,24 +85,34 @@
 {{- else}}<span class="font-medium">{{$text}}</span>{{end}}
 {{end}}
 
-{{define "chapterReadAction"}}
-{{if .Downloaded}}
-  {{if or .Read (gt .ReadPages 0)}}
-  <button class="btn btn-ghost btn-xs btn-square text-success [&_svg]:size-3.5" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">
-    {{template "iconEye"}}
-  </button>
-  {{else}}
-  <button class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">
-    {{template "iconEyeOff"}}
-  </button>
-  {{end}}
-{{else}}<span class="text-base-content/40">—</span>{{end}}
-{{end}}
-
-{{define "chapterDownloadAction"}}
-{{if .Downloaded}}<a class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5"
-  href="/ui/library/{{.TitleID}}/chapters/{{.ID}}/download" download target="_blank" rel="noopener"
-  aria-label="Download .cbz" title="Download .cbz">{{template "iconDownload"}}</a>{{end}}
+{{define "chapterActions"}}
+{{if or .Downloaded .CanManage}}
+<details class="dropdown dropdown-end">
+  <summary class="btn btn-ghost btn-xs btn-square [&_svg]:size-3.5" aria-label="Chapter actions">{{template "iconDots"}}</summary>
+  <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
+    {{if .Downloaded}}
+      {{if or .Read (gt .ReadPages 0)}}
+      <li><button hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML">{{template "iconEye"}}Mark unread</button></li>
+      {{else}}
+      <li><button hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML">{{template "iconEyeOff"}}Mark read</button></li>
+      {{end}}
+      <li><a href="/ui/library/{{.TitleID}}/chapters/{{.ID}}/download" download target="_blank" rel="noopener">{{template "iconDownload"}}Download .cbz</a></li>
+      {{if .CanManage}}<li><button class="text-error" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/remove" hx-target="#chapters-table" hx-swap="outerHTML" hx-confirm="Remove this chapter from disk? It will show as missing.">{{template "iconTrash"}}Remove from disk</button></li>{{end}}
+    {{end}}
+    {{if .CanManage}}
+    <li class="mt-1 border-t border-base-300 pt-1">
+      <form class="grid gap-1 px-3 py-1.5" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename" hx-target="#chapters-table" hx-swap="outerHTML">
+        <span class="text-xs font-medium text-base-content/50">Rename</span>
+        <div class="flex gap-1">
+          <input name="title" value="{{.Title}}" class="input input-xs w-full" placeholder="Chapter name">
+          <button class="btn btn-xs btn-primary shrink-0">Save</button>
+        </div>
+      </form>
+    </li>
+    {{end}}
+  </ul>
+</details>
+{{else}}<span class="text-base-content/30">—</span>{{end}}
 {{end}}
 
 {{define "jobCancel"}}<button class="btn btn-error btn-soft btn-xs" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
@@ -153,18 +163,15 @@
         {{template "chapterName" .ChapterStatus}}
         <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50 sm:hidden">
           <span {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
-          {{template "chapterReadAction" .ChapterStatus}}
           <span>{{.Size}}</span>
-          {{template "chapterDownloadAction" .ChapterStatus}}
         </div>
       </div>
       <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/60 shrink-0">
         <span class="w-10 text-right tabular-nums cursor-help" {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
-        {{template "chapterReadAction" .ChapterStatus}}
         <span class="w-20 text-right tabular-nums">{{.Size}}</span>
-        {{template "chapterDownloadAction" .ChapterStatus}}
       </div>
       <span class="w-20 text-right text-sm text-base-content/50 whitespace-nowrap shrink-0">{{.When}}</span>
+      {{template "chapterActions" .}}
     </div>
     {{else}}
     <p class="text-base-content/60 py-3">{{.Empty}}</p>
@@ -526,6 +533,16 @@
           <p class="text-xs text-base-content/50">Whole chapter numbers. In the installed app, downloads open in Safari.</p>
         </form>
       </details>
+      {{if .CanManage}}
+      <details class="dropdown dropdown-end max-sm:w-full">
+        <summary class="btn btn-outline max-sm:w-full">Bulk delete</summary>
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/delete-range" hx-target="#chapters-table" hx-swap="outerHTML" hx-confirm="Remove downloaded files for chapters in this range? They will show as missing.">
+          <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
+          <button class="btn btn-sm btn-error">Remove from disk</button>
+          <p class="text-xs text-base-content/50">Whole chapter numbers. Files are deleted; chapters become missing.</p>
+        </form>
+      </details>
+      {{end}}
       {{end}}
     </div>
   </div>

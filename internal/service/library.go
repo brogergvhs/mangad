@@ -232,6 +232,26 @@ func (s *LibraryService) MarkChapterUnread(ctx context.Context, chapterID int64)
 	return s.repo.MarkChapterUnread(ctx, chapterID)
 }
 
+// RemoveChapterDownload deletes a chapter's downloaded file from disk and its
+// download record, so the chapter shows as missing again.
+func (s *LibraryService) RemoveChapterDownload(ctx context.Context, chapterID int64) error {
+	file, err := s.repo.DeleteDownload(ctx, chapterID)
+	if err != nil {
+		return err
+	}
+	if file != "" {
+		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("download record removed, but deleting %s failed: %w", file, err)
+		}
+	}
+	return nil
+}
+
+// RenameChapter updates a chapter's descriptive title.
+func (s *LibraryService) RenameChapter(ctx context.Context, chapterID int64, title string) error {
+	return s.repo.RenameChapter(ctx, chapterID, title)
+}
+
 // MarkChapterRangeRead marks downloaded chapters in a title range read.
 // MarkChaptersReadThrough marks chapters up to a number read (AniList pull).
 func (s *LibraryService) MarkChaptersReadThrough(ctx context.Context, titleID int64, maxNumber int) (int, error) {

@@ -111,3 +111,45 @@ func TestCatalogMangaTemplateRenders(t *testing.T) {
 		t.Error("Add to Library button should be hidden without add permission")
 	}
 }
+
+// The chapter actions dropdown exposes read/download to readers and
+// remove/rename only to managers, and collapses to "—" when there's nothing to do.
+func TestChapterActionsTemplate(t *testing.T) {
+	u := &webUI{}
+	u.tmpl = template.Must(template.New("").Funcs(u.funcs()).ParseFS(templateFS, "templates/*.html"))
+	render := func(v chapterRowView) string {
+		var buf bytes.Buffer
+		if err := u.tmpl.ExecuteTemplate(&buf, "chapterActions", v); err != nil {
+			t.Fatalf("render chapterActions: %v", err)
+		}
+		return buf.String()
+	}
+	row := func(downloaded, canManage bool) chapterRowView {
+		r := chapterRowView{CanManage: canManage}
+		r.ID, r.TitleID, r.Title, r.Downloaded = 5, 3, "Dark", downloaded
+		return r
+	}
+
+	mgr := render(row(true, true))
+	for _, want := range []string{"/chapters/5/read", "/chapters/5/download", "/chapters/5/remove", "/chapters/5/rename"} {
+		if !strings.Contains(mgr, want) {
+			t.Errorf("manager+downloaded missing %q in:\n%s", want, mgr)
+		}
+	}
+
+	reader := render(row(true, false))
+	if !strings.Contains(reader, "/chapters/5/download") || !strings.Contains(reader, "/chapters/5/read") {
+		t.Error("reader should still get read + download")
+	}
+	if strings.Contains(reader, "/remove") || strings.Contains(reader, "/rename") {
+		t.Errorf("reader must not get remove/rename:\n%s", reader)
+	}
+
+	if out := render(row(false, false)); !strings.Contains(out, "—") || strings.Contains(out, "dropdown") {
+		t.Errorf("missing chapter for reader should collapse to a dash, got:\n%s", out)
+	}
+
+	if out := render(row(false, true)); !strings.Contains(out, "/chapters/5/rename") || strings.Contains(out, "/download") {
+		t.Errorf("missing chapter for manager should offer rename only, got:\n%s", out)
+	}
+}

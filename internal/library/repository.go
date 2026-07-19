@@ -216,6 +216,23 @@ func (r *Repository) UpdateDownloadFile(ctx context.Context, chapterID int64, fi
 	return err
 }
 
+// DeleteDownload drops a chapter's download record so the chapter counts as
+// missing again, returning the file that backed it for the caller to remove.
+func (r *Repository) DeleteDownload(ctx context.Context, chapterID int64) (string, error) {
+	var file string
+	_ = r.db.QueryRowContext(ctx, `SELECT COALESCE(output_file, '') FROM downloads WHERE chapter_id = ?`, chapterID).Scan(&file)
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM downloads WHERE chapter_id = ?`, chapterID); err != nil {
+		return "", err
+	}
+	return file, nil
+}
+
+// RenameChapter updates a chapter's descriptive title.
+func (r *Repository) RenameChapter(ctx context.Context, chapterID int64, title string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE chapters SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, strings.TrimSpace(title), chapterID)
+	return err
+}
+
 // SetLanguageMode stores the user's decision for language-gapped titles.
 func (r *Repository) SetLanguageMode(ctx context.Context, titleID int64, mode string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE titles SET language_mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, mode, titleID)

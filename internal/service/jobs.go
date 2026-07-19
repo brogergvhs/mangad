@@ -630,6 +630,43 @@ func (s *JobService) MarkChapterRangeUnread(ctx context.Context, titleID int64, 
 	return s.lib.MarkChapterRangeUnread(ctx, titleID, from, to)
 }
 
+// RemoveChapterDownload deletes a downloaded chapter from disk; it becomes missing.
+func (s *JobService) RemoveChapterDownload(ctx context.Context, chapterID int64) error {
+	return s.lib.RemoveChapterDownload(ctx, chapterID)
+}
+
+// RenameChapter updates a chapter's descriptive title.
+func (s *JobService) RenameChapter(ctx context.Context, chapterID int64, title string) error {
+	return s.lib.RenameChapter(ctx, chapterID, title)
+}
+
+// RemoveChapterDownloadsRange deletes every downloaded chapter whose whole
+// number falls in [from, to]; returns how many were removed.
+func (s *JobService) RemoveChapterDownloadsRange(ctx context.Context, titleID int64, from, to string) (int, error) {
+	f, ferr := strconv.Atoi(strings.TrimSpace(from))
+	t, terr := strconv.Atoi(strings.TrimSpace(to))
+	if ferr != nil || terr != nil {
+		return 0, fmt.Errorf("whole chapter numbers are required")
+	}
+	if f > t {
+		f, t = t, f
+	}
+	chs, err := s.TitleChapters(ctx, titleID)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, c := range chs {
+		if c.Downloaded && c.NumberMain >= f && c.NumberMain <= t {
+			if err := s.lib.RemoveChapterDownload(ctx, c.ID); err != nil {
+				return removed, err
+			}
+			removed++
+		}
+	}
+	return removed, nil
+}
+
 // ListTitleSources returns all sources linked to a title.
 func (s *JobService) ListTitleSources(ctx context.Context, id int64) ([]library.LinkedSource, error) {
 	return s.lib.ListTitleSources(ctx, id)

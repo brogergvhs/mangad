@@ -85,6 +85,10 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermImportUse
 	case strings.Contains(p, "/chapters/") && strings.HasSuffix(p, "/download"): // export CBZ/ZIP
 		return auth.PermReaderUse
+	case strings.Contains(p, "/chapters/") && (strings.HasSuffix(p, "/remove") || strings.HasSuffix(p, "/rename")):
+		return auth.PermLibraryManage // delete from disk / edit chapter metadata
+	case strings.HasSuffix(p, "/chapters/delete-range"):
+		return auth.PermLibraryManage
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
 		return auth.PermLibraryView
 	case strings.Contains(p, "/chapters/"): // read/unread marking, bulk range

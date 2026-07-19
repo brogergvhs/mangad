@@ -330,7 +330,10 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/library/{id}/progress", u.titleProgress)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/read", u.chapterRead(true))
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/unread", u.chapterRead(false))
+	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/remove", u.chapterRemove)
+	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/rename", u.chapterRename)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/range", u.chapterRangeRead)
+	mux.HandleFunc("POST /ui/library/{id}/chapters/delete-range", u.chapterDeleteRange)
 	mux.HandleFunc("POST /ui/library/{id}/link", u.linkSource)
 	mux.HandleFunc("POST /ui/library/{id}/link-source", u.linkSourceByID)
 	mux.HandleFunc("POST /ui/library/{id}/verify-source", u.srcVerifyURL)
@@ -1895,6 +1898,7 @@ type titleContentView struct {
 	Volumes         []volumeRowView
 	VolumeCount     int
 	Attaching       bool
+	CanManage       bool
 }
 
 func (u *webUI) buildTitleContent(r *http.Request, title library.Title, tab string) titleContentView {
@@ -1912,6 +1916,7 @@ func (u *webUI) buildTitleContent(r *http.Request, title library.Title, tab stri
 		Volumes:      volumeRows(vols),
 		VolumeCount:  len(vols),
 		Attaching:    attaching,
+		CanManage:    auth.FromContext(ctx).Can(auth.PermLibraryManage),
 	}
 	view.ReadLabel = "Read"
 	if progress, err := u.svc.ReaderProgress(ctx, title.ID); err == nil && progress.NextChapterID != 0 && progress.ReadPages > 0 {
@@ -2252,6 +2257,71 @@ func (u *webUI) chapterRangeRead(w http.ResponseWriter, r *http.Request) {
 	u.writeChaptersTable(w, r, titleID)
 }
 
+// chapterRemove deletes one chapter's downloaded file so it shows as missing.
+func (u *webUI) chapterRemove(w http.ResponseWriter, r *http.Request) {
+	titleID, chapterID, ok := u.chapterOwned(w, r)
+	if !ok {
+		return
+	}
+	if err := u.svc.RemoveChapterDownload(r.Context(), chapterID); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.writeChaptersTable(w, r, titleID)
+}
+
+// chapterRename edits one chapter's descriptive title.
+func (u *webUI) chapterRename(w http.ResponseWriter, r *http.Request) {
+	titleID, chapterID, ok := u.chapterOwned(w, r)
+	if !ok {
+		return
+	}
+	if err := u.svc.RenameChapter(r.Context(), chapterID, r.FormValue("title")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.writeChaptersTable(w, r, titleID)
+}
+
+// chapterDeleteRange deletes downloaded chapters in a whole-number range.
+func (u *webUI) chapterDeleteRange(w http.ResponseWriter, r *http.Request) {
+	titleID, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, titleID) {
+		http.NotFound(w, r)
+		return
+	}
+	_ = r.ParseForm()
+	if _, err := u.svc.RemoveChapterDownloadsRange(r.Context(), titleID, r.FormValue("from"), r.FormValue("to")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.writeChaptersTable(w, r, titleID)
+}
+
+// chapterOwned resolves and authorizes a {id}/chapters/{chapterID} request.
+func (u *webUI) chapterOwned(w http.ResponseWriter, r *http.Request) (titleID, chapterID int64, ok bool) {
+	titleID, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return 0, 0, false
+	}
+	chapterID, err = parseInt64Path(r, "chapterID")
+	if err != nil {
+		u.fail(w, err)
+		return 0, 0, false
+	}
+	st, err := u.svc.ChapterReadStatus(r.Context(), chapterID)
+	if err != nil || st.TitleID != titleID || !titleAllowed(r.Context(), u.svc, titleID) {
+		http.NotFound(w, r)
+		return 0, 0, false
+	}
+	return titleID, chapterID, true
+}
+
 func (u *webUI) writeChaptersTable(w http.ResponseWriter, r *http.Request, titleID int64) {
 	title, err := u.svc.GetTitle(r.Context(), titleID)
 	if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
@@ -2283,11 +2353,12 @@ type chaptersView struct {
 
 type chapterRowView struct {
 	library.ChapterStatus
-	Percent int
-	ReadTip string // e.g. "7/12 pages read"
-	Size    string
-	When    string
-	Tint    string
+	Percent   int
+	ReadTip   string // e.g. "7/12 pages read"
+	Size      string
+	When      string
+	Tint      string
+	CanManage bool // remove-from-disk / rename actions
 }
 
 func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, values url.Values) chaptersView {
@@ -2317,6 +2388,7 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 	}}
 	running, _, queued, _, _ := titleActivityFrom(u.jobs(ctx), title)
 	t.Poll = len(running) > 0 || len(queued) > 0
+	canManage := auth.FromContext(ctx).Can(auth.PermLibraryManage)
 	for _, c := range rows {
 		size, when := "—", ""
 		if c.Downloaded {
@@ -2332,6 +2404,7 @@ func (u *webUI) buildChaptersTable(ctx context.Context, title library.Title, val
 			Size:          size,
 			When:          when,
 			Tint:          chapterRowClass(c),
+			CanManage:     canManage,
 		})
 	}
 	return t
