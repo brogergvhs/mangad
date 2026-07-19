@@ -111,11 +111,30 @@ func TestChapterDownloadToDevice(t *testing.T) {
 	if len(zr.File) != 1 || !strings.HasSuffix(zr.File[0].Name, ".cbz") {
 		t.Fatalf("zip entries = %v", zr.File)
 	}
+	if cd := zipRec.Header().Get("Content-Disposition"); !strings.Contains(cd, "-1-1.zip") {
+		t.Errorf("zip Content-Disposition = %q, want <title>-1-1.zip", cd)
+	}
 
 	if bad := do("/ui/library/" + strconv.FormatInt(title.ID, 10) + "/chapters/download"); bad.Code != http.StatusBadRequest {
 		t.Errorf("missing from/to status = %d, want 400", bad.Code)
 	}
 	if none := do("/ui/library/" + strconv.FormatInt(title.ID, 10) + "/chapters/download?from=900&to=999"); none.Code != http.StatusNotFound {
 		t.Errorf("empty-range status = %d, want 404", none.Code)
+	}
+}
+
+func TestFetchCover(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("\xff\xd8\xff\xe0fake jpeg"))
+	}))
+	defer srv.Close()
+
+	name, data, ok := fetchCover(context.Background(), srv.URL+"/cover/large/x.jpg")
+	if !ok || name != "cover.jpg" || len(data) == 0 {
+		t.Fatalf("fetchCover = %q, %d bytes, ok=%v", name, len(data), ok)
+	}
+	if _, _, ok := fetchCover(context.Background(), ""); ok {
+		t.Error("empty cover URL should not fetch")
 	}
 }

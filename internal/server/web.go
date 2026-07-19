@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -1467,6 +1468,11 @@ func (u *webUI) chaptersDownload(w http.ResponseWriter, r *http.Request) {
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 	zw := zip.NewWriter(tmp)
+	if name, cover, ok := fetchCover(r.Context(), title.CoverImage); ok {
+		if dst, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store}); err == nil {
+			_, _ = dst.Write(cover)
+		}
+	}
 	for _, c := range selected {
 		src, err := os.Open(c.OutputFile)
 		if err != nil {
@@ -1491,9 +1497,43 @@ func (u *webUI) chaptersDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot build download", http.StatusInternalServerError)
 		return
 	}
+	name := fmt.Sprintf("%s-%d-%d.zip", safeFileName(title.DisplayTitle, "title"), from, to)
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", contentDisposition(safeFileName(title.DisplayTitle, "title")+"-chapters.zip"))
+	w.Header().Set("Content-Disposition", contentDisposition(name))
 	http.ServeContent(w, r, "", info.ModTime(), tmp)
+}
+
+// fetchCover downloads the manga cover image so it can ride along in the ZIP.
+// Failure is non-fatal — the archive is still worth serving without it.
+func fetchCover(ctx context.Context, coverURL string) (name string, data []byte, ok bool) {
+	if strings.TrimSpace(coverURL) == "" {
+		return "", nil, false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, coverURL, nil)
+	if err != nil {
+		return "", nil, false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, false
+	}
+	data, err = io.ReadAll(io.LimitReader(resp.Body, 20<<20))
+	if err != nil || len(data) == 0 {
+		return "", nil, false
+	}
+	ext := strings.ToLower(path.Ext(coverURL))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif":
+	default:
+		ext = ".jpg"
+	}
+	return "cover" + ext, data, true
 }
 
 var unsafeFileChars = regexp.MustCompile(`[^\w.\- ]+`)
