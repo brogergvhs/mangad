@@ -133,6 +133,12 @@
 {{end}}
 
 {{define "library"}}
+{{if .CollectionName}}
+<div class="mb-3">
+  <a href="/collections" class="link link-hover text-sm text-base-content/60">‹ Collections</a>
+  <h1 class="mt-1 min-w-0 truncate text-lg font-semibold">{{.CollectionName}}</h1>
+</div>
+{{end}}
 {{if .Screen}}
 <div class="mb-3 flex items-center justify-between gap-2">
   <h1 class="min-w-0 truncate text-lg font-semibold">{{.Screen.Name}}</h1>
@@ -221,6 +227,7 @@
 <form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change[event.target.name && event.target.name !== 'q'], keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
   <button type="submit" class="sr-only" tabindex="-1">Apply filters</button>
   {{if .Screen}}<input type="hidden" name="screen" value="{{.Screen.ID}}">{{end}}
+  {{if .CollectionIDs}}<input type="hidden" name="ids" value="{{.CollectionIDs}}">{{end}}
   <input type="checkbox" id="lib-filters" class="peer sr-only">
   <div class="flex items-center gap-2">
     <input name="q" class="input input-sm w-full" value="{{.Controls.Q}}" placeholder="Search library…" hx-trigger="keyup changed delay:300ms">
@@ -290,7 +297,7 @@
   <div class="col-span-2">{{template "tagPicker" tagPicker .TagOptions .Controls.ExcludeTags "exclude_tags" "Exclude tags/genres" ""}}</div>
   </div>
 </form>
-<div hx-get="/ui/anilist/suggestions?view={{.Controls.View}}" hx-trigger="load" hx-swap="outerHTML"></div>
+{{if not .CollectionName}}<div hx-get="/ui/anilist/suggestions?view={{.Controls.View}}" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
 <div id="library-results">{{template "libraryResults" .Table}}</div>
 {{end}}
 
@@ -311,21 +318,25 @@
 {{end}}
 
 {{define "collectionCard"}}
-<div class="min-w-0">
-  <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg">
+<a href="{{.URL}}" class="group block min-w-0">
+  <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg transition group-hover:opacity-90">
     <div class="grid h-full gap-2 {{if .Stacked}}grid-rows-2{{else}}grid-cols-2 grid-rows-2{{end}}">
       {{range .Covers}}<img class="h-full w-full object-cover rounded-lg" src="{{.}}" alt="" loading="lazy">{{end}}
-      {{if .Extra}}<div class="flex items-center justify-center bg-base-300 text-lg font-semibold text-base-content/70">+{{.Extra}}</div>{{end}}
+      {{if .Extra}}<div class="flex items-center justify-center bg-base-300 text-lg rounded-lg font-semibold text-base-content/70">+{{.Extra}}</div>{{end}}
     </div>
   </div>
-  <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Name}}</div>
+  <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight group-hover:text-primary">{{.Name}}</div>
   <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
     <span class="truncate">{{.Count}} titles</span>
     <span class="shrink-0">{{humanBytes .SizeBytes}}</span>
   </div>
-  <div class="mt-0.5 truncate text-xs text-base-content/50">{{if .Chapters}}{{.Chapters}} ch{{end}}{{if .Volumes}} · {{.Volumes}} vol{{end}}{{if .Pages}} · {{.Pages}} pages{{end}}</div>
+  <div class="mt-0.5 flex justify-between gap-2 text-xs text-base-content/50">
+    {{if .Chapters}}<span>{{.Chapters}} ch</span>{{end}}
+    {{if .Volumes}}<span>{{.Volumes}} vol</span>{{end}}
+    {{if .Pages}}<span>{{.Pages}} pages</span>{{end}}
+  </div>
   <div class="mt-1">{{template "bar" bar .ReadPct .FullPct}}</div>
-</div>
+</a>
 {{end}}
 
 {{define "title"}}

@@ -83,6 +83,8 @@ type libraryView struct {
 	IncludeTags []string
 	ExcludeTags []string
 	Cfg         library.ScreenConfig
+	CollectionName string
+	CollectionIDs  string
 }
 type libraryControls struct {
 	Q           string
@@ -275,6 +277,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	}))
 
 	mux.HandleFunc("GET /collections", u.collectionsPage)
+	mux.HandleFunc("GET /collections/view", u.collectionMembersPage)
 	mux.HandleFunc("GET /{$}", u.homePage)
 	mux.HandleFunc("GET /management", u.management)
 	mux.HandleFunc("GET /search", u.searchPage)
@@ -690,6 +693,7 @@ type collection struct {
 // combined stats, a blended progress bar, and a cover collage of members.
 type collectionCard struct {
 	Name      string
+	URL       string // link to the members subpage
 	Count     int
 	Chapters  int64
 	Volumes   int64
@@ -728,11 +732,49 @@ func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// collectionMembersPage renders a single collection's titles using the same
+// auto-layout library view, scoped to the member ids in the query.
+func (u *webUI) collectionMembersPage(w http.ResponseWriter, r *http.Request) {
+	values := r.URL.Query()
+	if values.Get("ids") == "" {
+		http.NotFound(w, r)
+		return
+	}
+	name := values.Get("name")
+	if name == "" {
+		name = "Collection"
+	}
+	view := libraryView{
+		Table:          u.buildLibraryTable(r.Context(), values),
+		Controls:       libraryControlsFrom(values),
+		CollectionName: name,
+		CollectionIDs:  values.Get("ids"),
+	}
+	u.page(w, r, "library", name, view)
+}
+
+func restrictToIDs(titles []library.Title, csv string) []library.Title {
+	want := map[int64]bool{}
+	for _, s := range strings.Split(csv, ",") {
+		if id, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+			want[id] = true
+		}
+	}
+	kept := titles[:0]
+	for _, t := range titles {
+		if want[t.ID] {
+			kept = append(kept, t)
+		}
+	}
+	return kept
+}
+
 func collectionCards(cols []collection) []collectionCard {
 	out := make([]collectionCard, 0, len(cols))
 	for _, c := range cols {
 		card := collectionCard{Name: c.Name, Count: len(c.Members)}
 		var total, read int64
+		ids := make([]string, 0, len(c.Members))
 		for _, m := range c.Members {
 			card.Chapters += m.DiscoveredCount
 			card.Volumes += m.VolumeCount
@@ -740,7 +782,12 @@ func collectionCards(cols []collection) []collectionCard {
 			card.SizeBytes += m.SizeBytes + m.VolumeBytes
 			total += m.DiscoveredCount + m.VolumeCount
 			read += m.ReadCount + m.VolumeReadCount
+			ids = append(ids, strconv.FormatInt(m.ID, 10))
 		}
+		card.URL = "/collections/view?" + url.Values{
+			"name": {c.Name},
+			"ids":  {strings.Join(ids, ",")},
+		}.Encode()
 		card.ReadPct = percent(read, total)
 		if total > 0 {
 			card.FullPct = 100 // blue fills the whole bar: the combined total
@@ -1078,6 +1125,9 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 	controls := libraryControlsFrom(screenDefaults(values, screen))
 	titles, _ := u.svc.ListTitles(ctx)
 	titles = filterRestrictedTitles(ctx, titles)
+	if ids := values.Get("ids"); ids != "" {
+		titles = restrictToIDs(titles, ids)
+	}
 	allCount := len(titles)
 	if screen != nil {
 		kept := titles[:0]
@@ -1221,7 +1271,7 @@ func screenDefaults(values url.Values, screen *library.Screen) url.Values {
 
 func libraryTableParams(values url.Values) url.Values {
 	out := url.Values{}
-	for _, key := range []string{"q", "monitor", "fav", "source", "progress", "content", "sort", "dir", "view", "screen"} {
+	for _, key := range []string{"q", "monitor", "fav", "source", "progress", "content", "sort", "dir", "view", "screen", "ids"} {
 		if value := strings.TrimSpace(values.Get(key)); value != "" {
 			out.Set(key, value)
 		}
