@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/ui"
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 type Scraper struct {

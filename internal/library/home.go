@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 // LastReadAt maps title id to the acting user's most recent reading activity

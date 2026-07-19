@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/browserdownload"
-	"github.com/brogergvhs/mangad/internal/browserfetch"
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/browserdownload"
+	"github.com/brogergvhs/kaodoku/internal/browserfetch"
+	"github.com/brogergvhs/kaodoku/internal/util"
 
 	"gopkg.in/yaml.v3"
 )
@@ -156,7 +156,7 @@ func LoadMerged(opts Options) (*Config, string, error) {
 		cfg := DefaultConfig()
 		mergeConfig(cfg, opts)
 		normalizeDefaults(cfg)
-		return cfg, "(default config in memory)\nRun `mangad config init` to create an actual config\n", nil
+		return cfg, "(default config in memory)\nRun `kaodoku config init` to create an actual config\n", nil
 	}
 	if err != nil {
 		return nil, "", err
@@ -180,34 +180,34 @@ func mergeConfig(c *Config, o Options) {
 	if o.DownloadDir != "" {
 		c.DownloadDir = o.DownloadDir
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_DOWNLOAD_DIR")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_DOWNLOAD_DIR")); env != "" {
 		c.DownloadDir = env
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_DOWNLOADER_ENABLED")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_BROWSER_DOWNLOADER_ENABLED")); env != "" {
 		if enabled, err := strconv.ParseBool(env); err == nil {
 			c.BrowserDownload.Enabled = enabled
 		}
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_DOWNLOADER_ENDPOINT")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_BROWSER_DOWNLOADER_ENDPOINT")); env != "" {
 		c.BrowserDownload.Endpoint = env
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_BROWSER_DOWNLOADER_TIMEOUT_SECONDS")); env != "" {
 		if seconds, err := strconv.Atoi(env); err == nil {
 			c.BrowserDownload.TimeoutSeconds = seconds
 		}
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_ENABLED")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_BROWSER_SOLVER_ENABLED")); env != "" {
 		if enabled, err := strconv.ParseBool(env); err == nil {
 			c.BrowserSolver.Enabled = enabled
 		}
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_PROVIDER")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_BROWSER_SOLVER_PROVIDER")); env != "" {
 		c.BrowserSolver.Provider = env
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_ENDPOINT")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_BROWSER_SOLVER_ENDPOINT")); env != "" {
 		c.BrowserSolver.Endpoint = env
 	}
-	if env := strings.TrimSpace(os.Getenv("MANGAD_BROWSER_SOLVER_TIMEOUT_SECONDS")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_BROWSER_SOLVER_TIMEOUT_SECONDS")); env != "" {
 		if seconds, err := strconv.Atoi(env); err == nil {
 			c.BrowserSolver.TimeoutSeconds = seconds
 		}

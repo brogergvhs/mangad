@@ -8,19 +8,19 @@ import (
 	"testing"
 	"time"
 
-	chaptersPkg "github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/sources"
+	chaptersPkg "github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/sources"
 )
 
 func TestApplyLimitsFromSettings(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -61,7 +61,7 @@ func TestApplyBrowserDownloaderSettings(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestEnqueueTitleJobReusesActiveGlobalJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -122,7 +122,7 @@ func TestEnqueueTitleJobReusesActiveTitleJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -145,7 +145,7 @@ func TestGlobalDownloadMissingExpandsToMissingMonitoredTitles(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -170,7 +170,7 @@ func TestGlobalJobExpansionQueuesTitleJobsWhileGlobalIsRunning(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -194,7 +194,7 @@ func TestLinkTitleSourceURLQueuesRefresh(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -220,7 +220,7 @@ func TestSourceChangeQueuesRefreshForActiveTitles(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -247,7 +247,7 @@ func TestAutoRefreshQueuesDownloadWhenMissingThresholdMet(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}
@@ -269,7 +269,7 @@ func TestRemoveTitleCancelsTitleJobs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("OpenJobs() error = %v", err)
 	}

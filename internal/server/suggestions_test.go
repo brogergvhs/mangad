@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
 )
 
 // The AniList-suggestions collapsible renders nothing when there is nothing

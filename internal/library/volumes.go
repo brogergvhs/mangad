@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/auth"
 )
 
 // Volume is one bound volume file of a title, with the acting user's read state.

@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
 )
 
 func TestTokenCipherRoundTripAndLegacy(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	c, err := newTokenCipher(filepath.Join(dir, "mangad.db"))
+	c, err := newTokenCipher(filepath.Join(dir, "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestTokenCipherRoundTripAndLegacy(t *testing.T) {
 		t.Fatalf("legacy Decrypt = %q, %v", got, err)
 	}
 	// A second cipher from the same key file must open the first's output.
-	c2, err := newTokenCipher(filepath.Join(dir, "mangad.db"))
+	c2, err := newTokenCipher(filepath.Join(dir, "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestTokenCipherRoundTripAndLegacy(t *testing.T) {
 func TestEncryptLegacyTokens(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/providers/registry"
+	"github.com/brogergvhs/kaodoku/internal/providers/registry"
 )
 
 const (

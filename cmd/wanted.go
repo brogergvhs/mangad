@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/service"
 
 	"github.com/spf13/cobra"
 )
@@ -59,7 +59,7 @@ var wantedTrackCmd = &cobra.Command{
 }
 
 func init() {
-	wantedCmd.PersistentFlags().StringVar(&flagWantedDB, "db", "", "path to MangaD SQLite database")
+	wantedCmd.PersistentFlags().StringVar(&flagWantedDB, "db", "", "path to Kaodoku SQLite database")
 	wantedSearchCmd.Flags().IntVar(&flagWantedLimit, "limit", 10, "maximum AniList results")
 	wantedTrackCmd.Flags().StringVar(&flagWantedOutput, "output", "", "output folder override")
 	wantedTrackCmd.Flags().BoolVar(&flagWantedUnmonitored, "unmonitored", false, "add title without automatic monitoring")

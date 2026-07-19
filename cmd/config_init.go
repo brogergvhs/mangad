@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/config"
 
 	"github.com/spf13/cobra"
 )
@@ -23,7 +23,7 @@ var configInitCmd = &cobra.Command{
 		if _, err := os.Stat(defaultPath); err == nil {
 			fmt.Println("Configuration already exists at:")
 			fmt.Println("  ", defaultPath)
-			fmt.Println("Use `mangad config reset` to recreate it.")
+			fmt.Println("Use `kaodoku config reset` to recreate it.")
 			return nil
 		}
 

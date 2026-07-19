@@ -13,7 +13,7 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mangad",
+	Use:   "kaodoku",
 	Short: "Manga downloader with CBZ output",
 }
 

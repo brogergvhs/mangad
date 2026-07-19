@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/service"
 )
 
 // anilistRedirectURL is the callback the admin registers on their AniList app.

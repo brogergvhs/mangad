@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 type Downloader struct {

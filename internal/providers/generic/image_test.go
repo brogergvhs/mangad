@@ -113,7 +113,7 @@ func TestImageCollectorSkipsSiteChromeAssets(t *testing.T) {
 func TestImageCollectorAllowsMarkedExtensionlessPageImages(t *testing.T) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`
 		<html><body>
-			<img src="https://80pd.wowpic2.store/i5/bEqPbYfoMT0Gm1HlZjqfoA5s5rEBevqi3R0Vvq7I6y4AiVMhaGDNl_Pk4wkijRuo" data-mangad-page-image="1">
+			<img src="https://80pd.wowpic2.store/i5/bEqPbYfoMT0Gm1HlZjqfoA5s5rEBevqi3R0Vvq7I6y4AiVMhaGDNl_Pk4wkijRuo" data-kaodoku-page-image="1">
 			<img src="https://static.comix.to/poster">
 		</body></html>
 	`))

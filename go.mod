@@ -1,4 +1,4 @@
-module github.com/brogergvhs/mangad
+module github.com/brogergvhs/kaodoku
 
 go 1.26
 

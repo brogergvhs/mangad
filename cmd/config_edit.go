@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/brogergvhs/mangad/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/config"
 
 	"github.com/spf13/cobra"
 )

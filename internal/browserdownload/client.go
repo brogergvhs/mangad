@@ -106,6 +106,6 @@ func (c *Client) DownloadCBZ(ctx context.Context, req Request, output string) (R
 		return Result{}, err
 	}
 
-	images, _ := strconv.Atoi(resp.Header.Get("X-Mangad-Images"))
+	images, _ := strconv.Atoi(resp.Header.Get("X-Kaodoku-Images"))
 	return Result{Images: images, Bytes: bytesWritten}, nil
 }

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 // tableColumn is a header cell. A non-empty SortKey makes it sortable.

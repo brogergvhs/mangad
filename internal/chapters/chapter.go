@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/providers"
 )
 
 type Chapter struct {

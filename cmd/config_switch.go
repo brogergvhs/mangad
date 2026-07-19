@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/brogergvhs/mangad/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/config"
 
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"

@@ -1017,7 +1017,7 @@
     </div>
     <form class="mt-3 grid gap-3" hx-post="/ui/users/{{.User.ID}}" hx-swap="none">
       {{if .User.IsEnvAdmin}}
-      <p class="text-sm text-base-content/60">Role and password come from the environment (MANGAD_ADMIN_USER / MANGAD_ADMIN_PASSWORD); only content preferences are editable here.</p>
+      <p class="text-sm text-base-content/60">Role and password come from the environment (KAODOKU_ADMIN_USER / KAODOKU_ADMIN_PASSWORD); only content preferences are editable here.</p>
       {{else}}
       <label class="fieldset"><span class="fieldset-legend">Role</span>
         <select name="role_id" class="select w-full">

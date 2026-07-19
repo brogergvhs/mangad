@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/providers"
 )
 
 // ImportCandidate is a download-dir folder not yet tracked as a title.

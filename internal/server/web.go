@@ -22,15 +22,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/providers/registry"
-	"github.com/brogergvhs/mangad/internal/service"
-	"github.com/brogergvhs/mangad/internal/sources"
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/providers/registry"
+	"github.com/brogergvhs/kaodoku/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 //go:embed templates/*.html
@@ -2089,7 +2089,7 @@ func (u *webUI) chaptersDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmp, err := os.CreateTemp("", "mangad-download-*.zip")
+	tmp, err := os.CreateTemp("", "kaodoku-download-*.zip")
 	if err != nil {
 		http.Error(w, "cannot prepare download", http.StatusInternalServerError)
 		return

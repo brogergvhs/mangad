@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/brogergvhs/mangad/internal/browserfetch"
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/sources"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/browserfetch"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 type sourceService struct {

@@ -12,13 +12,13 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/sources"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 // LibraryService coordinates tracked titles and chapter discovery.

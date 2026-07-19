@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

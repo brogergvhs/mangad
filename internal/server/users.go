@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
 )
 
 // permMeta gives each permission a human name and a description shown when

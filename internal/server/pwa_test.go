@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	chaptersPkg "github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/service"
+	chaptersPkg "github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/service"
 )
 
 func TestPWAManifest(t *testing.T) {
@@ -42,7 +42,7 @@ func TestPWAManifest(t *testing.T) {
 
 func TestChapterDownloadToDevice(t *testing.T) {
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "mangad.db")
+	dbPath := filepath.Join(t.TempDir(), "kaodoku.db")
 	db, err := database.Open(ctx, dbPath)
 	if err != nil {
 		t.Fatal(err)

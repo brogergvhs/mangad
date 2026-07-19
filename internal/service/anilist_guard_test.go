@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/auth"
 )
 
 func TestContentAllowedFor(t *testing.T) {

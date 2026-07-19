@@ -1,4 +1,4 @@
-APP             := mangad
+APP             := kaodoku
 BIN             := bin
 DIST            := dist
 MAIN            := ./main.go
@@ -14,7 +14,7 @@ STATICCHECK     := staticcheck
 GOCACHE         ?= $(CURDIR)/.cache/go-build
 
 VERSION         := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LD_FLAGS        := -X 'github.com/brogergvhs/mangad/cmd.Version=$(VERSION)'
+LD_FLAGS        := -X 'github.com/brogergvhs/kaodoku/cmd.Version=$(VERSION)'
 
 .PHONY: all build install run fmt vet test test-race lint check clean package
 

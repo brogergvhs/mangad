@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 // Repository persists tracked titles and chapters.

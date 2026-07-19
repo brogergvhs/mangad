@@ -3,8 +3,8 @@ package server
 import (
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/library"
 )
 
 func TestTitleActivityFromTargetedTitleJob(t *testing.T) {

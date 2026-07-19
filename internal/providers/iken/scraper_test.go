@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 func TestGetChaptersFetchesFullListFromAPI(t *testing.T) {

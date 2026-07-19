@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 const sessionTTL = 30 * 24 * time.Hour
@@ -372,7 +372,7 @@ func (s *Service) DeleteRole(ctx context.Context, id int64) error {
 // the current one. The env admin's password lives in the environment.
 func (s *Service) ChangePassword(ctx context.Context, userID int64, current, next string) error {
 	if userID == EnvAdminID {
-		return fmt.Errorf("the environment admin's password is managed via MANGAD_ADMIN_PASSWORD")
+		return fmt.Errorf("the environment admin's password is managed via KAODOKU_ADMIN_PASSWORD")
 	}
 	if len(next) < 4 {
 		return fmt.Errorf("the new password must be at least 4 characters")

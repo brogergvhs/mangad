@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/library"
 )
 
 func TestLibraryControlsFromTags(t *testing.T) {

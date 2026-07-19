@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 var ErrNoConfig = errors.New("no config selected")
@@ -16,17 +16,17 @@ var ErrNoConfig = errors.New("no config selected")
 func ConfigRoot() string {
 	// Windows
 	if appdata := os.Getenv("APPDATA"); appdata != "" {
-		return filepath.Join(appdata, "mangad")
+		return filepath.Join(appdata, "kaodoku")
 	}
 
 	// Linux/macOS XDG
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "mangad")
+		return filepath.Join(xdg, "kaodoku")
 	}
 
 	// Linux/macOS default
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "mangad")
+	return filepath.Join(home, ".config", "kaodoku")
 }
 
 func ConfigsDir() string {

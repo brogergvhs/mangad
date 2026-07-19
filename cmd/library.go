@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/service"
 
 	"github.com/spf13/cobra"
 )
@@ -71,7 +71,7 @@ var libraryDownloadCmd = &cobra.Command{
 }
 
 func init() {
-	libraryCmd.PersistentFlags().StringVar(&flagLibraryDB, "db", "", "path to MangaD SQLite database")
+	libraryCmd.PersistentFlags().StringVar(&flagLibraryDB, "db", "", "path to Kaodoku SQLite database")
 	libraryAddCmd.Flags().StringVar(&flagLibraryAddURL, "url", "", "manga series page URL")
 	libraryAddCmd.Flags().StringVar(&flagLibraryAddTitle, "title", "", "display title")
 	libraryAddCmd.Flags().StringVar(&flagLibraryAddOutput, "output", "", "output folder override")

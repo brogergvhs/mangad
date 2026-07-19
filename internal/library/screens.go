@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/auth"
 )
 
 // ScreenConfig is a saved library view: hard content constraints plus

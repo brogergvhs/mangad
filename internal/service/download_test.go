@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/browserfetch"
-	"github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/ui"
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/browserfetch"
+	"github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 func TestFlareSolverrFetcherAppliesSession(t *testing.T) {
@@ -37,7 +37,7 @@ func TestFlareSolverrFetcherAppliesSession(t *testing.T) {
 	flaresolverrFetcher{
 		http:  client,
 		state: state,
-		cache: browserCookieCache{dbPath: filepath.Join(t.TempDir(), "mangad.db")},
+		cache: browserCookieCache{dbPath: filepath.Join(t.TempDir(), "kaodoku.db")},
 	}.applySession(context.Background(), "https://manga.test/chapter", browserfetch.Result{
 		URL:       "https://manga.test/chapter",
 		UserAgent: "solver",
@@ -99,7 +99,7 @@ func TestDownloadSummaryIncludesChapterErrors(t *testing.T) {
 
 func TestDownloadUsesBrowserDownloaderFallback(t *testing.T) {
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Mangad-Images", "7")
+		w.Header().Set("X-Kaodoku-Images", "7")
 		_, _ = w.Write([]byte("cbz"))
 	}))
 	defer worker.Close()

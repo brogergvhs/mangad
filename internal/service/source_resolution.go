@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/sources"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 // SourceConfigOptions controls how a source profile is applied to runtime config.

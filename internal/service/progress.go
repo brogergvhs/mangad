@@ -1,6 +1,6 @@
 package service
 
-import "github.com/brogergvhs/mangad/internal/ui"
+import "github.com/brogergvhs/kaodoku/internal/ui"
 
 // TerminalProgressManager adapts the terminal progress UI to service progress.
 type TerminalProgressManager struct {

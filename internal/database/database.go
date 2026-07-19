@@ -1,4 +1,4 @@
-// Package database opens and migrates the local MangaD SQLite database.
+// Package database opens and migrates the local Kaodoku SQLite database.
 package database
 
 import (
@@ -8,17 +8,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/brogergvhs/mangad/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/config"
 
 	_ "modernc.org/sqlite"
 )
 
 // DefaultPath returns the default application database path.
 func DefaultPath() string {
-	if path := os.Getenv("MANGAD_DB"); path != "" {
+	if path := os.Getenv("KAODOKU_DB"); path != "" {
 		return path
 	}
-	return filepath.Join(config.ConfigRoot(), "mangad.db")
+	return filepath.Join(config.ConfigRoot(), "kaodoku.db")
 }
 
 // Open opens a SQLite database and applies connection-level pragmas.

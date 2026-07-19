@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/sources"
 )
 
 // probeConfig wires cfg for a specific fetch backend, ignoring learned state.

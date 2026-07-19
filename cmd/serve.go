@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/server"
-	"github.com/brogergvhs/mangad/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/server"
+	"github.com/brogergvhs/kaodoku/internal/service"
 
 	"github.com/spf13/cobra"
 )
@@ -28,12 +28,12 @@ var (
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Run the automatic MangaD job scheduler",
+	Short: "Run the automatic Kaodoku job scheduler",
 	RunE:  runServe,
 }
 
 func init() {
-	serveCmd.Flags().StringVar(&flagServeDB, "db", "", "path to MangaD SQLite database")
+	serveCmd.Flags().StringVar(&flagServeDB, "db", "", "path to Kaodoku SQLite database")
 	serveCmd.Flags().StringVar(&flagServeAddr, "addr", "127.0.0.1:8080", "HTTP API listen address")
 	serveCmd.Flags().DurationVar(&flagServeRefreshEvery, "refresh-every", 0, "refresh schedule, e.g. 1h; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeScanEvery, "scan-every", 0, "download file scan schedule, e.g. 30m; 0 disables")

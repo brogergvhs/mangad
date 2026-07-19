@@ -7,19 +7,19 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 func TestLibraryAddTitleResolvesSourceID(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -46,7 +46,7 @@ func TestLibraryDownloadServiceUsesTitleSource(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -163,7 +163,7 @@ func TestScanDownloadsMarksMissingFilesFailed(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -233,7 +233,7 @@ func TestOpenLibraryBackfillsDownloadStats(t *testing.T) {
 
 	ctx := context.Background()
 	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "mangad.db")
+	dbPath := filepath.Join(dir, "kaodoku.db")
 	db, err := database.Open(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)

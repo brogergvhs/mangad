@@ -5,16 +5,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/providers"
 )
 
 func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -149,7 +149,7 @@ func TestRepositoryDownloadAttemptCap(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -218,7 +218,7 @@ func TestRepositoryReadProgress(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -331,7 +331,7 @@ func TestUnlinkSourcePrunesUndownloadedChapters(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

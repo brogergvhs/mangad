@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/auth"
 )
 
 // Collection is a user-created, manually curated group of titles.

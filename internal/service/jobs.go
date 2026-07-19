@@ -15,16 +15,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/browserdownload"
-	"github.com/brogergvhs/mangad/internal/browserfetch"
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/sources"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/browserdownload"
+	"github.com/brogergvhs/kaodoku/internal/browserfetch"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 // JobService enqueues and runs jobs.
@@ -347,7 +347,7 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 		return nil, nil, err
 	}
 	svc.auth = auth.NewService(db)
-	if err := svc.auth.Bootstrap(ctx, os.Getenv("MANGAD_ADMIN_USER"), os.Getenv("MANGAD_ADMIN_PASSWORD")); err != nil {
+	if err := svc.auth.Bootstrap(ctx, os.Getenv("KAODOKU_ADMIN_USER"), os.Getenv("KAODOKU_ADMIN_PASSWORD")); err != nil {
 		_ = db.Close()
 		return nil, nil, err
 	}
@@ -1684,7 +1684,7 @@ func (s *JobService) SetMonitored(ctx context.Context, id int64, monitored bool)
 // SearchAniList searches AniList and stores returned metadata locally.
 func (s *JobService) SearchAniList(ctx context.Context, query string, limit int, filter catalog.SearchFilter) ([]catalog.Manga, bool, error) {
 	// Unauthenticated: a token makes AniList pre-filter adult entries by the
-	// account's own 18+ setting, bypassing mangaD's per-user content guard.
+	// account's own 18+ setting, bypassing kaodoku's per-user content guard.
 	return s.want.SearchAniList(ctx, query, limit, filter)
 }
 

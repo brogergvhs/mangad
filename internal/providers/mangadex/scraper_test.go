@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 const mangaID = "30196491-8fc2-4961-8886-a58f898b1b3e"

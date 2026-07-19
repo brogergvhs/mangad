@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"github.com/brogergvhs/mangad/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/library"
 )
 
 func TestTitleRefreshDue(t *testing.T) {
@@ -57,7 +57,7 @@ func TestGlobalJobsSkipUnlinkedTitles(t *testing.T) {
 func TestLinkAutoDownloadOnlyOnFirstSource(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

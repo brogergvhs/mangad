@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 func runtimeConfig() (*config.Config, ui.Log, error) {

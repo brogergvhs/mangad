@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 func TestRepositoryQueueLifecycle(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -80,7 +80,7 @@ func TestRepositoryRetryBackoffAndCap(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -142,7 +142,7 @@ func TestRepositoryReconcileRunning(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -195,7 +195,7 @@ func TestRepositoryEnqueueDedupesPendingJobs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -244,7 +244,7 @@ func TestRepositoryEnqueueDedupesPendingJobs(t *testing.T) {
 func TestCancelQueuedAndRunning(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestCancelQueuedAndRunning(t *testing.T) {
 func TestCancelChildrenCascade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestCancelChildrenCascade(t *testing.T) {
 func TestListNeverDropsActiveJobs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

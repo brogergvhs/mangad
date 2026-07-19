@@ -6,8 +6,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/sources"
 )
 
 func TestCandidateSourceURLsReplacesSlugOnlySample(t *testing.T) {

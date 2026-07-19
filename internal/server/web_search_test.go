@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
 )
 
 func TestVisibleTagOptions(t *testing.T) {

@@ -6,14 +6,14 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 func TestListTitlesCatalogFields(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}

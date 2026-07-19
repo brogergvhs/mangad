@@ -3,12 +3,12 @@ package config
 import (
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/browserdownload"
-	"github.com/brogergvhs/mangad/internal/browserfetch"
+	"github.com/brogergvhs/kaodoku/internal/browserdownload"
+	"github.com/brogergvhs/kaodoku/internal/browserfetch"
 )
 
 func TestDownloadDirEnvOverride(t *testing.T) {
-	t.Setenv("MANGAD_DOWNLOAD_DIR", "/downloads")
+	t.Setenv("KAODOKU_DOWNLOAD_DIR", "/downloads")
 
 	cfg, _, err := LoadMerged(Options{IgnoreConfig: true, DownloadDir: "/other"})
 	if err != nil {
@@ -20,7 +20,7 @@ func TestDownloadDirEnvOverride(t *testing.T) {
 }
 
 func TestDownloadDirDefault(t *testing.T) {
-	t.Setenv("MANGAD_DOWNLOAD_DIR", "")
+	t.Setenv("KAODOKU_DOWNLOAD_DIR", "")
 
 	cfg, _, err := LoadMerged(Options{IgnoreConfig: true})
 	if err != nil {
@@ -48,10 +48,10 @@ func TestBrowserSolverDefaults(t *testing.T) {
 }
 
 func TestBrowserSolverEnvOverride(t *testing.T) {
-	t.Setenv("MANGAD_BROWSER_SOLVER_ENABLED", "true")
-	t.Setenv("MANGAD_BROWSER_SOLVER_PROVIDER", browserfetch.ProviderFlareSolverr)
-	t.Setenv("MANGAD_BROWSER_SOLVER_ENDPOINT", "http://flaresolverr:8191/v1")
-	t.Setenv("MANGAD_BROWSER_SOLVER_TIMEOUT_SECONDS", "120")
+	t.Setenv("KAODOKU_BROWSER_SOLVER_ENABLED", "true")
+	t.Setenv("KAODOKU_BROWSER_SOLVER_PROVIDER", browserfetch.ProviderFlareSolverr)
+	t.Setenv("KAODOKU_BROWSER_SOLVER_ENDPOINT", "http://flaresolverr:8191/v1")
+	t.Setenv("KAODOKU_BROWSER_SOLVER_TIMEOUT_SECONDS", "120")
 
 	cfg, _, err := LoadMerged(Options{IgnoreConfig: true})
 	if err != nil {
@@ -76,9 +76,9 @@ func TestBrowserDownloaderDefaults(t *testing.T) {
 }
 
 func TestBrowserDownloaderEnvOverride(t *testing.T) {
-	t.Setenv("MANGAD_BROWSER_DOWNLOADER_ENABLED", "true")
-	t.Setenv("MANGAD_BROWSER_DOWNLOADER_ENDPOINT", "http://browser-worker:8192")
-	t.Setenv("MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS", "90")
+	t.Setenv("KAODOKU_BROWSER_DOWNLOADER_ENABLED", "true")
+	t.Setenv("KAODOKU_BROWSER_DOWNLOADER_ENDPOINT", "http://browser-worker:8192")
+	t.Setenv("KAODOKU_BROWSER_DOWNLOADER_TIMEOUT_SECONDS", "90")
 
 	cfg, _, err := LoadMerged(Options{IgnoreConfig: true})
 	if err != nil {

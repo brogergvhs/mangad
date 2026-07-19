@@ -1,6 +1,6 @@
 {
-  "name": "MangaD",
-  "short_name": "MangaD",
+  "name": "Kaodoku",
+  "short_name": "Kaodoku",
   "description": "Track, download and read your manga.",
   "start_url": "/",
   "scope": "/",

@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/service"
-	"github.com/brogergvhs/mangad/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/sources"
 
 	"github.com/spf13/cobra"
 )
@@ -61,7 +61,7 @@ var sourcesVerifyCmd = &cobra.Command{
 }
 
 func init() {
-	sourcesCmd.PersistentFlags().StringVar(&flagSourcesDB, "db", "", "path to MangaD SQLite database")
+	sourcesCmd.PersistentFlags().StringVar(&flagSourcesDB, "db", "", "path to Kaodoku SQLite database")
 	sourcesSyncCmd.Flags().StringVar(&flagSourcesRegistryURL, "registry-url", "", "remote JSON/YAML source registry URL")
 	sourcesExportCmd.Flags().StringVarP(&flagSourcesOutput, "output", "o", "", "write exported YAML to a file instead of stdout")
 	sourcesCmd.AddCommand(sourcesListCmd, sourcesSyncCmd, sourcesImportCmd, sourcesExportCmd, sourcesRemoveCmd, sourcesTemplateCmd, sourcesVerifyCmd)

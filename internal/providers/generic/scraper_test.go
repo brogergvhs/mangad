@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 func TestFetchBodyCloudflareUsesBrowserSolver(t *testing.T) {
@@ -182,8 +182,8 @@ func TestGetImagesUsesBrowserRenderedHTMLWhenStaticHasOnlyChromeAssets(t *testin
 	})}
 	browser := fakeBrowserFetcher(`
 		<html><body>
-			<img src="https://cdn1.comicknew.pictures/title/chapter-30/001.webp" data-mangad-page-image="1">
-			<img src="https://cdn1.comicknew.pictures/title/chapter-30/002.webp" data-mangad-page-image="1">
+			<img src="https://cdn1.comicknew.pictures/title/chapter-30/001.webp" data-kaodoku-page-image="1">
+			<img src="https://cdn1.comicknew.pictures/title/chapter-30/002.webp" data-kaodoku-page-image="1">
 		</body></html>
 	`)
 

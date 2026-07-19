@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
 )
 
 func TestParseChapterFile(t *testing.T) {

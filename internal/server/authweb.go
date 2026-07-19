@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/auth"
-	"github.com/brogergvhs/mangad/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/service"
 )
 
 // userFrom returns the authenticated user for a request (never nil once the
@@ -16,7 +16,7 @@ import (
 func userFrom(ctx context.Context) *auth.User { return auth.FromContext(ctx) }
 
 // authEnabled reports whether username/password auth is active.
-func authEnabled() bool { return os.Getenv("MANGAD_ADMIN_PASSWORD") != "" }
+func authEnabled() bool { return os.Getenv("KAODOKU_ADMIN_PASSWORD") != "" }
 
 // requireUser resolves the request's user and stores it in the context:
 // session cookie when auth is enabled, the env admin otherwise.
@@ -45,7 +45,7 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 			}
 		}
 		ctx := auth.WithUser(r.Context(), user)
-		if c, err := r.Cookie("mangad_session"); err == nil {
+		if c, err := r.Cookie("kaodoku_session"); err == nil {
 			ctx = withSessionKey(ctx, c.Value)
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -123,7 +123,7 @@ func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 			return user
 		}
 	}
-	if c, err := r.Cookie("mangad_session"); err == nil {
+	if c, err := r.Cookie("kaodoku_session"); err == nil {
 		if user, err := svc.Auth().UserBySession(ctx, c.Value); err == nil && user != nil {
 			return user
 		}
@@ -158,10 +158,10 @@ func secureRequest(r *http.Request) bool {
 
 const loginPage = `<!doctype html><html lang="en" data-theme="mocha"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in · MangaD</title><link rel="stylesheet" href="/static/app.css">
+<title>Sign in · Kaodoku</title><link rel="stylesheet" href="/static/app.css">
 <body class="grid min-h-screen place-items-center bg-base-200">
 <form class="card bg-base-100 card-body w-80 gap-3" method="post" action="/login">
-<h1 class="text-xl font-bold">Manga<span class="text-primary">D</span></h1>
+<h1 class="text-xl font-bold">Kao<span class="text-primary">doku</span></h1>
 %s
 <input class="input w-full" name="username" placeholder="Username" autofocus autocomplete="username">
 <input class="input w-full" type="password" name="password" placeholder="Password" autocomplete="current-password">
@@ -182,7 +182,7 @@ func registerAuthRoutes(mux *http.ServeMux, svc *service.JobService) {
 			return
 		}
 		http.SetCookie(w, &http.Cookie{
-			Name: "mangad_session", Value: token, Path: "/",
+			Name: "kaodoku_session", Value: token, Path: "/",
 			HttpOnly: true, SameSite: http.SameSiteLaxMode,
 			Secure: secureRequest(r),
 			MaxAge: 30 * 24 * 3600,
@@ -190,10 +190,10 @@ func registerAuthRoutes(mux *http.ServeMux, svc *service.JobService) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 	mux.HandleFunc("POST /logout", func(w http.ResponseWriter, r *http.Request) {
-		if c, err := r.Cookie("mangad_session"); err == nil {
+		if c, err := r.Cookie("kaodoku_session"); err == nil {
 			svc.Auth().Logout(r.Context(), c.Value)
 		}
-		http.SetCookie(w, &http.Cookie{Name: "mangad_session", Value: "", Path: "/", MaxAge: -1})
+		http.SetCookie(w, &http.Cookie{Name: "kaodoku_session", Value: "", Path: "/", MaxAge: -1})
 		w.Header().Set("HX-Redirect", "/login")
 	})
 }

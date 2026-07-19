@@ -14,7 +14,7 @@ import (
 func TestLocalAniListState(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 // Repository persists source profiles.

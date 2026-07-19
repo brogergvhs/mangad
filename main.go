@@ -1,6 +1,6 @@
 package main
 
-import "github.com/brogergvhs/mangad/cmd"
+import "github.com/brogergvhs/kaodoku/cmd"
 
 func main() {
 	cmd.Execute()

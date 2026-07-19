@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/library"
 )
 
 // The collection-related fragments must execute against their view structs

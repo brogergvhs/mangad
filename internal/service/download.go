@@ -13,17 +13,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/browserdownload"
-	"github.com/brogergvhs/mangad/internal/browserfetch"
-	"github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/downloader"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/providers/generic"
-	"github.com/brogergvhs/mangad/internal/providers/registry"
-	"github.com/brogergvhs/mangad/internal/ui"
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/browserdownload"
+	"github.com/brogergvhs/kaodoku/internal/browserfetch"
+	"github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/downloader"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/providers/generic"
+	"github.com/brogergvhs/kaodoku/internal/providers/registry"
+	"github.com/brogergvhs/kaodoku/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/util"
 
 	cloudflarebp "github.com/DaRealFreak/cloudflare-bp-go"
 )
@@ -349,7 +349,7 @@ func (s *DownloadService) SearchManga(ctx context.Context, searchURL, query stri
 // VerifyImage downloads one image to a temporary folder to confirm the image
 // host is actually reachable (catching CDN 403s that URL extraction misses).
 func (s *DownloadService) VerifyImage(ctx context.Context, imageURL, referer string) error {
-	tmp, err := os.MkdirTemp("", "mangad-verify-*")
+	tmp, err := os.MkdirTemp("", "kaodoku-verify-*")
 	if err != nil {
 		return err
 	}

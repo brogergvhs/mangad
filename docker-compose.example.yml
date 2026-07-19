@@ -1,33 +1,33 @@
 services:
-  mangad:
+  kaodoku:
     build: .
     command:
       - serve
       - --addr
       - :8080
       - --db
-      - /data/mangad.db
+      - /data/kaodoku.db
     ports:
-      # Without MANGAD_ADMIN_PASSWORD the app runs in single-user mode with
+      # Without KAODOKU_ADMIN_PASSWORD the app runs in single-user mode with
       # no login;
       - "127.0.0.1:8080:8080"
     environment:
       XDG_CONFIG_HOME: /config
-      MANGAD_DOWNLOAD_DIR: /downloads
+      KAODOKU_DOWNLOAD_DIR: /downloads
       # The environment admin: sign-in is enabled when the password is set.
       # This account is immutable in-app and manages further users/roles.
-      # MANGAD_ADMIN_USER: admin
-      # MANGAD_ADMIN_PASSWORD: change-me
-      MANGAD_BROWSER_DOWNLOADER_ENABLED: "true"
-      MANGAD_BROWSER_DOWNLOADER_ENDPOINT: http://browser-worker:8192
-      MANGAD_BROWSER_DOWNLOADER_TIMEOUT_SECONDS: "180"
-      MANGAD_BROWSER_SOLVER_ENABLED: "true"
-      MANGAD_BROWSER_SOLVER_ENDPOINT: http://flaresolverr:8191/v1
-      MANGAD_BROWSER_SOLVER_TIMEOUT_SECONDS: "60"
+      # KAODOKU_ADMIN_USER: admin
+      # KAODOKU_ADMIN_PASSWORD: change-me
+      KAODOKU_BROWSER_DOWNLOADER_ENABLED: "true"
+      KAODOKU_BROWSER_DOWNLOADER_ENDPOINT: http://browser-worker:8192
+      KAODOKU_BROWSER_DOWNLOADER_TIMEOUT_SECONDS: "180"
+      KAODOKU_BROWSER_SOLVER_ENABLED: "true"
+      KAODOKU_BROWSER_SOLVER_ENDPOINT: http://flaresolverr:8191/v1
+      KAODOKU_BROWSER_SOLVER_TIMEOUT_SECONDS: "60"
     volumes:
-      - mangad-config:/config
-      - mangad-data:/data
-      - mangad-downloads:/downloads
+      - kaodoku-config:/config
+      - kaodoku-data:/data
+      - kaodoku-downloads:/downloads
     depends_on:
       browser-worker:
         condition: service_healthy
@@ -70,11 +70,11 @@ services:
 #   image: alpine:latest
 #   profiles: ["tools"]
 #   volumes:
-#     - mangad-config:/config
-#     - mangad-data:/data
-#     - mangad-downloads:/downloads
+#     - kaodoku-config:/config
+#     - kaodoku-data:/data
+#     - kaodoku-downloads:/downloads
 
 volumes:
-  mangad-config:
-  mangad-data:
-  mangad-downloads:
+  kaodoku-config:
+  kaodoku-data:
+  kaodoku-downloads:

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>{{.Title}} · MangaD</title>
+  <title>{{.Title}} · Kaodoku</title>
   <link rel="manifest" href="/static/manifest.webmanifest?v={{assetVer}}">
   <meta name="theme-color" content="#1e1e2e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="MangaD">
+  <meta name="apple-mobile-web-app-title" content="Kaodoku">
   <link rel="apple-touch-icon" href="/static/icon-180.png">
   <link rel="stylesheet" href="/static/app.css?v={{assetVer}}">
   {{if .ThemeCSS}}<style>{{.ThemeCSS}}</style>{{end}}
@@ -21,7 +21,7 @@
   <div class="drawer-content min-h-screen bg-base-200">
     <div class="navbar bg-base-200 border-b border-base-100 lg:hidden sticky top-0 z-30">
       <label for="app-drawer" class="btn btn-ghost btn-square drawer-button" aria-label="Open menu">{{template "iconMenu"}}</label>
-      <a href="/" class="text-lg font-bold px-2">Manga<span class="text-primary">D</span></a>
+      <a href="/" class="text-lg font-bold px-2">Kao<span class="text-primary">doku</span></a>
     </div>
     <div id="toast" class="toast toast-top toast-end z-50"></div>
     <main class="w-full p-4 lg:p-8">{{.Content}}</main>
@@ -29,7 +29,7 @@
   <div class="drawer-side z-40">
     <label for="app-drawer" aria-label="Close menu" class="drawer-overlay"></label>
     <div class="app-sidebar flex min-h-full w-64 flex-col bg-base-300">
-      <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Manga<span class="text-primary">D</span></a>
+      <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Kao<span class="text-primary">doku</span> <span class="text-sm font-normal text-base-content/40">顔読</span></a>
       <ul class="menu w-full grow px-4">
         <li><a href="/" class="{{if eq .Nav "home"}}menu-active{{end}}">{{template "iconHome"}}Home</a></li>
         {{if .User.Can "library.add"}}<li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>{{end}}

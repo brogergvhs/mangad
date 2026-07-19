@@ -3,8 +3,8 @@ package server
 import (
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/catalog"
-	"github.com/brogergvhs/mangad/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/catalog"
+	"github.com/brogergvhs/kaodoku/internal/library"
 )
 
 func title(id int64, catID int64, name string) library.Title {

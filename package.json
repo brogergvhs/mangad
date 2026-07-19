@@ -1,7 +1,7 @@
 {
-  "name": "mangad",
+  "name": "kaodoku",
   "version": "1.0.0",
-  "description": "MangaD =============================================",
+  "description": "Kaodoku =============================================",
   "main": "index.js",
   "scripts": {
     "css": "tailwindcss -i assets/css/input.css -o internal/server/static/app.css --minify"

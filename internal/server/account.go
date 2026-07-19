@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/brogergvhs/mangad/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/auth"
 )
 
 type accountView struct {
@@ -16,7 +16,7 @@ type accountView struct {
 func (u *webUI) accountData(r *http.Request, newToken string) accountView {
 	user := userFrom(r.Context())
 	token := ""
-	if c, err := r.Cookie("mangad_session"); err == nil {
+	if c, err := r.Cookie("kaodoku_session"); err == nil {
 		token = c.Value
 	}
 	sessions, _ := u.svc.Auth().Sessions(r.Context(), user.ID, token)
@@ -40,7 +40,7 @@ func (u *webUI) accountPassword(w http.ResponseWriter, r *http.Request) {
 func (u *webUI) accountRevokeSessions(w http.ResponseWriter, r *http.Request) {
 	user := userFrom(r.Context())
 	token := ""
-	if c, err := r.Cookie("mangad_session"); err == nil {
+	if c, err := r.Cookie("kaodoku_session"); err == nil {
 		token = c.Value
 	}
 	if err := u.svc.Auth().RevokeOtherSessions(r.Context(), user.ID, token); err != nil {

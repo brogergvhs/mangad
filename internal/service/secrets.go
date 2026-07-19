@@ -17,8 +17,8 @@ import (
 const encPrefix = "enc:v1:"
 
 // tokenCipher encrypts small secrets (AniList tokens) at rest with
-// AES-256-GCM. The key comes from MANGAD_ENCRYPTION_KEY (64 hex chars) or an
-// auto-generated mangad.key file next to the database.
+// AES-256-GCM. The key comes from KAODOKU_ENCRYPTION_KEY (64 hex chars) or an
+// auto-generated kaodoku.key file next to the database.
 type tokenCipher struct {
 	aead cipher.AEAD
 }
@@ -40,14 +40,14 @@ func newTokenCipher(dbPath string) (*tokenCipher, error) {
 }
 
 func loadOrCreateKey(dbPath string) ([]byte, error) {
-	if env := strings.TrimSpace(os.Getenv("MANGAD_ENCRYPTION_KEY")); env != "" {
+	if env := strings.TrimSpace(os.Getenv("KAODOKU_ENCRYPTION_KEY")); env != "" {
 		key, err := hex.DecodeString(env)
 		if err != nil || len(key) != 32 {
-			return nil, fmt.Errorf("MANGAD_ENCRYPTION_KEY must be 64 hex characters")
+			return nil, fmt.Errorf("KAODOKU_ENCRYPTION_KEY must be 64 hex characters")
 		}
 		return key, nil
 	}
-	path := filepath.Join(filepath.Dir(dbPath), "mangad.key")
+	path := filepath.Join(filepath.Dir(dbPath), "kaodoku.key")
 	if data, err := os.ReadFile(path); err == nil {
 		key, err := hex.DecodeString(strings.TrimSpace(string(data)))
 		if err != nil || len(key) != 32 {

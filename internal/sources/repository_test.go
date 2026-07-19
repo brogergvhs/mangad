@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/database"
 )
 
 func TestRepositorySyncListAndUpdateCheck(t *testing.T) {
@@ -160,7 +160,7 @@ func TestBuiltInProfiles(t *testing.T) {
 func testRepository(t *testing.T) (context.Context, *Repository, func()) {
 	t.Helper()
 	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

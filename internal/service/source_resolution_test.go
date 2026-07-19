@@ -3,8 +3,8 @@ package service
 import (
 	"testing"
 
-	"github.com/brogergvhs/mangad/internal/config"
-	"github.com/brogergvhs/mangad/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/sources"
 )
 
 func TestMatchSourceForURLMatchesBuiltinDomain(t *testing.T) {

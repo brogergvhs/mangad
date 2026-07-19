@@ -11,7 +11,7 @@ import (
 	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -241,7 +241,7 @@ func (c *imageCollector) ScanIMGTags(doc *goquery.Document, chapterURL string) i
 
 		for _, k := range []string{"src", "data-src", "data-lazy-src", "data-original"} {
 			if v, ok := img.Attr(k); ok && strings.TrimSpace(v) != "" {
-				if _, marked := img.Attr("data-mangad-page-image"); marked {
+				if _, marked := img.Attr("data-kaodoku-page-image"); marked {
 					c.addPageImage(resolve(chapterURL, v), idx)
 				} else {
 					c.add(resolve(chapterURL, v), idx)

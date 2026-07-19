@@ -22,7 +22,7 @@ func TestDownloadCBZ(t *testing.T) {
 		if err := readJSON(r, &got); err != nil {
 			t.Fatal(err)
 		}
-		w.Header().Set("X-Mangad-Images", "2")
+		w.Header().Set("X-Kaodoku-Images", "2")
 		_, _ = w.Write(testZip(t))
 	}))
 	defer server.Close()

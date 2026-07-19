@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/service"
 
 	"github.com/spf13/cobra"
 )
@@ -34,7 +34,7 @@ var jobsEnqueueCmd = &cobra.Command{
 }
 
 func init() {
-	jobsCmd.PersistentFlags().StringVar(&flagJobsDB, "db", "", "path to MangaD SQLite database")
+	jobsCmd.PersistentFlags().StringVar(&flagJobsDB, "db", "", "path to Kaodoku SQLite database")
 	jobsEnqueueCmd.Flags().Int64Var(&flagJobsTitleID, "title", 0, "title id; omit or use 0 for all monitored titles")
 	jobsEnqueueCmd.Flags().StringVar(&flagJobsSourceID, "source", "", "source id for verify_source jobs")
 	jobsEnqueueCmd.Flags().Int64Var(&flagJobsCatalogID, "catalog", 0, "catalog manga id for match_sources jobs")

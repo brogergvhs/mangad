@@ -14,12 +14,12 @@ import (
 	"strings"
 	"testing"
 
-	chaptersPkg "github.com/brogergvhs/mangad/internal/chapters"
-	"github.com/brogergvhs/mangad/internal/database"
-	"github.com/brogergvhs/mangad/internal/jobs"
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/service"
+	chaptersPkg "github.com/brogergvhs/kaodoku/internal/chapters"
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/service"
 )
 
 func TestAPISettings(t *testing.T) {
@@ -71,7 +71,7 @@ func TestAPIJobs(t *testing.T) {
 
 func TestAPIReaderProgress(t *testing.T) {
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "mangad.db")
+	dbPath := filepath.Join(t.TempDir(), "kaodoku.db")
 	db, err := database.Open(ctx, dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -197,8 +197,8 @@ func writeReaderTestCBZ(t *testing.T, path string) {
 }
 
 func TestSessionAuth(t *testing.T) {
-	t.Setenv("MANGAD_ADMIN_USER", "boss")
-	t.Setenv("MANGAD_ADMIN_PASSWORD", "secret123")
+	t.Setenv("KAODOKU_ADMIN_USER", "boss")
+	t.Setenv("KAODOKU_ADMIN_PASSWORD", "secret123")
 	api, closeDB := testAPI(t)
 	defer closeDB()
 
@@ -218,7 +218,7 @@ func TestSessionAuth(t *testing.T) {
 	}
 	var session *http.Cookie
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == "mangad_session" {
+		if c.Name == "kaodoku_session" {
 			session = c
 		}
 	}
@@ -286,7 +286,7 @@ func TestAPISourcesLocal(t *testing.T) {
 func testAPI(t *testing.T) (http.Handler, func()) {
 
 	t.Helper()
-	svc, closeDB, err := service.OpenJobs(context.Background(), filepath.Join(t.TempDir(), "mangad.db"))
+	svc, closeDB, err := service.OpenJobs(context.Background(), filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -341,7 +341,7 @@ def rendered_images(driver, pause):
         print(f"warning: hit scroll ceiling ({max_scrolls}); images may be truncated", flush=True)
 
     return "<html><body>" + "".join(
-        f'<img src="{html.escape(url, quote=True)}" data-mangad-page-image="1">'
+        f'<img src="{html.escape(url, quote=True)}" data-kaodoku-page-image="1">'
         for url in images
     ) + "</body></html>"
 
@@ -407,7 +407,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/vnd.comicbook+zip")
         self.send_header("Content-Length", str(len(cbz)))
-        self.send_header("X-Mangad-Images", str(len(images)))
+        self.send_header("X-Kaodoku-Images", str(len(images)))
         self.end_headers()
         self.wfile.write(cbz)
 

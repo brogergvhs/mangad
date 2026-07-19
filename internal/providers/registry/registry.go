@@ -8,13 +8,13 @@ import (
 	"sort"
 	"time"
 
-	"github.com/brogergvhs/mangad/internal/providers"
-	"github.com/brogergvhs/mangad/internal/providers/comickz"
-	"github.com/brogergvhs/mangad/internal/providers/generic"
-	"github.com/brogergvhs/mangad/internal/providers/iken"
-	"github.com/brogergvhs/mangad/internal/providers/madara"
-	"github.com/brogergvhs/mangad/internal/providers/mangadex"
-	"github.com/brogergvhs/mangad/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/providers/comickz"
+	"github.com/brogergvhs/kaodoku/internal/providers/generic"
+	"github.com/brogergvhs/kaodoku/internal/providers/iken"
+	"github.com/brogergvhs/kaodoku/internal/providers/madara"
+	"github.com/brogergvhs/kaodoku/internal/providers/mangadex"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 // Constructor builds a scraper with the shared provider dependencies.

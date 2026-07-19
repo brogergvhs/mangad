@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/brogergvhs/mangad/internal/library"
-	"github.com/brogergvhs/mangad/internal/util"
+	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 type volumeRowView struct {

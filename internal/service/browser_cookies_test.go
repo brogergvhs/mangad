@@ -8,7 +8,7 @@ import (
 )
 
 func TestBrowserCookieCacheSaveLoad(t *testing.T) {
-	cache := browserCookieCache{dbPath: filepath.Join(t.TempDir(), "mangad.db")}
+	cache := browserCookieCache{dbPath: filepath.Join(t.TempDir(), "kaodoku.db")}
 	err := cache.save(t.Context(), "https://manga.test/chapter", "ua", []*http.Cookie{{
 		Name:    "cf_clearance",
 		Value:   "token",
@@ -34,7 +34,7 @@ func TestBrowserCookieCacheSaveLoad(t *testing.T) {
 }
 
 func TestBrowserCookieCacheSkipsExpired(t *testing.T) {
-	cache := browserCookieCache{dbPath: filepath.Join(t.TempDir(), "mangad.db")}
+	cache := browserCookieCache{dbPath: filepath.Join(t.TempDir(), "kaodoku.db")}
 	err := cache.save(t.Context(), "https://manga.test/chapter", "ua", []*http.Cookie{{
 		Name:    "expired",
 		Value:   "token",

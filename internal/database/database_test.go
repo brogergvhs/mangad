@@ -11,7 +11,7 @@ func TestOpenAndMigrate(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -64,7 +64,7 @@ func TestOpenAppliesPragmasToEveryConnection(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	db, err := Open(ctx, filepath.Join(t.TempDir(), "mangad.db"))
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
