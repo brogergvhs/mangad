@@ -51,6 +51,7 @@
             </ul>
           </details>
         </li>
+        {{if .User.Can "library.view"}}<li><a href="/collections" class="{{if eq .Nav "collections"}}menu-active{{end}}">{{template "iconLayers"}}Collections</a></li>{{end}}
         {{if .User.Can "import.use"}}<li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>{{end}}
         {{if .User.Can "sources.manage"}}<li><a href="/sources" class="{{if eq .Nav "sources"}}menu-active{{end}}">{{template "iconSources"}}Sources</a></li>{{end}}
         {{if .User.Can "users.manage"}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users</a></li>{{end}}

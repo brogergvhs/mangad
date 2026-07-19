@@ -274,6 +274,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 		staticHandler.ServeHTTP(w, r)
 	}))
 
+	mux.HandleFunc("GET /collections", u.collectionsPage)
 	mux.HandleFunc("GET /{$}", u.homePage)
 	mux.HandleFunc("GET /management", u.management)
 	mux.HandleFunc("GET /search", u.searchPage)
@@ -678,6 +679,165 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 		title = view.Screen.Name
 	}
 	u.page(w, r, "library", title, view)
+}
+
+type collection struct {
+	Name    string
+	Members []library.Title
+}
+
+type collectionsView struct {
+	ByRelation   bool
+	Collections  []collection
+	CanManage    bool
+	HasRelations bool
+}
+
+func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	titles, _ := u.svc.ListTitles(ctx)
+	titles = filterRestrictedTitles(ctx, titles)
+	ids := make([]int64, 0, len(titles))
+	for _, t := range titles {
+		if t.CatalogMangaID != nil {
+			ids = append(ids, *t.CatalogMangaID)
+		}
+	}
+	mangas, _ := u.svc.MangaByIDs(ctx, ids)
+	edges, _ := u.svc.CollectionEdges(ctx)
+	byRelation := r.URL.Query().Get("by") == "relation"
+	u.page(w, r, "collections", "Collections", collectionsView{
+		ByRelation:   byRelation,
+		Collections:  buildCollections(titles, mangas, edges, byRelation),
+		CanManage:    auth.FromContext(ctx).Can(auth.PermLibraryManage),
+		HasRelations: len(edges) > 0,
+	})
+}
+
+// buildCollections groups library titles either by shared author or by AniList
+// relation graph (connected components), dropping any group with one member.
+func buildCollections(titles []library.Title, mangas map[int64]catalog.Manga, edges [][2]string, byRelation bool) []collection {
+	if byRelation {
+		return relationCollections(titles, mangas, edges)
+	}
+	return authorCollections(titles, mangas)
+}
+
+func authorCollections(titles []library.Title, mangas map[int64]catalog.Manga) []collection {
+	groups := map[string]*collection{}
+	seen := map[string]bool{} // "authorKey\x00titleID" — a manga listing an author twice
+	var order []string
+	for _, t := range titles {
+		if t.CatalogMangaID == nil {
+			continue
+		}
+		for _, author := range mangas[*t.CatalogMangaID].Authors {
+			key := strings.ToLower(strings.TrimSpace(author))
+			if key == "" {
+				continue
+			}
+			dedupe := key + "\x00" + strconv.FormatInt(t.ID, 10)
+			if seen[dedupe] {
+				continue
+			}
+			seen[dedupe] = true
+			g := groups[key]
+			if g == nil {
+				g = &collection{Name: strings.TrimSpace(author)}
+				groups[key] = g
+				order = append(order, key)
+			}
+			g.Members = append(g.Members, t)
+		}
+	}
+	var out []collection
+	for _, key := range order {
+		if g := groups[key]; len(g.Members) >= 2 {
+			sortByTitle(g.Members)
+			out = append(out, *g)
+		}
+	}
+	sortByName(out)
+	return out
+}
+
+func relationCollections(titles []library.Title, mangas map[int64]catalog.Manga, edges [][2]string) []collection {
+	byProvider := map[string][]library.Title{}
+	var pids []string
+	for _, t := range titles {
+		if t.CatalogMangaID == nil {
+			continue
+		}
+		if pid := mangas[*t.CatalogMangaID].ProviderID; pid != "" {
+			if _, ok := byProvider[pid]; !ok {
+				pids = append(pids, pid)
+			}
+			byProvider[pid] = append(byProvider[pid], t)
+		}
+	}
+	adj := map[string][]string{}
+	for _, e := range edges {
+		if _, ok := byProvider[e[0]]; !ok {
+			continue
+		}
+		if _, ok := byProvider[e[1]]; !ok {
+			continue
+		}
+		adj[e[0]] = append(adj[e[0]], e[1])
+		adj[e[1]] = append(adj[e[1]], e[0])
+	}
+	seen := map[string]bool{}
+	var out []collection
+	for _, pid := range pids {
+		if seen[pid] {
+			continue
+		}
+		var members []library.Title
+		stack := []string{pid}
+		seen[pid] = true
+		for len(stack) > 0 {
+			cur := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			members = append(members, byProvider[cur]...)
+			for _, next := range adj[cur] {
+				if !seen[next] {
+					seen[next] = true
+					stack = append(stack, next)
+				}
+			}
+		}
+		if len(members) < 2 {
+			continue
+		}
+		sortByTitle(members)
+		out = append(out, collection{Name: collectionName(members), Members: members})
+	}
+	sortByName(out)
+	return out
+}
+
+// collectionName names a franchise after its shortest member title, which is
+// usually the root work (e.g. "The Ghost in the Shell").
+func collectionName(members []library.Title) string {
+	name := members[0].DisplayTitle
+	for _, m := range members[1:] {
+		if len(m.DisplayTitle) < len(name) {
+			name = m.DisplayTitle
+		}
+	}
+	return name
+}
+
+func sortByTitle(ts []library.Title) {
+	sort.SliceStable(ts, func(i, j int) bool {
+		return strings.ToLower(ts[i].DisplayTitle) < strings.ToLower(ts[j].DisplayTitle)
+	})
+}
+
+func sortByName(cs []collection) {
+	sort.SliceStable(cs, func(i, j int) bool {
+		return strings.ToLower(cs[i].Name) < strings.ToLower(cs[j].Name)
+	})
 }
 
 func screenFromForm(r *http.Request) library.Screen {
@@ -2832,6 +2992,8 @@ func navFor(path string) string {
 		return "search"
 	case strings.HasPrefix(path, "/library"):
 		return "library"
+	case strings.HasPrefix(path, "/collections"):
+		return "collections"
 	case strings.HasPrefix(path, "/import"):
 		return "import"
 	case strings.HasPrefix(path, "/sources"):
