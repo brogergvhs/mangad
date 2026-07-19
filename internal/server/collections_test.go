@@ -19,6 +19,14 @@ func collectionNames(cs []collection) []string {
 	return out
 }
 
+func titlesByID(ts []library.Title) map[int64]library.Title {
+	m := make(map[int64]library.Title, len(ts))
+	for _, t := range ts {
+		m[t.ID] = t
+	}
+	return m
+}
+
 func TestAuthorCollections(t *testing.T) {
 	t.Parallel()
 	titles := []library.Title{title(1, 10, "BLAME!"), title(2, 20, "Aposimz"), title(3, 30, "Berserk"), title(4, 40, "Solo")}
@@ -75,7 +83,7 @@ func TestRelationCollectionsComponentsAndSingletons(t *testing.T) {
 		{"101", "102"},
 		{"200", "999"}, // Overgeared -> a title not in library
 	}
-	cs := relationCollections(titles, mangas, edges)
+	cs := relationCollections(titles, mangas, edges, nil, titlesByID(titles))
 	if len(cs) != 1 {
 		t.Fatalf("relation collections = %+v, want 1 (singleton Overgeared dropped)", collectionNames(cs))
 	}
@@ -103,9 +111,58 @@ func TestRelationCollectionsKeepsSiblingsSharingProviderID(t *testing.T) {
 	}
 	mangas := map[int64]catalog.Manga{10: {ProviderID: "100"}, 11: {ProviderID: "101"}}
 	edges := [][2]string{{"100", "101"}}
-	cs := relationCollections(titles, mangas, edges)
+	cs := relationCollections(titles, mangas, edges, nil, titlesByID(titles))
 	if len(cs) != 1 || len(cs[0].Members) != 3 {
 		t.Fatalf("members = %d, want 3 (both provider-100 siblings + 101)", len(cs[0].Members))
+	}
+}
+
+func TestRelationCollectionsAppendsSmartPins(t *testing.T) {
+	t.Parallel()
+	// A GitS cluster (100,101) plus an unrelated title pinned into it.
+	titles := []library.Title{
+		title(1, 10, "The Ghost in the Shell"),
+		title(2, 11, "Ghost in the Shell 1.5"),
+		title(3, 20, "Appleseed"),
+	}
+	mangas := map[int64]catalog.Manga{
+		10: {ProviderID: "100"}, 11: {ProviderID: "101"}, 20: {ProviderID: "200"},
+	}
+	edges := [][2]string{{"100", "101"}}
+	// Smart key is the smallest provider id in the component: "100".
+	pins := map[string][]int64{"100": {3}}
+	cs := relationCollections(titles, mangas, edges, pins, titlesByID(titles))
+	if len(cs) != 1 {
+		t.Fatalf("relation collections = %+v, want 1", collectionNames(cs))
+	}
+	if cs[0].SmartKey != "100" {
+		t.Errorf("smart key = %q, want 100", cs[0].SmartKey)
+	}
+	if len(cs[0].Members) != 3 {
+		t.Errorf("members = %d, want 3 (2 derived + 1 pinned)", len(cs[0].Members))
+	}
+	var hasPinned bool
+	for _, m := range cs[0].Members {
+		if m.DisplayTitle == "Appleseed" {
+			hasPinned = true
+		}
+	}
+	if !hasPinned {
+		t.Error("pinned title Appleseed should appear in the smart collection")
+	}
+}
+
+func TestCustomCollections(t *testing.T) {
+	t.Parallel()
+	titles := []library.Title{title(1, 10, "A"), title(2, 20, "B"), title(3, 30, "C")}
+	cols := []library.Collection{{ID: 5, Name: "My shelf"}}
+	members := map[int64][]int64{5: {1, 3, 99}} // 99 is not in the library -> skipped
+	cs := customCollections(cols, members, titlesByID(titles))
+	if len(cs) != 1 || cs[0].CustomID != 5 || cs[0].Name != "My shelf" {
+		t.Fatalf("custom collections = %+v", cs)
+	}
+	if len(cs[0].Members) != 2 {
+		t.Errorf("members = %d, want 2 (missing title filtered out)", len(cs[0].Members))
 	}
 }
 

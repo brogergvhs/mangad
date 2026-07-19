@@ -74,17 +74,18 @@ type dashData struct {
 	User       *auth.User
 }
 type libraryView struct {
-	Controls    libraryControls
-	Table       libraryResults
-	Screen      *library.Screen
-	ShowEditor  bool
-	OpenEditor  bool
-	TagOptions  []catalog.ContentTag
-	IncludeTags []string
-	ExcludeTags []string
-	Cfg         library.ScreenConfig
+	Controls       libraryControls
+	Table          libraryResults
+	Screen         *library.Screen
+	ShowEditor     bool
+	OpenEditor     bool
+	TagOptions     []catalog.ContentTag
+	IncludeTags    []string
+	ExcludeTags    []string
+	Cfg            library.ScreenConfig
 	CollectionName string
 	CollectionIDs  string
+	CollectionID   int64
 }
 type libraryControls struct {
 	Q           string
@@ -308,6 +309,13 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/screens/{id}", u.screenSave)
 	mux.HandleFunc("POST /ui/screens/{id}/delete", u.screenDelete)
 	mux.HandleFunc("POST /ui/screens/reorder", u.screenReorder)
+	mux.HandleFunc("POST /ui/collections", u.collectionCreate)
+	mux.HandleFunc("POST /ui/collections/{id}/rename", u.collectionRename)
+	mux.HandleFunc("POST /ui/collections/{id}/delete", u.collectionDelete)
+	mux.HandleFunc("POST /ui/collections/{id}/remove", u.collectionRemoveMember)
+	mux.HandleFunc("GET /ui/collections/{id}/manage", u.collectionManage)
+	mux.HandleFunc("GET /ui/library/{id}/collections", u.libCollectionsDialog)
+	mux.HandleFunc("POST /ui/library/{id}/collections/add", u.libAddToCollection)
 	mux.HandleFunc("GET /ui/library/{id}/content", u.titleContentFrag)
 	mux.HandleFunc("POST /ui/library/{id}/volumes/range", u.volumesRange)
 	mux.HandleFunc("POST /ui/volumes/{id}/read", u.volumeRead(true))
@@ -685,8 +693,10 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 }
 
 type collection struct {
-	Name    string
-	Members []library.Title
+	Name     string
+	Members  []library.Title
+	CustomID int64  
+	SmartKey string // set for a smart collection
 }
 
 // collectionCard is one collection rendered as a single library-style card:
@@ -694,6 +704,7 @@ type collection struct {
 type collectionCard struct {
 	Name      string
 	URL       string // link to the members subpage
+	CustomID  int64  // >0 enables the rename/delete menu on the card
 	Count     int
 	Chapters  int64
 	Volumes   int64
@@ -707,50 +718,288 @@ type collectionCard struct {
 }
 
 type collectionsView struct {
-	ByRelation   bool
+	Mode         string // "author" | "smart" | "custom"
 	Cards        []collectionCard
 	HasRelations bool
 }
 
 func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	author, smart, custom, hasRelations := u.buildAllCollections(ctx)
+	mode := r.URL.Query().Get("by")
+	var cols []collection
+	switch mode {
+	case "relation":
+		mode = "smart"
+		cols = smart
+	case "custom":
+		cols = custom
+	default:
+		mode = "author"
+		cols = author
+	}
+	u.page(w, r, "collections", "Collections", collectionsView{
+		Mode:         mode,
+		Cards:        collectionCards(cols),
+		HasRelations: hasRelations,
+	})
+}
+
+// buildAllCollections gathers the library once and returns the three collection
+// groupings plus whether any relation edges are stored.
+func (u *webUI) buildAllCollections(ctx context.Context) (author, smart, custom []collection, hasRelations bool) {
 	titles, _ := u.svc.ListTitles(ctx)
 	titles = filterRestrictedTitles(ctx, titles)
+	titleByID := make(map[int64]library.Title, len(titles))
 	ids := make([]int64, 0, len(titles))
 	for _, t := range titles {
+		titleByID[t.ID] = t
 		if t.CatalogMangaID != nil {
 			ids = append(ids, *t.CatalogMangaID)
 		}
 	}
 	mangas, _ := u.svc.MangaByIDs(ctx, ids)
 	edges, _ := u.svc.CollectionEdges(ctx)
-	byRelation := r.URL.Query().Get("by") == "relation"
-	u.page(w, r, "collections", "Collections", collectionsView{
-		ByRelation:   byRelation,
-		Cards:        collectionCards(buildCollections(titles, mangas, edges, byRelation)),
-		HasRelations: len(edges) > 0,
-	})
+	pins, _ := u.svc.SmartPins(ctx)
+	customs, _ := u.svc.CustomCollections(ctx)
+	members, _ := u.svc.CollectionMembers(ctx)
+	author = authorCollections(titles, mangas)
+	smart = relationCollections(titles, mangas, edges, pins, titleByID)
+	custom = customCollections(customs, members, titleByID)
+	return author, smart, custom, len(edges) > 0
 }
 
 // collectionMembersPage renders a single collection's titles using the same
-// auto-layout library view, scoped to the member ids in the query.
+// auto-layout library view. Custom collections (cid) load live membership and
+// expose member management; other groupings use the ids snapshot in the query.
 func (u *webUI) collectionMembersPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	values := r.URL.Query()
-	if values.Get("ids") == "" {
-		http.NotFound(w, r)
-		return
-	}
 	name := values.Get("name")
 	if name == "" {
 		name = "Collection"
 	}
+	var collectionID int64
+	if raw := values.Get("cid"); raw != "" {
+		cid, _ := strconv.ParseInt(raw, 10, 64)
+		customs, _ := u.svc.CustomCollections(ctx)
+		owned := false
+		for _, c := range customs {
+			if c.ID == cid {
+				owned, name = true, c.Name
+				break
+			}
+		}
+		if !owned {
+			http.NotFound(w, r)
+			return
+		}
+		collectionID = cid
+		members, _ := u.svc.CollectionMembers(ctx)
+		idStrs := make([]string, 0, len(members[cid]))
+		for _, tid := range members[cid] {
+			idStrs = append(idStrs, strconv.FormatInt(tid, 10))
+		}
+		ids := strings.Join(idStrs, ",")
+		if ids == "" {
+			ids = "0" // no title has id 0: an empty collection restricts to nothing
+		}
+		values.Set("ids", ids)
+	}
+	if values.Get("ids") == "" {
+		http.NotFound(w, r)
+		return
+	}
 	view := libraryView{
-		Table:          u.buildLibraryTable(r.Context(), values),
+		Table:          u.buildLibraryTable(ctx, values),
 		Controls:       libraryControlsFrom(values),
 		CollectionName: name,
 		CollectionIDs:  values.Get("ids"),
+		CollectionID:   collectionID,
 	}
 	u.page(w, r, "library", name, view)
+}
+
+type collectionOption struct {
+	Label    string
+	Count    int
+	CustomID int64
+	SmartKey string
+}
+
+type addToCollectionView struct {
+	TitleID int64
+	Smart   []collectionOption
+	Custom  []collectionOption
+}
+
+type collectionManageView struct {
+	ID      int64
+	Name    string
+	Members []library.Title
+}
+
+func collectionHasTitle(c collection, id int64) bool {
+	for _, m := range c.Members {
+		if m.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// libCollectionsDialog lists collections a title is not yet in: smart ones it
+// can be pinned to and custom ones it can be added to.
+func (u *webUI) libCollectionsDialog(w http.ResponseWriter, r *http.Request) {
+	titleID, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	_, smart, custom, _ := u.buildAllCollections(r.Context())
+	view := addToCollectionView{TitleID: titleID}
+	for _, c := range smart {
+		if collectionHasTitle(c, titleID) {
+			continue
+		}
+		view.Smart = append(view.Smart, collectionOption{Label: c.Name, Count: len(c.Members), SmartKey: c.SmartKey})
+	}
+	for _, c := range custom {
+		if collectionHasTitle(c, titleID) {
+			continue
+		}
+		view.Custom = append(view.Custom, collectionOption{Label: c.Name, Count: len(c.Members), CustomID: c.CustomID})
+	}
+	u.frag(w, "addToCollection", view)
+}
+
+// libAddToCollection adds a title to a custom collection, pins it to a smart
+// collection, or creates a new custom collection seeded with the title.
+func (u *webUI) libAddToCollection(w http.ResponseWriter, r *http.Request) {
+	titleID, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	ctx := r.Context()
+	if !titleAllowed(ctx, u.svc, titleID) {
+		u.fail(w, fmt.Errorf("title not found"))
+		return
+	}
+	_ = r.ParseForm()
+	switch {
+	case r.FormValue("cid") != "":
+		var cid int64
+		if cid, err = strconv.ParseInt(r.FormValue("cid"), 10, 64); err == nil {
+			err = u.svc.AddToCollection(ctx, cid, titleID)
+		}
+	case r.FormValue("smart") != "":
+		err = u.svc.PinToSmart(ctx, r.FormValue("smart"), titleID)
+	case strings.TrimSpace(r.FormValue("name")) != "":
+		var cid int64
+		if cid, err = u.svc.CreateCollection(ctx, r.FormValue("name")); err == nil {
+			err = u.svc.AddToCollection(ctx, cid, titleID)
+		}
+	default:
+		err = fmt.Errorf("choose a collection")
+	}
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "toast", toastView{OK: true, Msg: "Added to collection ✓"})
+}
+
+func (u *webUI) collectionCreate(w http.ResponseWriter, r *http.Request) {
+	if _, err := u.svc.CreateCollection(r.Context(), r.FormValue("name")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", "/collections?by=custom")
+}
+
+func (u *webUI) collectionRename(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.RenameCollection(r.Context(), id, r.FormValue("name")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	target := r.Header.Get("HX-Current-URL")
+	if target == "" {
+		target = "/collections?by=custom"
+	}
+	w.Header().Set("HX-Redirect", target)
+}
+
+func (u *webUI) collectionDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.DeleteCollection(r.Context(), id); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", "/collections?by=custom")
+}
+
+func (u *webUI) collectionRemoveMember(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	tid, _ := strconv.ParseInt(r.FormValue("title"), 10, 64)
+	if err := u.svc.RemoveFromCollection(r.Context(), id, tid); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.renderCollectionManage(w, r, id)
+}
+
+func (u *webUI) collectionManage(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.renderCollectionManage(w, r, id)
+}
+
+func (u *webUI) renderCollectionManage(w http.ResponseWriter, r *http.Request, id int64) {
+	ctx := r.Context()
+	customs, _ := u.svc.CustomCollections(ctx)
+	name, found := "", false
+	for _, c := range customs {
+		if c.ID == id {
+			name, found = c.Name, true
+			break
+		}
+	}
+	if !found {
+		u.fail(w, fmt.Errorf("collection not found"))
+		return
+	}
+	members, _ := u.svc.CollectionMembers(ctx)
+	titles, _ := u.svc.ListTitles(ctx)
+	titles = filterRestrictedTitles(ctx, titles)
+	byID := make(map[int64]library.Title, len(titles))
+	for _, t := range titles {
+		byID[t.ID] = t
+	}
+	var mem []library.Title
+	for _, tid := range members[id] {
+		if t, ok := byID[tid]; ok {
+			mem = append(mem, t)
+		}
+	}
+	sortByTitle(mem)
+	u.frag(w, "collectionManage", collectionManageView{ID: id, Name: name, Members: mem})
 }
 
 func restrictToIDs(titles []library.Title, csv string) []library.Title {
@@ -772,7 +1021,7 @@ func restrictToIDs(titles []library.Title, csv string) []library.Title {
 func collectionCards(cols []collection) []collectionCard {
 	out := make([]collectionCard, 0, len(cols))
 	for _, c := range cols {
-		card := collectionCard{Name: c.Name, Count: len(c.Members)}
+		card := collectionCard{Name: c.Name, Count: len(c.Members), CustomID: c.CustomID}
 		var total, read int64
 		ids := make([]string, 0, len(c.Members))
 		for _, m := range c.Members {
@@ -784,10 +1033,11 @@ func collectionCards(cols []collection) []collectionCard {
 			read += m.ReadCount + m.VolumeReadCount
 			ids = append(ids, strconv.FormatInt(m.ID, 10))
 		}
-		card.URL = "/collections/view?" + url.Values{
-			"name": {c.Name},
-			"ids":  {strings.Join(ids, ",")},
-		}.Encode()
+		q := url.Values{"name": {c.Name}, "ids": {strings.Join(ids, ",")}}
+		if c.CustomID > 0 {
+			q.Set("cid", strconv.FormatInt(c.CustomID, 10))
+		}
+		card.URL = "/collections/view?" + q.Encode()
 		card.ReadPct = percent(read, total)
 		if total > 0 {
 			card.FullPct = 100 // blue fills the whole bar: the combined total
@@ -807,13 +1057,21 @@ func collectionCards(cols []collection) []collectionCard {
 	return out
 }
 
-// buildCollections groups library titles either by shared author or by AniList
-// relation graph (connected components), dropping any group with one member.
-func buildCollections(titles []library.Title, mangas map[int64]catalog.Manga, edges [][2]string, byRelation bool) []collection {
-	if byRelation {
-		return relationCollections(titles, mangas, edges)
+// customCollections turns stored custom collections into renderable collections,
+// resolving member title ids against the (content-filtered) library.
+func customCollections(cols []library.Collection, members map[int64][]int64, titleByID map[int64]library.Title) []collection {
+	out := make([]collection, 0, len(cols))
+	for _, c := range cols {
+		var mem []library.Title
+		for _, tid := range members[c.ID] {
+			if t, ok := titleByID[tid]; ok {
+				mem = append(mem, t)
+			}
+		}
+		sortByTitle(mem)
+		out = append(out, collection{Name: c.Name, Members: mem, CustomID: c.ID})
 	}
-	return authorCollections(titles, mangas)
+	return out
 }
 
 func authorCollections(titles []library.Title, mangas map[int64]catalog.Manga) []collection {
@@ -891,7 +1149,7 @@ func memberSignature(members []library.Title) string {
 	return b.String()
 }
 
-func relationCollections(titles []library.Title, mangas map[int64]catalog.Manga, edges [][2]string) []collection {
+func relationCollections(titles []library.Title, mangas map[int64]catalog.Manga, edges [][2]string, pins map[string][]int64, titleByID map[int64]library.Title) []collection {
 	byProvider := map[string][]library.Title{}
 	var pids []string
 	for _, t := range titles {
@@ -923,11 +1181,13 @@ func relationCollections(titles []library.Title, mangas map[int64]catalog.Manga,
 			continue
 		}
 		var members []library.Title
+		var component []string
 		stack := []string{pid}
 		seen[pid] = true
 		for len(stack) > 0 {
 			cur := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
+			component = append(component, cur)
 			members = append(members, byProvider[cur]...)
 			for _, next := range adj[cur] {
 				if !seen[next] {
@@ -939,11 +1199,47 @@ func relationCollections(titles []library.Title, mangas map[int64]catalog.Manga,
 		if len(members) < 2 {
 			continue
 		}
+		key := smartKeyFor(component)
+		have := make(map[int64]bool, len(members))
+		for _, m := range members {
+			have[m.ID] = true
+		}
+		for _, tid := range pins[key] {
+			if !have[tid] {
+				if t, ok := titleByID[tid]; ok {
+					members = append(members, t)
+					have[tid] = true
+				}
+			}
+		}
 		sortByTitle(members)
-		out = append(out, collection{Name: collectionName(members), Members: members})
+		out = append(out, collection{Name: collectionName(members), Members: members, SmartKey: key})
 	}
 	sortByName(out)
 	return out
+}
+
+// smartKeyFor is a stable identity for a smart component: its smallest provider
+// id (numeric where possible), used to persist pinned members.
+func smartKeyFor(pids []string) string {
+	best := ""
+	var bestN int64
+	haveN := false
+	for _, p := range pids {
+		if n, err := strconv.ParseInt(p, 10, 64); err == nil {
+			if !haveN || n < bestN {
+				bestN, best, haveN = n, p, true
+			}
+		}
+	}
+	if !haveN {
+		for _, p := range pids {
+			if best == "" || p < best {
+				best = p
+			}
+		}
+	}
+	return best
 }
 
 // collectionName names a franchise after its shortest member title, which is

@@ -135,6 +135,27 @@ CREATE TABLE IF NOT EXISTS titles (
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS collections (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_collections_user ON collections(user_id);
+
+CREATE TABLE IF NOT EXISTS collection_members (
+	collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	PRIMARY KEY (collection_id, title_id)
+);
+
+CREATE TABLE IF NOT EXISTS collection_smart_pins (
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	smart_key TEXT NOT NULL,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	PRIMARY KEY (user_id, smart_key, title_id)
+);
+
 CREATE TABLE IF NOT EXISTS title_source_matches (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	catalog_manga_id INTEGER NOT NULL REFERENCES catalog_manga(id) ON DELETE CASCADE,

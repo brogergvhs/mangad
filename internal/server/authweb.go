@@ -95,6 +95,8 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermLibraryView
 	case strings.HasPrefix(p, "/ui/screens"): // personal saved views
 		return auth.PermLibraryView
+	case strings.HasPrefix(p, "/ui/collections") || strings.HasSuffix(p, "/collections/add"): // personal collections: create/add/remove/delete/pin
+		return auth.PermLibraryView
 	case strings.HasPrefix(p, "/ui/volumes/") && (strings.HasSuffix(p, "/read") || strings.HasSuffix(p, "/unread")):
 		return auth.PermReaderUse
 	case p == "/ui/import/attach-volumes":

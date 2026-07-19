@@ -1,5 +1,57 @@
 {{define "cellCover"}}<img id="row-cover-{{.ID}}" hx-preserve class="h-14 w-10 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">{{end}}
 
+{{define "addToCollection"}}
+<div class="grid gap-4">
+  <form class="flex gap-2" hx-post="/ui/library/{{.TitleID}}/collections/add" hx-target="#toast" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){add_to_collection_modal.close()}">
+    <input class="input input-sm w-full" name="name" required placeholder="New collection name…">
+    <button class="btn btn-sm btn-primary shrink-0">Create &amp; add</button>
+  </form>
+  {{if .Custom}}
+  <div>
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-base-content/50">Custom</div>
+    <div class="flex flex-col gap-1">
+      {{range .Custom}}
+      <button class="btn btn-sm btn-block btn-ghost justify-between" hx-post="/ui/library/{{$.TitleID}}/collections/add" hx-vals='{"cid":"{{.CustomID}}"}' hx-target="#toast" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){add_to_collection_modal.close()}">
+        <span class="truncate">{{.Label}}</span><span class="text-xs text-base-content/50">{{.Count}}</span>
+      </button>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{if .Smart}}
+  <div>
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-base-content/50">Smart</div>
+    <div class="flex flex-col gap-1">
+      {{range .Smart}}
+      <button class="btn btn-sm btn-block btn-ghost justify-between" hx-post="/ui/library/{{$.TitleID}}/collections/add" hx-vals='{"smart":"{{.SmartKey}}"}' hx-target="#toast" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){add_to_collection_modal.close()}">
+        <span class="truncate">{{.Label}}</span><span class="text-xs text-base-content/50">{{.Count}}</span>
+      </button>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{if and (not .Custom) (not .Smart)}}
+  <p class="text-sm text-base-content/60">No other collections available — create one above.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "collectionManage"}}
+<div id="collection-manage" class="flex flex-col gap-1">
+  {{if .Members}}
+  {{range .Members}}
+  <div class="flex items-center gap-2 rounded-lg p-1 hover:bg-base-200">
+    <img class="h-10 w-7 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">
+    <span class="min-w-0 flex-1 truncate text-sm">{{.DisplayTitle}}</span>
+    <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/collections/{{$.ID}}/remove" hx-vals='{"title":"{{.ID}}"}' hx-target="#collection-manage" hx-swap="outerHTML">Remove</button>
+  </div>
+  {{end}}
+  {{else}}
+  <p class="text-sm text-base-content/60">This collection has no titles yet.</p>
+  {{end}}
+</div>
+{{end}}
+
 {{define "cellTitle"}}
 <div class="flex items-center gap-1">
   <a class="link link-hover font-medium" href="/library/{{.Title.ID}}{{if .Screen}}?screen={{.Screen}}{{end}}">{{.Title.DisplayTitle}}</a>

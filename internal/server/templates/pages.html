@@ -135,9 +135,44 @@
 {{define "library"}}
 {{if .CollectionName}}
 <div class="mb-3">
-  <a href="/collections" class="link link-hover text-sm text-base-content/60">‹ Collections</a>
-  <h1 class="mt-1 min-w-0 truncate text-lg font-semibold">{{.CollectionName}}</h1>
+  <a href="/collections{{if .CollectionID}}?by=custom{{end}}" class="link link-hover text-sm text-base-content/60">‹ Collections</a>
+  <div class="mt-1 flex items-center gap-2">
+    <h1 class="min-w-0 flex-1 truncate text-lg font-semibold">{{.CollectionName}}</h1>
+    {{if .CollectionID}}
+    <button class="btn btn-sm btn-outline shrink-0" hx-get="/ui/collections/{{.CollectionID}}/manage" hx-target="#collection-manage-body" hx-swap="innerHTML" onclick="collection_manage_modal.showModal()">Manage</button>
+    <details class="dropdown dropdown-end shrink-0">
+      <summary class="btn btn-sm btn-ghost btn-square" aria-label="Collection actions">{{template "iconDots"}}</summary>
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-lg border border-base-300">
+        <li><button onclick="rename_collection_modal.showModal()">{{template "iconEdit"}}Rename</button></li>
+        <li><button class="text-error" hx-post="/ui/collections/{{.CollectionID}}/delete" hx-swap="none" hx-confirm="Delete this collection? The titles themselves are not affected.">{{template "iconTrash"}}Delete</button></li>
+      </ul>
+    </details>
+    {{end}}
+  </div>
 </div>
+{{if .CollectionID}}
+<dialog id="rename_collection_modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="text-lg font-bold mb-3">Rename collection</h3>
+    <form class="grid gap-3" hx-post="/ui/collections/{{.CollectionID}}/rename" hx-swap="none">
+      <input class="input w-full" name="name" required value="{{.CollectionName}}">
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="rename_collection_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<dialog id="collection_manage_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Manage members</h3>
+    <div id="collection-manage-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+    <div class="modal-action"><button type="button" class="btn btn-ghost" onclick="collection_manage_modal.close()">Done</button></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
 {{end}}
 {{if .Screen}}
 <div class="mb-3 flex items-center justify-between gap-2">
@@ -303,40 +338,69 @@
 
 {{define "collections"}}
 <div class="mb-4 flex items-center gap-2">
-  <a href="/collections" class="btn btn-sm {{if .ByRelation}}btn-outline{{else}}btn-primary{{end}}">By author</a>
-  <a href="/collections?by=relation" class="btn btn-sm {{if .ByRelation}}btn-primary{{else}}btn-outline{{end}}">Smart</a>
+  <a href="/collections" class="btn btn-sm {{if eq .Mode "author"}}btn-primary{{else}}btn-outline{{end}}">By author</a>
+  <a href="/collections?by=relation" class="btn btn-sm {{if eq .Mode "smart"}}btn-primary{{else}}btn-outline{{end}}">Smart</a>
+  <a href="/collections?by=custom" class="btn btn-sm {{if eq .Mode "custom"}}btn-primary{{else}}btn-outline{{end}}">Custom</a>
+  {{if eq .Mode "custom"}}<button class="btn btn-sm btn-ghost ml-auto" onclick="new_collection_modal.showModal()">+ New collection</button>{{end}}
 </div>
 {{if .Cards}}
 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
   {{range .Cards}}{{template "collectionCard" .}}{{end}}
 </div>
-{{else if and .ByRelation (not .HasRelations)}}
+{{else if eq .Mode "custom"}}
+<p class="py-3 text-base-content/60">No custom collections yet. Use “New collection” to group titles manually, or add a title to one from its actions menu.</p>
+{{else if and (eq .Mode "smart") (not .HasRelations)}}
 <p class="py-3 text-base-content/60">No connections stored yet. Run a Catalog refresh (Management → Recent jobs → Start new job) to fetch AniList relations, then check back.</p>
 {{else}}
-<p class="py-3 text-base-content/60">Nothing to collect yet — you need two or more {{if .ByRelation}}connected titles{{else}}titles by the same author{{end}} in your library.</p>
+<p class="py-3 text-base-content/60">Nothing to collect yet — you need two or more {{if eq .Mode "smart"}}connected titles{{else}}titles by the same author{{end}} in your library.</p>
+{{end}}
+{{if eq .Mode "custom"}}
+<dialog id="new_collection_modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="text-lg font-bold mb-3">New collection</h3>
+    <form class="grid gap-3" hx-post="/ui/collections" hx-swap="none">
+      <input class="input w-full" name="name" required autofocus placeholder="Collection name">
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="new_collection_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 {{end}}
 {{end}}
 
 {{define "collectionCard"}}
-<a href="{{.URL}}" class="group block min-w-0">
-  <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg transition group-hover:opacity-90">
-    <div class="grid h-full gap-2 {{if .Stacked}}grid-rows-2{{else}}grid-cols-2 grid-rows-2{{end}}">
-      {{range .Covers}}<img class="h-full w-full object-cover rounded-lg" src="{{.}}" alt="" loading="lazy">{{end}}
-      {{if .Extra}}<div class="flex items-center justify-center bg-base-300 text-lg rounded-lg font-semibold text-base-content/70">+{{.Extra}}</div>{{end}}
+<div class="group relative min-w-0">
+  {{if .CustomID}}
+  <details class="dropdown dropdown-end absolute right-1 top-1 z-10">
+    <summary class="btn btn-xs btn-square border-none bg-base-100/80 shadow" aria-label="Collection actions">{{template "iconDots"}}</summary>
+    <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-lg border border-base-300">
+      <li><button class="text-error" hx-post="/ui/collections/{{.CustomID}}/delete" hx-swap="none" hx-confirm="Delete this collection? The titles themselves are not affected.">{{template "iconTrash"}}Delete collection</button></li>
+    </ul>
+  </details>
+  {{end}}
+  <a href="{{.URL}}" class="block">
+    <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg transition group-hover:opacity-90">
+      <div class="grid h-full gap-2 {{if .Stacked}}grid-rows-2{{else}}grid-cols-2 grid-rows-2{{end}}">
+        {{range .Covers}}<img class="h-full w-full object-cover rounded-lg" src="{{.}}" alt="" loading="lazy">{{end}}
+        {{if .Extra}}<div class="flex items-center justify-center bg-base-300 text-lg rounded-lg font-semibold text-base-content/70">+{{.Extra}}</div>{{end}}
+      </div>
     </div>
-  </div>
-  <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight group-hover:text-primary">{{.Name}}</div>
-  <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
-    <span class="truncate">{{.Count}} titles</span>
-    <span class="shrink-0">{{humanBytes .SizeBytes}}</span>
-  </div>
-  <div class="mt-0.5 flex justify-between gap-2 text-xs text-base-content/50">
-    {{if .Chapters}}<span>{{.Chapters}} ch</span>{{end}}
-    {{if .Volumes}}<span>{{.Volumes}} vol</span>{{end}}
-    {{if .Pages}}<span>{{.Pages}} pages</span>{{end}}
-  </div>
-  <div class="mt-1">{{template "bar" bar .ReadPct .FullPct}}</div>
-</a>
+    <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight group-hover:text-primary">{{.Name}}</div>
+    <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
+      <span class="truncate">{{.Count}} titles</span>
+      <span class="shrink-0">{{humanBytes .SizeBytes}}</span>
+    </div>
+    <div class="mt-0.5 flex justify-between gap-2 text-xs text-base-content/50">
+      {{if .Chapters}}<span>{{.Chapters}} ch</span>{{end}}
+      {{if .Volumes}}<span>{{.Volumes}} vol</span>{{end}}
+      {{if .Pages}}<span>{{.Pages}} pages</span>{{end}}
+    </div>
+    <div class="mt-1">{{template "bar" bar .ReadPct .FullPct}}</div>
+  </a>
+</div>
 {{end}}
 
 {{define "title"}}
@@ -358,6 +422,7 @@
             <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
             {{if .AniList.Connected}}<li><button hx-post="/ui/library/{{.Title.ID}}/anilist-sync" hx-swap="none">{{template "iconVerify"}}Sync AniList</button></li>{{end}}
             {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+            <li><button hx-get="/ui/library/{{.Title.ID}}/collections" hx-target="#add-collection-body" hx-swap="innerHTML" onclick="add_to_collection_modal.showModal()">{{template "iconLayers"}}Add to collection</button></li>
             <li><button class="text-error" onclick="remove_title_modal.showModal()">{{template "iconTrash"}}Remove title</button></li>
           </ul>
         </details>
@@ -387,6 +452,14 @@
 {{end}}
 
 {{template "titleActivity" .}}
+
+<dialog id="add_to_collection_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Add to collection</h3>
+    <div id="add-collection-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 <dialog id="remove_title_modal" class="modal">
   <div class="modal-box">

@@ -1,0 +1,47 @@
+package server
+
+import (
+	"bytes"
+	"html/template"
+	"strings"
+	"testing"
+
+	"github.com/brogergvhs/mangad/internal/library"
+)
+
+// The collection-related fragments must execute against their view structs
+// without a field mismatch, across the paths the handlers hit.
+func TestCollectionTemplatesRender(t *testing.T) {
+	u := &webUI{}
+	u.tmpl = template.Must(template.New("").Funcs(u.funcs()).ParseFS(templateFS, "templates/*.html"))
+	render := func(name string, v any) string {
+		var buf bytes.Buffer
+		if err := u.tmpl.ExecuteTemplate(&buf, name, v); err != nil {
+			t.Fatalf("render %s: %v", name, err)
+		}
+		return buf.String()
+	}
+
+	custom := render("collectionCard", collectionCard{Name: "My shelf", URL: "/collections/view?cid=1", CustomID: 1, Count: 2, Covers: []string{"a.jpg", "b.jpg"}, Stacked: true})
+	if !strings.Contains(custom, "/ui/collections/1/delete") {
+		t.Error("custom card missing delete action")
+	}
+
+	dialog := render("addToCollection", addToCollectionView{
+		TitleID: 7,
+		Custom:  []collectionOption{{Label: "Shelf", Count: 3, CustomID: 4}},
+		Smart:   []collectionOption{{Label: "GitS", Count: 2, SmartKey: "100"}},
+	})
+	for _, want := range []string{`"cid":"4"`, `"smart":"100"`, "/ui/library/7/collections/add", "Create"} {
+		if !strings.Contains(dialog, want) {
+			t.Errorf("dialog missing %q in:\n%s", want, dialog)
+		}
+	}
+
+	manage := render("collectionManage", collectionManageView{ID: 4, Name: "Shelf", Members: []library.Title{{ID: 9, DisplayTitle: "A"}}})
+	for _, want := range []string{`"title":"9"`, "/ui/collections/4/remove", "A"} {
+		if !strings.Contains(manage, want) {
+			t.Errorf("manage missing %q in:\n%s", want, manage)
+		}
+	}
+}

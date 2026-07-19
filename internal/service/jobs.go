@@ -1474,6 +1474,49 @@ func (s *JobService) CollectionEdges(ctx context.Context) ([][2]string, error) {
 	return s.want.catalog.CollectionEdges(ctx)
 }
 
+// CustomCollections lists the acting user's manually curated collections.
+func (s *JobService) CustomCollections(ctx context.Context) ([]library.Collection, error) {
+	return s.want.library.Collections(ctx)
+}
+
+// CollectionMembers maps custom collection id -> member title ids.
+func (s *JobService) CollectionMembers(ctx context.Context) (map[int64][]int64, error) {
+	return s.want.library.CollectionMembers(ctx)
+}
+
+// SmartPins maps smart-collection key -> pinned title ids.
+func (s *JobService) SmartPins(ctx context.Context) (map[string][]int64, error) {
+	return s.want.library.SmartPins(ctx)
+}
+
+func (s *JobService) CreateCollection(ctx context.Context, name string) (int64, error) {
+	return s.want.library.CreateCollection(ctx, name)
+}
+
+func (s *JobService) RenameCollection(ctx context.Context, id int64, name string) error {
+	return s.want.library.RenameCollection(ctx, id, name)
+}
+
+func (s *JobService) DeleteCollection(ctx context.Context, id int64) error {
+	return s.want.library.DeleteCollection(ctx, id)
+}
+
+func (s *JobService) AddToCollection(ctx context.Context, collectionID, titleID int64) error {
+	return s.want.library.AddCollectionMember(ctx, collectionID, titleID)
+}
+
+func (s *JobService) RemoveFromCollection(ctx context.Context, collectionID, titleID int64) error {
+	return s.want.library.RemoveCollectionMember(ctx, collectionID, titleID)
+}
+
+func (s *JobService) PinToSmart(ctx context.Context, smartKey string, titleID int64) error {
+	return s.want.library.AddSmartPin(ctx, smartKey, titleID)
+}
+
+func (s *JobService) UnpinFromSmart(ctx context.Context, smartKey string, titleID int64) error {
+	return s.want.library.RemoveSmartPin(ctx, smartKey, titleID)
+}
+
 func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {
 	return s.want.GetManga(ctx, catalogID)
 }
