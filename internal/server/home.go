@@ -45,12 +45,15 @@ func (u *webUI) homePage(w http.ResponseWriter, r *http.Request) {
 		if row := continueReadingRow(titles, lastRead); len(row.Cards) > 0 {
 			view.Rows = append(view.Rows, row)
 		}
-		if row := latestArrivalsRow("Latest arrivals", titles, arrivals, nil); len(row.Cards) > 0 {
+		if row := latestArrivalsRow("Latest arrivals", titles, nil); len(row.Cards) > 0 {
+			view.Rows = append(view.Rows, row)
+		}
+		if row := latestUpdatesRow("Latest updates", titles, arrivals, nil); len(row.Cards) > 0 {
 			view.Rows = append(view.Rows, row)
 		}
 		if genre := topGenre(titles, mangas); genre != "" {
 			only := genreTitleIDs(mangas, genre)
-			if row := latestArrivalsRow("Latest in "+genre, titles, arrivals, only); len(row.Cards) > 0 {
+			if row := latestArrivalsRow("Latest in "+genre, titles, only); len(row.Cards) > 0 {
 				view.Rows = append(view.Rows, row)
 			}
 		}
@@ -77,14 +80,27 @@ func (u *webUI) titleMangas(ctx context.Context, titles []library.Title) map[int
 	return out
 }
 
+type timedCard struct {
+	card homeCard
+	at   time.Time
+}
+
+// topCards sorts newest-first and keeps up to homeRowLimit cards.
+func topCards(entries []timedCard) []homeCard {
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].at.After(entries[j].at) })
+	out := make([]homeCard, 0, homeRowLimit)
+	for i, e := range entries {
+		if i == homeRowLimit {
+			break
+		}
+		out = append(out, e.card)
+	}
+	return out
+}
+
 // continueReadingRow lists titles with partial progress, most recent first.
 func continueReadingRow(titles []library.Title, lastRead map[int64]time.Time) homeRow {
-	row := homeRow{Heading: "Continue reading"}
-	type entry struct {
-		card homeCard
-		at   time.Time
-	}
-	var entries []entry
+	var entries []timedCard
 	for _, t := range titles {
 		chapters := t.ReadCount > 0 && t.ReadCount < t.DiscoveredCount
 		volumes := t.VolumeReadCount > 0 && t.VolumeReadCount < t.VolumeCount
@@ -106,26 +122,37 @@ func continueReadingRow(titles []library.Title, lastRead map[int64]time.Time) ho
 			card.Sub = strconv.FormatInt(t.VolumeReadCount, 10) + "/" + strconv.FormatInt(t.VolumeCount, 10) + " volumes"
 			card.Percent = pctInt(t.VolumeReadCount, t.VolumeCount)
 		}
-		entries = append(entries, entry{card: card, at: at})
+		entries = append(entries, timedCard{card: card, at: at})
 	}
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].at.After(entries[j].at) })
-	for i, e := range entries {
-		if i == homeRowLimit {
-			break
-		}
-		row.Cards = append(row.Cards, e.card)
-	}
-	return row
+	return homeRow{Heading: "Continue reading", Cards: topCards(entries)}
 }
 
-// latestArrivalsRow lists titles by newest content; `only` restricts the set.
-func latestArrivalsRow(heading string, titles []library.Title, arrivals map[int64]library.Arrival, only map[int64]bool) homeRow {
-	row := homeRow{Heading: heading}
-	type entry struct {
-		card homeCard
-		at   time.Time
+// latestArrivalsRow lists titles by when they were added; `only` restricts the set.
+func latestArrivalsRow(heading string, titles []library.Title, only map[int64]bool) homeRow {
+	var entries []timedCard
+	for _, t := range titles {
+		if only != nil && !only[t.ID] {
+			continue
+		}
+		sub := "Added"
+		if rel := since(t.CreatedAt); rel != "" {
+			sub = "Added " + rel
+		}
+		entries = append(entries, timedCard{at: t.CreatedAt, card: homeCard{
+			Href:    "/library/" + strconv.FormatInt(t.ID, 10),
+			Cover:   t.CoverImage,
+			Title:   t.DisplayTitle,
+			Sub:     sub,
+			Percent: -1,
+		}})
 	}
-	var entries []entry
+	return homeRow{Heading: heading, Cards: topCards(entries)}
+}
+
+// latestUpdatesRow lists titles by their newest downloaded chapter or volume;
+// `only` restricts the set.
+func latestUpdatesRow(heading string, titles []library.Title, arrivals map[int64]library.Arrival, only map[int64]bool) homeRow {
+	var entries []timedCard
 	for _, t := range titles {
 		if only != nil && !only[t.ID] {
 			continue
@@ -134,7 +161,7 @@ func latestArrivalsRow(heading string, titles []library.Title, arrivals map[int6
 		if !ok {
 			continue
 		}
-		entries = append(entries, entry{at: arrival.At, card: homeCard{
+		entries = append(entries, timedCard{at: arrival.At, card: homeCard{
 			Href:    "/library/" + strconv.FormatInt(t.ID, 10),
 			Cover:   t.CoverImage,
 			Title:   t.DisplayTitle,
@@ -142,14 +169,7 @@ func latestArrivalsRow(heading string, titles []library.Title, arrivals map[int6
 			Percent: -1,
 		}})
 	}
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].at.After(entries[j].at) })
-	for i, e := range entries {
-		if i == homeRowLimit {
-			break
-		}
-		row.Cards = append(row.Cards, e.card)
-	}
-	return row
+	return homeRow{Heading: heading, Cards: topCards(entries)}
 }
 
 // topGenre weighs each title's catalog genres by the user's read counts.
