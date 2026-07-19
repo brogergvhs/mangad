@@ -90,6 +90,7 @@
 <details class="dropdown dropdown-end">
   <summary class="btn btn-ghost btn-xs btn-square [&_svg]:size-3.5" aria-label="Chapter actions">{{template "iconDots"}}</summary>
   <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
+    {{if .CanManage}}<li><button hx-get="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename-dialog" hx-target="#chapter-rename-body" hx-swap="innerHTML" onclick="chapter_rename_modal.showModal()">{{template "iconEdit"}}Rename</button></li>{{end}}
     {{if .Downloaded}}
       {{if or .Read (gt .ReadPages 0)}}
       <li><button hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML">{{template "iconEye"}}Mark unread</button></li>
@@ -99,7 +100,6 @@
       <li><a href="/ui/library/{{.TitleID}}/chapters/{{.ID}}/download" download target="_blank" rel="noopener">{{template "iconDownload"}}Download .cbz</a></li>
       {{if .CanManage}}<li><button class="text-error" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/remove" hx-target="#chapters-table" hx-swap="outerHTML" hx-confirm="Remove this chapter from disk? It will show as missing.">{{template "iconTrash"}}Remove from disk</button></li>{{end}}
     {{end}}
-    {{if .CanManage}}<li><button hx-get="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename-dialog" hx-target="#chapter-rename-body" hx-swap="innerHTML" onclick="chapter_rename_modal.showModal()">{{template "iconEdit"}}Rename</button></li>{{end}}
   </ul>
 </details>
 {{else}}<span class="text-base-content/30">—</span>{{end}}
