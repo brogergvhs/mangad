@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"embed"
@@ -8,9 +9,11 @@ import (
 	"fmt"
 	"hash/fnv"
 	"html/template"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -34,9 +37,6 @@ var templateFS embed.FS
 
 //go:embed static/*
 var staticFS embed.FS
-
-//go:embed sw.js.tmpl
-var swTemplate string
 
 type webUI struct {
 	svc      *service.JobService
@@ -273,16 +273,6 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 		staticHandler.ServeHTTP(w, r)
 	}))
 
-	// The service worker must live at the root so its scope covers the whole
-	// app; its version is baked in so the shell cache rotates per build.
-	sw := []byte(strings.ReplaceAll(swTemplate, "__VERSION__", u.assetVer))
-	mux.HandleFunc("GET /sw.js", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/javascript")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Service-Worker-Allowed", "/")
-		_, _ = w.Write(sw)
-	})
-
 	mux.HandleFunc("GET /{$}", u.homePage)
 	mux.HandleFunc("GET /management", u.management)
 	mux.HandleFunc("GET /search", u.searchPage)
@@ -307,7 +297,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
-	mux.HandleFunc("GET /ui/library/{id}/chapters/offline", u.offlineChapters)
+	mux.HandleFunc("GET /ui/library/{id}/chapters/download", u.chaptersDownload)
+	mux.HandleFunc("GET /ui/library/{id}/chapters/{chapterID}/download", u.chapterDownload)
 	mux.HandleFunc("POST /ui/screens", u.screenSave)
 	mux.HandleFunc("POST /ui/screens/{id}", u.screenSave)
 	mux.HandleFunc("POST /ui/screens/{id}/delete", u.screenDelete)
@@ -1401,28 +1392,108 @@ func (u *webUI) chaptersTable(w http.ResponseWriter, r *http.Request) {
 	u.writeChaptersTable(w, r, id)
 }
 
-// offlineChapters lists a title's downloaded chapters so the client can save
-// or remove whole from–to ranges regardless of chapter-list pagination.
-func (u *webUI) offlineChapters(w http.ResponseWriter, r *http.Request) {
+// chapterDownload streams one chapter's CBZ file to the device.
+func (u *webUI) chapterDownload(w http.ResponseWriter, r *http.Request) {
+	titleID, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	chapterID, err := parseInt64Path(r, "chapterID")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	st, err := u.svc.ChapterReadStatus(r.Context(), chapterID)
+	if err != nil || st.TitleID != titleID || !st.Downloaded || st.OutputFile == "" ||
+		!titleAllowed(r.Context(), u.svc, titleID) {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := os.Open(st.OutputFile)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, "cannot read chapter", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.comicbook+zip")
+	w.Header().Set("Content-Disposition", contentDisposition(cbzFileName(st.Label)))
+	http.ServeContent(w, r, "", info.ModTime(), f)
+}
+
+// chaptersDownload streams a ZIP of the downloaded chapters in a from–to range.
+func (u *webUI) chaptersDownload(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil || !titleAllowed(r.Context(), u.svc, id) {
 		http.NotFound(w, r)
 		return
 	}
-	chs, _ := u.svc.TitleChapters(r.Context(), id)
-	type row struct {
-		ID    int64 `json:"id"`
-		Num   int   `json:"num"`
-		Pages int   `json:"pages"`
+	from, ferr := strconv.Atoi(r.URL.Query().Get("from"))
+	to, terr := strconv.Atoi(r.URL.Query().Get("to"))
+	if ferr != nil || terr != nil {
+		http.Error(w, "from and to are required", http.StatusBadRequest)
+		return
 	}
-	out := make([]row, 0, len(chs))
+	if from > to {
+		from, to = to, from
+	}
+	title, err := u.svc.GetTitle(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	chs, _ := u.svc.TitleChapters(r.Context(), id)
+	var selected []library.ChapterStatus
 	for _, c := range chs {
-		if c.Downloaded {
-			out = append(out, row{ID: c.ID, Num: c.NumberMain, Pages: c.Pages})
+		if c.Downloaded && c.OutputFile != "" && c.NumberMain >= from && c.NumberMain <= to {
+			selected = append(selected, c)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	if len(selected) == 0 {
+		http.Error(w, "no downloaded chapters in range", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", contentDisposition(safeFileName(title.DisplayTitle, "title")+"-chapters.zip"))
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+	for _, c := range selected {
+		src, err := os.Open(c.OutputFile)
+		if err != nil {
+			continue
+		}
+		if dst, err := zw.Create(cbzFileName(c.Label)); err == nil {
+			_, _ = io.Copy(dst, src)
+		}
+		_ = src.Close()
+	}
+}
+
+var unsafeFileChars = regexp.MustCompile(`[^\w.\- ]+`)
+
+func safeFileName(name, fallback string) string {
+	name = strings.TrimSpace(unsafeFileChars.ReplaceAllString(name, "_"))
+	if name == "" {
+		return fallback
+	}
+	return name
+}
+
+func cbzFileName(label string) string {
+	name := safeFileName(label, "chapter")
+	if !strings.HasSuffix(strings.ToLower(name), ".cbz") && !strings.HasSuffix(strings.ToLower(name), ".zip") {
+		name += ".cbz"
+	}
+	return name
+}
+
+func contentDisposition(name string) string {
+	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", name, url.PathEscape(name))
 }
 
 func (u *webUI) chapterRead(read bool) http.HandlerFunc {

@@ -47,10 +47,10 @@
 {{else}}<span class="text-base-content/40">—</span>{{end}}
 {{end}}
 
-{{define "chapterOfflineAction"}}
-{{if .Downloaded}}<button class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5" hidden
-  data-offline data-title="{{.TitleID}}" data-chapter="{{.ID}}" data-pages="{{.Pages}}" data-num="{{.NumberMain}}"
-  aria-label="Save for offline"><span class="offline-dl inline-flex">{{template "iconDownload"}}</span><span class="offline-rm">{{template "iconTrash"}}</span></button>{{end}}
+{{define "chapterDownloadAction"}}
+{{if .Downloaded}}<a class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5"
+  href="/ui/library/{{.TitleID}}/chapters/{{.ID}}/download" download target="_blank" rel="noopener"
+  aria-label="Download .cbz" title="Download .cbz">{{template "iconDownload"}}</a>{{end}}
 {{end}}
 
 {{define "jobCancel"}}<button class="btn btn-error btn-soft btn-xs" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
@@ -103,14 +103,14 @@
           <span {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
           {{template "chapterReadAction" .ChapterStatus}}
           <span>{{.Size}}</span>
-          {{template "chapterOfflineAction" .ChapterStatus}}
+          {{template "chapterDownloadAction" .ChapterStatus}}
         </div>
       </div>
       <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/60 shrink-0">
         <span class="w-10 text-right tabular-nums cursor-help" {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
         {{template "chapterReadAction" .ChapterStatus}}
         <span class="w-20 text-right tabular-nums">{{.Size}}</span>
-        {{template "chapterOfflineAction" .ChapterStatus}}
+        {{template "chapterDownloadAction" .ChapterStatus}}
       </div>
       <span class="w-20 text-right text-sm text-base-content/50 whitespace-nowrap shrink-0">{{.When}}</span>
     </div>
@@ -412,11 +412,12 @@
         </form>
       </details>
       {{if ne .Tab "volumes"}}
-      <details class="dropdown dropdown-end max-sm:w-full" data-offline-bulk data-title="{{.Title.ID}}" hidden>
+      <details class="dropdown dropdown-end max-sm:w-full">
         <summary class="btn btn-outline max-sm:w-full">Bulk download</summary>
-        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2">
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" method="get" action="/ui/library/{{.Title.ID}}/chapters/download" target="_blank" rel="noopener">
           <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
-          <div class="join"><button class="btn btn-sm join-item grow" value="download">Download</button><button class="btn btn-sm btn-ghost join-item grow" value="remove">Remove</button></div>
+          <button class="btn btn-sm">Download .zip</button>
+          <p class="text-xs text-base-content/50">Whole chapter numbers. In the installed app, downloads open in Safari.</p>
         </form>
       </details>
       {{end}}
