@@ -1458,20 +1458,42 @@ func (u *webUI) chaptersDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no downloaded chapters in range", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", contentDisposition(safeFileName(title.DisplayTitle, "title")+"-chapters.zip"))
-	zw := zip.NewWriter(w)
-	defer zw.Close()
+
+	tmp, err := os.CreateTemp("", "mangad-download-*.zip")
+	if err != nil {
+		http.Error(w, "cannot prepare download", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	zw := zip.NewWriter(tmp)
 	for _, c := range selected {
 		src, err := os.Open(c.OutputFile)
 		if err != nil {
 			continue
 		}
-		if dst, err := zw.Create(cbzFileName(c.Label)); err == nil {
-			_, _ = io.Copy(dst, src)
+		dst, err := zw.CreateHeader(&zip.FileHeader{Name: cbzFileName(c.Label), Method: zip.Store})
+		if err == nil {
+			_, err = io.Copy(dst, src)
 		}
 		_ = src.Close()
+		if err != nil {
+			http.Error(w, "cannot build download", http.StatusInternalServerError)
+			return
+		}
 	}
+	if err := zw.Close(); err != nil {
+		http.Error(w, "cannot build download", http.StatusInternalServerError)
+		return
+	}
+	info, err := tmp.Stat()
+	if err != nil {
+		http.Error(w, "cannot build download", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", contentDisposition(safeFileName(title.DisplayTitle, "title")+"-chapters.zip"))
+	http.ServeContent(w, r, "", info.ModTime(), tmp)
 }
 
 var unsafeFileChars = regexp.MustCompile(`[^\w.\- ]+`)
