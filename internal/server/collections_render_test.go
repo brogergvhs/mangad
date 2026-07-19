@@ -45,3 +45,44 @@ func TestCollectionTemplatesRender(t *testing.T) {
 		}
 	}
 }
+
+// The list-view actions dropdown and its shared dialog bodies must execute
+// against their view data without field mismatches.
+func TestTitleActionsTemplatesRender(t *testing.T) {
+	u := &webUI{}
+	u.tmpl = template.Must(template.New("").Funcs(u.funcs()).ParseFS(templateFS, "templates/*.html"))
+	render := func(name string, v any) string {
+		var buf bytes.Buffer
+		if err := u.tmpl.ExecuteTemplate(&buf, name, v); err != nil {
+			t.Fatalf("render %s: %v", name, err)
+		}
+		return buf.String()
+	}
+
+	actions := render("libraryTitleActions", map[string]any{
+		"Title":     library.Title{ID: 3, SourceURL: "https://x/y", MissingCount: 2},
+		"CanManage": true,
+	})
+	for _, want := range []string{"/ui/library/3/collections", "/ui/library/3/remove-dialog", "/ui/library/3/settings-dialog", "Download missing"} {
+		if !strings.Contains(actions, want) {
+			t.Errorf("actions missing %q in:\n%s", want, actions)
+		}
+	}
+	if out := render("libraryTitleActions", map[string]any{"Title": library.Title{ID: 3}, "CanManage": false}); strings.TrimSpace(out) != "" {
+		t.Errorf("view-only user should get no actions menu, got %q", out)
+	}
+
+	rm := render("removeTitleDialog", titleDialogView{Title: library.Title{ID: 5, DisplayTitle: "Berserk"}, AniListConnected: true})
+	for _, want := range []string{"Remove Berserk?", "/ui/library/5/remove", "delete_anilist", "lib_title_dialog.close()"} {
+		if !strings.Contains(rm, want) {
+			t.Errorf("remove dialog missing %q in:\n%s", want, rm)
+		}
+	}
+
+	settings := render("titleSettingsDialog", titleDialogView{Title: library.Title{ID: 5, RefreshInterval: "6h"}, RefreshEvery: "12h"})
+	for _, want := range []string{"/ui/library/5/refresh-interval", "6h", "12h"} {
+		if !strings.Contains(settings, want) {
+			t.Errorf("settings dialog missing %q in:\n%s", want, settings)
+		}
+	}
+}

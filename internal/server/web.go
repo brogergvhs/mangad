@@ -300,6 +300,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/library/{id}/language-mode", u.libLanguageMode)
 	mux.HandleFunc("POST /ui/library/{id}/refresh-interval", u.libRefreshInterval)
 	mux.HandleFunc("POST /ui/library/{id}/remove", u.libRemove)
+	mux.HandleFunc("GET /ui/library/{id}/remove-dialog", u.titleRemoveDialog)
+	mux.HandleFunc("GET /ui/library/{id}/settings-dialog", u.titleSettingsDialog)
 	mux.HandleFunc("POST /ui/library/{id}/find-sources", u.findSources)
 	mux.HandleFunc("GET /ui/library/{id}/sources", u.titleSources)
 	mux.HandleFunc("GET /ui/library/{id}/chapters", u.chaptersTable)
@@ -695,7 +697,7 @@ func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
 type collection struct {
 	Name     string
 	Members  []library.Title
-	CustomID int64  
+	CustomID int64
 	SmartKey string // set for a smart collection
 }
 
@@ -1045,7 +1047,7 @@ func collectionCards(cols []collection) []collectionCard {
 		n := len(c.Members)
 		if n == 2 {
 			card.Stacked = true
-		} else if n > 3 {
+		} else if n > 4 {
 			n = 3
 			card.Extra = len(c.Members) - 3
 		}
@@ -2714,6 +2716,48 @@ func (u *webUI) libRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("HX-Redirect", "/library")
 	w.WriteHeader(http.StatusOK)
+}
+
+// titleDialogView backs the shared remove/settings modals used from list views,
+// where per-card modals would collide on id.
+type titleDialogView struct {
+	Title            library.Title
+	AniListConnected bool
+	RefreshEvery     string
+}
+
+func (u *webUI) titleDialog(r *http.Request) (titleDialogView, error) {
+	id, err := pathID(r)
+	if err != nil {
+		return titleDialogView{}, err
+	}
+	t, err := u.svc.GetTitle(r.Context(), id)
+	if err != nil || !contentAllowed(r.Context(), t.IsAdult, t.ContentTags) {
+		return titleDialogView{}, fmt.Errorf("title not found")
+	}
+	return titleDialogView{
+		Title:            t,
+		AniListConnected: u.svc.AniListConnectionFor(r.Context(), auth.UserID(r.Context())).Connected,
+		RefreshEvery:     u.svc.Setting(r.Context(), service.SettingServeRefreshEvery, service.SettingDefault(service.SettingServeRefreshEvery)),
+	}, nil
+}
+
+func (u *webUI) titleRemoveDialog(w http.ResponseWriter, r *http.Request) {
+	v, err := u.titleDialog(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "removeTitleDialog", v)
+}
+
+func (u *webUI) titleSettingsDialog(w http.ResponseWriter, r *http.Request) {
+	v, err := u.titleDialog(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.frag(w, "titleSettingsDialog", v)
 }
 
 // --- import & source linking ---

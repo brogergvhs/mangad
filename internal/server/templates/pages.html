@@ -139,10 +139,10 @@
   <div class="mt-1 flex items-center gap-2">
     <h1 class="min-w-0 flex-1 truncate text-lg font-semibold">{{.CollectionName}}</h1>
     {{if .CollectionID}}
-    <button class="btn btn-sm btn-outline shrink-0" hx-get="/ui/collections/{{.CollectionID}}/manage" hx-target="#collection-manage-body" hx-swap="innerHTML" onclick="collection_manage_modal.showModal()">Manage</button>
     <details class="dropdown dropdown-end shrink-0">
       <summary class="btn btn-sm btn-ghost btn-square" aria-label="Collection actions">{{template "iconDots"}}</summary>
       <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-lg border border-base-300">
+        <li><button hx-get="/ui/collections/{{.CollectionID}}/manage" hx-target="#collection-manage-body" hx-swap="innerHTML" onclick="collection_manage_modal.showModal()">{{template "iconLayers"}}Manage titles</button></li>
         <li><button onclick="rename_collection_modal.showModal()">{{template "iconEdit"}}Rename</button></li>
         <li><button class="text-error" hx-post="/ui/collections/{{.CollectionID}}/delete" hx-swap="none" hx-confirm="Delete this collection? The titles themselves are not affected.">{{template "iconTrash"}}Delete</button></li>
       </ul>
@@ -334,6 +334,21 @@
 </form>
 {{if not .CollectionName}}<div hx-get="/ui/anilist/suggestions?view={{.Controls.View}}" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
 <div id="library-results">{{template "libraryResults" .Table}}</div>
+{{if .Table.CanManage}}
+<dialog id="lib_title_dialog" class="modal">
+  <div class="modal-box">
+    <div id="lib-title-dialog-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<dialog id="add_to_collection_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Add to collection</h3>
+    <div id="add-collection-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
 {{end}}
 
 {{define "collections"}}
