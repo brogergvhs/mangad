@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 var ErrNoConfig = errors.New("no config selected")
@@ -14,17 +16,17 @@ var ErrNoConfig = errors.New("no config selected")
 func ConfigRoot() string {
 	// Windows
 	if appdata := os.Getenv("APPDATA"); appdata != "" {
-		return filepath.Join(appdata, "mangad")
+		return filepath.Join(appdata, "kaodoku")
 	}
 
 	// Linux/macOS XDG
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "mangad")
+		return filepath.Join(xdg, "kaodoku")
 	}
 
 	// Linux/macOS default
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "mangad")
+	return filepath.Join(home, ".config", "kaodoku")
 }
 
 func ConfigsDir() string {
@@ -127,7 +129,7 @@ func SwitchConfig(label string) error {
 		return fmt.Errorf("config %q does not exist", cfgPath)
 	}
 
-	return os.WriteFile(CurrentLabelFile(), []byte(label), 0644)
+	return util.WriteFileAtomic(CurrentLabelFile(), []byte(label), 0644)
 }
 
 func RenameConfig(oldLabel, newLabel string) error {
@@ -154,7 +156,7 @@ func RenameConfig(oldLabel, newLabel string) error {
 
 	active, _ := CurrentLabel()
 	if active == oldLabel {
-		return os.WriteFile(CurrentLabelFile(), []byte(newLabel), 0644)
+		return util.WriteFileAtomic(CurrentLabelFile(), []byte(newLabel), 0644)
 	}
 
 	return nil

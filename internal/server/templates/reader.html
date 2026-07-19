@@ -1,0 +1,26 @@
+{{define "reader"}}
+<div class="reader-shell"
+  data-reader
+  data-resume-chapter="{{.Manifest.ResumeChapterID}}"
+  data-resume-page="{{.Manifest.ResumePage}}">
+  <div class="reader-controls">
+    <div class="reader-nav-left">
+      <a class="btn btn-primary btn-sm" href="/library/{{.Title.ID}}">Back</a>
+      {{if .PrevURL}}<a class="btn btn-outline btn-sm" data-reader-prev href="{{.PrevURL}}">Prev chapter</a>{{end}}
+    </div>
+    <div class="reader-title">
+      <span id="reader-position">{{.PagePosition}}</span>
+    </div>
+    <div class="reader-nav-right">
+      {{if .NextURL}}<a class="btn btn-outline btn-sm" data-reader-next href="{{.NextURL}}">Next chapter</a>{{end}}
+    </div>
+  </div>
+  {{if .Empty}}
+  <div class="reader-empty">{{.Empty}}</div>
+  {{else}}
+  <script type="application/json" id="reader-manifest">{{.ManifestJSON}}</script>
+  <div class="reader-strip" id="reader-strip"></div>
+  <div class="reader-loading" id="reader-loading"><span class="spin"></span></div>
+  {{end}}
+</div>
+{{end}}

@@ -1,0 +1,12 @@
+.git
+bin
+dist
+.cache
+*.db
+*_tmp
+*.cbz
+__pycache__
+*.pyc
+node_modules
+package-lock.json
+assets

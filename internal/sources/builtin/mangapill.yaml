@@ -1,0 +1,16 @@
+id: mangapill
+name: MangaPill
+domains:
+  - mangapill.com
+  - cdn.readdetectiveconan.com
+base_url: https://mangapill.com/
+sample_manga_url: https://mangapill.com/manga/5281/sakamoto-days
+search_url: https://mangapill.com/search?q={query}&type=&status=
+scraper: generic
+allowed_extensions:
+  - jpeg
+min_chapters: 265
+requires_browser_solver: false
+requires_browser_downloader: false
+enabled: true
+version: "2026-06-29"

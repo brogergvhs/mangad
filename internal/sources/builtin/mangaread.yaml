@@ -1,0 +1,16 @@
+id: mangaread
+name: MangaRead
+domains:
+  - mangaread.org
+  - www.mangaread.org
+base_url: https://www.mangaread.org/
+sample_manga_url: https://www.mangaread.org/manga/moon-slayer/
+search_url: https://www.mangaread.org/?s={query}&post_type=wp-manga
+scraper: generic
+allowed_extensions:
+  - jpg
+min_chapters: 70
+requires_browser_solver: false
+requires_browser_downloader: false
+enabled: true
+version: "2026-07-09"

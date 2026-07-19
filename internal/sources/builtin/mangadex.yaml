@@ -1,0 +1,20 @@
+id: mangadex
+name: MangaDex
+domains:
+  - mangadex.org
+  - mangadex.network
+base_url: https://mangadex.org/
+sample_manga_url: https://mangadex.org/title/30196491-8fc2-4961-8886-a58f898b1b3e/berserk-of-gluttony
+search_url: https://api.mangadex.org/manga?limit=10&title={query}
+scraper: mangadex
+languages:
+  - en
+allowed_extensions:
+  - jpg
+  - jpeg
+  - png
+  - gif
+min_chapters: 20
+requires_browser_solver: false
+enabled: true
+version: "2026-07-16"

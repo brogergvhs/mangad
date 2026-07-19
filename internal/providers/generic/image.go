@@ -1,15 +1,18 @@
 package generic
 
 import (
-	"fmt"
+	"html"
 	"net/url"
 	"path"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/brogergvhs/kaodoku/internal/ui"
+	"golang.org/x/net/publicsuffix"
 )
 
 var (
@@ -17,6 +20,7 @@ var (
 
 	reSizeSuffix = regexp.MustCompile(`[-_]\d{2,5}x\d{2,5}`)
 	reParseSize  = regexp.MustCompile(`[-_](\d{2,5})x(\d{2,5})(?:\.[A-Za-z0-9]+)?$`)
+	reLooseSize  = regexp.MustCompile(`[-_](\d{2,5})x(\d{2,5})`)
 
 	reBackgroundURL = regexp.MustCompile(`url\((?:["']?)([^"')]+)(?:["']?)\)`)
 	reLooseURLs     = regexp.MustCompile(`https?://[^\s"'<>]+`)
@@ -30,16 +34,16 @@ type collectedItem struct {
 
 type imageCollector struct {
 	allowed *regexp.Regexp
-	debug   bool
+	log     ui.Log
 	items   []collectedItem
 	seen    map[string]bool
 	counter int
 }
 
-func newImageCollector(allowed *regexp.Regexp, debug bool) *imageCollector {
+func newImageCollector(allowed *regexp.Regexp, log ui.Log) *imageCollector {
 	return &imageCollector{
 		allowed: allowed,
-		debug:   debug,
+		log:     log,
 		items:   make([]collectedItem, 0, 64),
 		seen:    make(map[string]bool),
 		counter: 0,
@@ -47,23 +51,28 @@ func newImageCollector(allowed *regexp.Regexp, debug bool) *imageCollector {
 }
 
 func (c *imageCollector) add(url string, idx int) {
+	c.addURL(url, idx, false)
+}
+
+func (c *imageCollector) addPageImage(url string, idx int) {
+	c.addURL(url, idx, true)
+}
+
+func (c *imageCollector) addURL(url string, idx int, allowExtensionless bool) {
+	url = strings.TrimSpace(url)
 	if url == "" || strings.HasPrefix(url, "javascript:") {
 		return
 	}
 	lu := strings.ToLower(url)
-	if !c.allowed.MatchString(lu) {
+	if !c.allowed.MatchString(lu) && (!allowExtensionless || hasPathExtension(lu)) {
 		return
 	}
 	if strings.HasPrefix(lu, "data:") {
 		return
 	}
-	if strings.Contains(lu, "logo") ||
-		strings.Contains(lu, "cover") ||
-		strings.Contains(lu, "profile") ||
-		strings.Contains(lu, "avatar") ||
-		strings.Contains(lu, "banner") {
-		if c.debug {
-			fmt.Printf("Skipping non-page image: %s\n", url)
+	if isNonPageImage(lu) {
+		if c.log != nil {
+			c.log.Debugf("Skipping non-page image: %s\n", url)
 		}
 
 		return
@@ -78,6 +87,40 @@ func (c *imageCollector) add(url string, idx int) {
 		Index: idx,       // -1 if not known
 		Order: c.counter, // discovery sequence
 	})
+}
+
+func hasPathExtension(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u == nil {
+		return path.Ext(raw) != ""
+	}
+	return path.Ext(u.Path) != ""
+}
+
+func isNonPageImage(raw string) bool {
+	u, err := url.Parse(raw)
+	p := raw
+	if err == nil && u != nil {
+		p = u.Path
+	}
+	p = strings.ToLower(p)
+	for _, token := range []string{"/ads/", "/avatar/", "/banner/", "/cover/", "/covers/", "/thumb/", "/media/images/", "/image/background", "/static/images/"} {
+		if strings.Contains(p, token) {
+			return true
+		}
+	}
+	// Match whole name segments so e.g. "undercover-01.jpg" is kept.
+	base := path.Base(p)
+	base = strings.TrimSuffix(base, path.Ext(base))
+	for _, segment := range strings.FieldsFunc(base, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		switch segment {
+		case "logo", "cover", "profile", "avatar", "banner", "fbshare", "share", "background", "thumbnail", "search":
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeExtList(list []string) []string {
@@ -97,7 +140,7 @@ func buildExtRegex(exts []string) *regexp.Regexp {
 	if len(exts) == 0 {
 		return regexp.MustCompile(`$a`)
 	}
-	pattern := `(?i)\.(` + strings.Join(exts, "|") + `)$`
+	pattern := `(?i)\.(` + strings.Join(exts, "|") + `)(?:[?#].*)?$`
 
 	return regexp.MustCompile(pattern)
 }
@@ -131,7 +174,13 @@ func normalizeBase(raw string) string {
 	base = reSizeSuffix.ReplaceAllString(base, "")
 	base = strings.TrimRight(base, "-_")
 
-	return base + ext
+	// Host and query stay in the key: the same path on another host or
+	// with a different query is a different image, not a variant to collapse.
+	key := u.Host + base + ext
+	if u.RawQuery != "" {
+		key += "?" + u.RawQuery
+	}
+	return key
 }
 
 func parseWxH(u string) (int, int) {
@@ -141,7 +190,7 @@ func parseWxH(u string) (int, int) {
 		return w, h
 	}
 
-	if m := regexp.MustCompile(`[-_](\d{2,5})x(\d{2,5})`).FindStringSubmatch(u); m != nil {
+	if m := reLooseSize.FindStringSubmatch(u); m != nil {
 		w, _ := strconv.Atoi(m[1])
 		h, _ := strconv.Atoi(m[2])
 		return w, h
@@ -192,7 +241,11 @@ func (c *imageCollector) ScanIMGTags(doc *goquery.Document, chapterURL string) i
 
 		for _, k := range []string{"src", "data-src", "data-lazy-src", "data-original"} {
 			if v, ok := img.Attr(k); ok && strings.TrimSpace(v) != "" {
-				c.add(resolve(chapterURL, v), idx)
+				if _, marked := img.Attr("data-kaodoku-page-image"); marked {
+					c.addPageImage(resolve(chapterURL, v), idx)
+				} else {
+					c.add(resolve(chapterURL, v), idx)
+				}
 			}
 		}
 	})
@@ -311,6 +364,14 @@ func (c *imageCollector) ScanLooseURLs(body string) {
 		return
 	}
 
+	// Decode HTML entities and JSON escapes first so quotes terminate URL
+	// matches. Sites like AsuraScans embed their page list as entity-escaped
+	// JSON, where a raw scan runs past the closing &quot; and yields a
+	// malformed URL the CDN rejects (HTTP 400).
+	body = html.UnescapeString(body)
+	body = strings.ReplaceAll(body, `\"`, `"`)
+	body = strings.ReplaceAll(body, `\u0026`, "&")
+	body = strings.ReplaceAll(body, `\/`, "/")
 	for _, u := range reLooseURLs.FindAllString(body, -1) {
 		c.add(u, -1)
 	}
@@ -324,6 +385,7 @@ func (c *imageCollector) Finalize() []string {
 	groups := groupCollectedItems(c.items)
 	chosenList := chooseBestImages(groups)
 	sortChosen(chosenList)
+	chosenList = c.dropForeignDomainImages(chosenList)
 
 	out := make([]string, len(chosenList))
 	for i := range chosenList {
@@ -333,35 +395,59 @@ func (c *imageCollector) Finalize() []string {
 	return out
 }
 
+// dropForeignDomainImages removes stray images served from a different site
+// than the pages.
+func (c *imageCollector) dropForeignDomainImages(list []chosenItem) []chosenItem {
+	if len(list) < 5 {
+		return list
+	}
+	counts := map[string]int{}
+	for _, it := range list {
+		counts[registrableDomain(it.URL)]++
+	}
+	dominant, dominantCount := "", 0
+	for domain, n := range counts {
+		if domain != "" && n > dominantCount {
+			dominant, dominantCount = domain, n
+		}
+	}
+	if dominant == "" || dominantCount*100 < 85*len(list) {
+		return list
+	}
+	out := make([]chosenItem, 0, len(list))
+	for _, it := range list {
+		if d := registrableDomain(it.URL); d != "" && d != dominant {
+			if c.log != nil {
+				c.log.Infof("Dropping off-site image (chapter pages are on %s): %s\n", dominant, it.URL)
+			}
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// registrableDomain returns a URL's eTLD+1 (e.g. storage.vortexscans.org ->
+// vortexscans.org), so numbered CDN subdomains of one site group together.
+func registrableDomain(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u == nil || u.Hostname() == "" {
+		return ""
+	}
+	if d, err := publicsuffix.EffectiveTLDPlusOne(u.Hostname()); err == nil {
+		return d
+	}
+	return u.Hostname()
+}
+
 // groupCollectedItems groups collected images by their normalized base URL.
 func groupCollectedItems(items []collectedItem) map[string][]collectedItem {
-	type grp struct {
-		firstOrder int
-		items      []collectedItem
-	}
-	groups := map[string]*grp{}
-
+	groups := map[string][]collectedItem{}
 	for _, it := range items {
 		key := normalizeBase(it.URL)
-		g, ok := groups[key]
-		if !ok {
-			g = &grp{firstOrder: it.Order}
-			groups[key] = g
-		}
-
-		if it.Order < g.firstOrder {
-			g.firstOrder = it.Order
-		}
-
-		g.items = append(g.items, it)
+		groups[key] = append(groups[key], it)
 	}
-
-	out := make(map[string][]collectedItem, len(groups))
-	for k, g := range groups {
-		out[k] = g.items
-	}
-
-	return out
+	return groups
 }
 
 // chooseBestImages selects the best candidate per group.

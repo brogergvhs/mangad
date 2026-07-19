@@ -1,0 +1,80 @@
+services:
+  kaodoku:
+    build: .
+    command:
+      - serve
+      - --addr
+      - :8080
+      - --db
+      - /data/kaodoku.db
+    ports:
+      # Without KAODOKU_ADMIN_PASSWORD the app runs in single-user mode with
+      # no login;
+      - "127.0.0.1:8080:8080"
+    environment:
+      XDG_CONFIG_HOME: /config
+      KAODOKU_DOWNLOAD_DIR: /downloads
+      # The environment admin: sign-in is enabled when the password is set.
+      # This account is immutable in-app and manages further users/roles.
+      # KAODOKU_ADMIN_USER: admin
+      # KAODOKU_ADMIN_PASSWORD: change-me
+      KAODOKU_BROWSER_DOWNLOADER_ENABLED: "true"
+      KAODOKU_BROWSER_DOWNLOADER_ENDPOINT: http://browser-worker:8192
+      KAODOKU_BROWSER_DOWNLOADER_TIMEOUT_SECONDS: "180"
+      KAODOKU_BROWSER_SOLVER_ENABLED: "true"
+      KAODOKU_BROWSER_SOLVER_ENDPOINT: http://flaresolverr:8191/v1
+      KAODOKU_BROWSER_SOLVER_TIMEOUT_SECONDS: "60"
+    volumes:
+      - kaodoku-config:/config
+      - kaodoku-data:/data
+      - kaodoku-downloads:/downloads
+    depends_on:
+      browser-worker:
+        condition: service_healthy
+      flaresolverr:
+        condition: service_started
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      LOG_LEVEL: info
+    ports:
+      - "127.0.0.1:8191:8191"
+
+  selenium:
+    image: selenium/standalone-chromium:latest
+    shm_size: 4gb
+    environment:
+      SE_NODE_MAX_SESSIONS: "4"
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
+    ports:
+      - "127.0.0.1:4444:4444"
+
+  browser-worker:
+    build: ./browser-worker
+    environment:
+      SELENIUM_REMOTE_URL: http://selenium:4444/wd/hub
+      BROWSER_WORKER_ADDR: 0.0.0.0:8192
+    ports:
+      - "127.0.0.1:8192:8192"
+    depends_on:
+      selenium:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8192/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+# tools:
+#   image: alpine:latest
+#   profiles: ["tools"]
+#   volumes:
+#     - kaodoku-config:/config
+#     - kaodoku-data:/data
+#     - kaodoku-downloads:/downloads
+
+volumes:
+  kaodoku-config:
+  kaodoku-data:
+  kaodoku-downloads:

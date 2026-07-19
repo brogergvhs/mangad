@@ -1,0 +1,17 @@
+{
+  "name": "kaodoku",
+  "version": "1.0.0",
+  "description": "Kaodoku =============================================",
+  "main": "index.js",
+  "scripts": {
+    "css": "tailwindcss -i assets/css/input.css -o internal/server/static/app.css --minify"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.2",
+    "tailwindcss": "^4.3.2"
+  },
+  "private": true
+}

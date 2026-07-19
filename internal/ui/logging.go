@@ -4,6 +4,14 @@ import (
 	"fmt"
 )
 
+// Log is the logging interface the app consumes; *Logger is the
+// terminal implementation.
+type Log interface {
+	Debugf(format string, args ...any)
+	Infof(format string, args ...any)
+	Errorf(format string, args ...any)
+}
+
 type Logger struct {
 	Debug bool
 }

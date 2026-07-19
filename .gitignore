@@ -28,4 +28,6 @@ go.work.sum
 .env
 
 # other
+.cache/
 downloaded_files/
+node_modules/

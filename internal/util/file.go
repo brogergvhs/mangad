@@ -2,6 +2,7 @@ package util
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,31 +11,33 @@ import (
 	"sort"
 )
 
-func CreateCBZ(files []string, output string) error {
-	log.Printf("creating cbz file %s with %d files", output, len(files))
-	out, err := os.Create(output)
+// CreateCBZ zips files into output, writing to a temp file first so a crash
+// or failed write never leaves a partial archive at the final path. With
+// skipBroken, files that cannot be added are logged and skipped.
+func CreateCBZ(files []string, output string, skipBroken bool) (err error) {
+	tmp := output + ".tmp"
+	out, err := os.Create(tmp)
 	if err != nil {
 		return fmt.Errorf("cbz: %w", err)
 	}
-
-	defer func() {
-		if cerr := out.Close(); cerr != nil {
-			log.Printf("error closing output file %s: %v", output, cerr)
-		}
-	}()
-
 	z := zip.NewWriter(out)
 	defer func() {
-		if cerr := z.Close(); cerr != nil {
-			log.Printf("error closing zip writer for %s: %v", output, cerr)
+		// Close order matters: the zip central directory, then the file.
+		err = errors.Join(err, z.Close(), out.Close())
+		if err != nil {
+			_ = os.Remove(tmp)
+			return
 		}
+		err = os.Rename(tmp, output)
 	}()
 
 	sort.Strings(files)
 	for _, file := range files {
-		if err := addFileToZip(z, file); err != nil {
-			log.Printf("warning: skipping %s: %v", file, err)
-			continue
+		if addErr := addFileToZip(z, file); addErr != nil {
+			if !skipBroken {
+				return fmt.Errorf("cbz: add %s: %w", file, addErr)
+			}
+			log.Printf("warning: skipping %s: %v", file, addErr)
 		}
 	}
 
@@ -74,5 +77,19 @@ func addFileToZip(z *zip.Writer, file string) error {
 		return err
 	}
 
+	return nil
+}
+
+// WriteFileAtomic writes data to path via a temp file and rename so readers
+// never observe a partially written file.
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
 	return nil
 }

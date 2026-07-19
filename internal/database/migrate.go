@@ -1,0 +1,495 @@
+package database
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+)
+
+const initialSchemaVersion = 1
+
+const sourcesSchema = `
+CREATE TABLE IF NOT EXISTS sources (
+	id TEXT PRIMARY KEY,
+	origin TEXT NOT NULL DEFAULT 'local',
+	name TEXT NOT NULL,
+	domains_json TEXT NOT NULL DEFAULT '[]',
+	base_url TEXT NOT NULL DEFAULT '',
+	sample_manga_url TEXT NOT NULL DEFAULT '',
+	search_url TEXT NOT NULL DEFAULT '',
+	scraper TEXT NOT NULL DEFAULT 'generic',
+	allowed_extensions_json TEXT NOT NULL DEFAULT '[]',
+	min_chapters INTEGER NOT NULL DEFAULT 0,
+	requires_browser_solver INTEGER NOT NULL DEFAULT 0,
+	requires_browser_downloader INTEGER NOT NULL DEFAULT 0,
+	single_manga INTEGER NOT NULL DEFAULT 0,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	profile_version TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'unknown',
+	last_checked_at TEXT,
+	last_error TEXT NOT NULL DEFAULT '',
+	chapters_found INTEGER NOT NULL DEFAULT 0,
+	sample_images_found INTEGER NOT NULL DEFAULT 0,
+	image_extensions_json TEXT NOT NULL DEFAULT '[]',
+	verify_steps_json TEXT NOT NULL DEFAULT '[]',
+	chapter_fetch TEXT NOT NULL DEFAULT '',
+	image_fetch TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`
+
+const initialSchema = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+	version INTEGER PRIMARY KEY,
+	applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS volumes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	number REAL NOT NULL DEFAULT 0,
+	name TEXT NOT NULL DEFAULT '',
+	file TEXT NOT NULL,
+	bytes INTEGER NOT NULL DEFAULT 0,
+	pages INTEGER NOT NULL DEFAULT 0,
+	cover BLOB,
+	cover_type TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(title_id, file)
+);
+CREATE INDEX IF NOT EXISTS idx_volumes_title ON volumes(title_id);
+
+CREATE TABLE IF NOT EXISTS volume_read_progress (
+	user_id INTEGER NOT NULL DEFAULT 1,
+	volume_id INTEGER NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+	completed INTEGER NOT NULL DEFAULT 0,
+	last_read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (user_id, volume_id)
+);
+
+CREATE TABLE IF NOT EXISTS library_screens (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL DEFAULT 1,
+	name TEXT NOT NULL,
+	config_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_library_screens_user ON library_screens(user_id);
+
+CREATE TABLE IF NOT EXISTS user_favourites (
+	user_id INTEGER NOT NULL DEFAULT 1,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (user_id, title_id)
+);
+
+CREATE TABLE IF NOT EXISTS content_tags (
+	name TEXT PRIMARY KEY,
+	kind TEXT NOT NULL DEFAULT 'tag'
+);
+CREATE TABLE IF NOT EXISTS catalog_relations (
+	from_id TEXT NOT NULL,
+	to_id TEXT NOT NULL,
+	relation TEXT NOT NULL,
+	PRIMARY KEY (from_id, to_id)
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_relations_from ON catalog_relations(from_id);
+
+CREATE TABLE IF NOT EXISTS catalog_manga (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	provider TEXT NOT NULL,
+	provider_id TEXT NOT NULL,
+	title_romaji TEXT NOT NULL DEFAULT '',
+	title_english TEXT NOT NULL DEFAULT '',
+	title_native TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	cover_image TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT '',
+	format TEXT NOT NULL DEFAULT '',
+	chapters INTEGER,
+	volumes INTEGER,
+	synonyms_json TEXT NOT NULL DEFAULT '[]',
+	genres_json TEXT NOT NULL DEFAULT '[]',
+	authors_json TEXT NOT NULL DEFAULT '[]',
+	year INTEGER NOT NULL DEFAULT 0,
+	average_score INTEGER NOT NULL DEFAULT 0,
+	is_adult INTEGER NOT NULL DEFAULT 0,
+	tags_json TEXT NOT NULL DEFAULT '[]',
+	wanted INTEGER NOT NULL DEFAULT 0,
+	raw_json TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(provider, provider_id)
+);
+` + sourcesSchema + `
+CREATE TABLE IF NOT EXISTS titles (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	catalog_manga_id INTEGER REFERENCES catalog_manga(id) ON DELETE SET NULL,
+	source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
+	source_url TEXT NOT NULL UNIQUE,
+	display_title TEXT NOT NULL,
+	output_path TEXT NOT NULL DEFAULT '',
+	monitored INTEGER NOT NULL DEFAULT 1,
+	refresh_interval TEXT NOT NULL DEFAULT '',
+	last_refreshed_at TEXT,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS collections (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_collections_user ON collections(user_id);
+
+CREATE TABLE IF NOT EXISTS collection_members (
+	collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	PRIMARY KEY (collection_id, title_id)
+);
+
+CREATE TABLE IF NOT EXISTS collection_smart_pins (
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	smart_key TEXT NOT NULL,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	PRIMARY KEY (user_id, smart_key, title_id)
+);
+
+CREATE TABLE IF NOT EXISTS title_source_matches (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	catalog_manga_id INTEGER NOT NULL REFERENCES catalog_manga(id) ON DELETE CASCADE,
+	source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
+	source_url TEXT NOT NULL,
+	title TEXT NOT NULL DEFAULT '',
+	confidence REAL NOT NULL DEFAULT 0,
+	match_method TEXT NOT NULL DEFAULT 'manual',
+	chapters_found INTEGER NOT NULL DEFAULT 0,
+	sample_images_found INTEGER NOT NULL DEFAULT 0,
+	error TEXT NOT NULL DEFAULT '',
+	verified_at TEXT,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(catalog_manga_id, source_url)
+);
+
+CREATE TABLE IF NOT EXISTS chapters (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	label TEXT NOT NULL,
+	title TEXT NOT NULL DEFAULT '',
+	url TEXT NOT NULL,
+	number_main INTEGER NOT NULL DEFAULT 0,
+	suffix_type TEXT NOT NULL DEFAULT '',
+	suffix_num INTEGER NOT NULL DEFAULT 0,
+	discovered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(title_id, label),
+	UNIQUE(title_id, url)
+);
+
+CREATE TABLE IF NOT EXISTS downloads (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+	status TEXT NOT NULL,
+	output_file TEXT NOT NULL DEFAULT '',
+	bytes INTEGER NOT NULL DEFAULT 0,
+	pages INTEGER NOT NULL DEFAULT 0,
+	attempts INTEGER NOT NULL DEFAULT 0,
+	error TEXT NOT NULL DEFAULT '',
+	started_at TEXT,
+	completed_at TEXT,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(chapter_id)
+);
+
+CREATE TABLE IF NOT EXISTS chapter_read_progress (
+	user_id INTEGER NOT NULL DEFAULT 1,
+	chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+	last_page INTEGER NOT NULL DEFAULT 0,
+	read_pages INTEGER NOT NULL DEFAULT 0,
+	total_pages INTEGER NOT NULL DEFAULT 0,
+	completed INTEGER NOT NULL DEFAULT 0,
+	started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	last_read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	completed_at TEXT,
+	PRIMARY KEY (user_id, chapter_id)
+);
+
+CREATE TABLE IF NOT EXISTS chapter_read_pages (
+	user_id INTEGER NOT NULL DEFAULT 1,
+	chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+	page INTEGER NOT NULL,
+	read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(user_id, chapter_id, page)
+);
+
+CREATE TABLE IF NOT EXISTS title_sources (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	title_id INTEGER NOT NULL REFERENCES titles(id) ON DELETE CASCADE,
+	source_id TEXT NOT NULL DEFAULT '',
+	url TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(title_id, url)
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	type TEXT NOT NULL,
+	status TEXT NOT NULL,
+	payload_json TEXT NOT NULL DEFAULT '{}',
+	run_after TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	attempts INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	parent_id INTEGER,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS roles (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL UNIQUE,
+	origin TEXT NOT NULL DEFAULT 'local',
+	permissions_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS users (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	username TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL DEFAULT '',
+	role_id INTEGER NOT NULL REFERENCES roles(id),
+	origin TEXT NOT NULL DEFAULT 'local',
+	allow_adult INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_settings (
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	key TEXT NOT NULL,
+	value TEXT NOT NULL,
+	PRIMARY KEY (user_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS user_anilist (
+	user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	access_token TEXT NOT NULL,
+	anilist_user_id INTEGER NOT NULL DEFAULT 0,
+	anilist_name TEXT NOT NULL DEFAULT '',
+	expires_at TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+	token_hash TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+	token_hash TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	expires_at TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS browser_cookies (
+	domain TEXT NOT NULL,
+	path TEXT NOT NULL DEFAULT '/',
+	name TEXT NOT NULL,
+	value TEXT NOT NULL,
+	expires_at TEXT NOT NULL,
+	secure INTEGER NOT NULL DEFAULT 0,
+	http_only INTEGER NOT NULL DEFAULT 0,
+	user_agent TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(domain, path, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_titles_monitored ON titles(monitored);
+CREATE INDEX IF NOT EXISTS idx_chapters_title_id ON chapters(title_id);
+CREATE INDEX IF NOT EXISTS idx_downloads_chapter_id ON downloads(chapter_id);
+CREATE INDEX IF NOT EXISTS idx_chapter_read_pages_chapter_id ON chapter_read_pages(chapter_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status_run_after ON jobs(status, run_after);
+CREATE INDEX IF NOT EXISTS idx_browser_cookies_expires_at ON browser_cookies(expires_at);
+
+INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
+`
+
+// Migrate applies all built-in database migrations.
+func Migrate(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin migration: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx, initialSchema); err != nil {
+		return fmt.Errorf("apply migration %d: %w", initialSchemaVersion, err)
+	}
+	if err = ensureColumn(ctx, tx, "sources", "requires_browser_downloader", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("migrate sources.requires_browser_downloader: %w", err)
+	}
+	if err = ensureColumn(ctx, tx, "sources", "search_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("migrate sources.search_url: %w", err)
+	}
+	if err = ensureColumn(ctx, tx, "sources", "languages_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err = ensureColumn(ctx, tx, "sources", "nsfw", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err = ensureColumn(ctx, tx, "sources", "chapterless", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err = ensureColumn(ctx, tx, "sources", "single_manga", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("migrate sources.single_manga: %w", err)
+	}
+	if err = ensureColumn(ctx, tx, "sources", "verify_steps_json", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return fmt.Errorf("migrate sources.verify_steps_json: %w", err)
+	}
+	for _, col := range []string{"chapter_fetch", "image_fetch"} {
+		if err = ensureColumn(ctx, tx, "sources", col, "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return fmt.Errorf("migrate sources.%s: %w", col, err)
+		}
+	}
+	for _, col := range []struct{ table, name, def string }{
+		{"jobs", "parent_id", "INTEGER"},
+		{"catalog_manga", "is_adult", "INTEGER NOT NULL DEFAULT 0"},
+		{"catalog_manga", "tags_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"users", "allow_adult", "INTEGER NOT NULL DEFAULT 0"},
+		{"users", "blocked_tags", "TEXT NOT NULL DEFAULT '[]'"},
+		{"users", "allowed_tags", "TEXT NOT NULL DEFAULT '[]'"},
+		{"content_tags", "is_adult", "INTEGER NOT NULL DEFAULT 0"},
+		{"sessions", "user_agent", "TEXT NOT NULL DEFAULT ''"},
+		{"sessions", "ip", "TEXT NOT NULL DEFAULT ''"},
+		{"sessions", "last_seen_at", "TEXT"},
+		{"volumes", "thumb", "BLOB"},
+		{"volumes", "thumb_type", "TEXT NOT NULL DEFAULT ''"},
+		{"volume_read_progress", "read_pages", "INTEGER NOT NULL DEFAULT 0"},
+		{"volume_read_progress", "total_pages", "INTEGER NOT NULL DEFAULT 0"},
+		{"volume_read_progress", "last_page", "INTEGER NOT NULL DEFAULT 0"},
+		{"titles", "language_mode", "TEXT NOT NULL DEFAULT ''"},
+		{"titles", "language_gap", "INTEGER NOT NULL DEFAULT 0"},
+		{"titles", "added_by", "INTEGER NOT NULL DEFAULT 0"},
+		{"library_screens", "position", "INTEGER NOT NULL DEFAULT 0"},
+		{"catalog_manga", "synonyms_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"catalog_manga", "wanted", "INTEGER NOT NULL DEFAULT 0"},
+		{"catalog_manga", "volumes", "INTEGER"},
+		{"catalog_manga", "genres_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"catalog_manga", "authors_json", "TEXT NOT NULL DEFAULT '[]'"},
+		{"catalog_manga", "year", "INTEGER NOT NULL DEFAULT 0"},
+		{"catalog_manga", "average_score", "INTEGER NOT NULL DEFAULT 0"},
+		{"downloads", "attempts", "INTEGER NOT NULL DEFAULT 0"},
+		{"downloads", "pages", "INTEGER NOT NULL DEFAULT 0"},
+		{"title_source_matches", "title", "TEXT NOT NULL DEFAULT ''"},
+		{"title_source_matches", "chapters_found", "INTEGER NOT NULL DEFAULT 0"},
+		{"title_source_matches", "sample_images_found", "INTEGER NOT NULL DEFAULT 0"},
+		{"title_source_matches", "error", "TEXT NOT NULL DEFAULT ''"},
+		{"title_source_matches", "updated_at", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
+			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
+		}
+	}
+	if err = migrateReadTablesPerUser(ctx, tx); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration: %w", err)
+	}
+
+	return nil
+}
+
+func ensureColumn(ctx context.Context, tx *sql.Tx, table, column, def string) error {
+	ok, _, err := txHasColumn(ctx, tx, table, column)
+	if err != nil || ok {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, def))
+	return err
+}
+
+func txHasColumn(ctx context.Context, tx *sql.Tx, table, column string) (bool, bool, error) {
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return false, false, err
+	}
+	defer rows.Close()
+
+	var exists bool
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return false, false, err
+		}
+		exists = true
+		if name == column {
+			return true, true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, false, err
+	}
+	return false, exists, nil
+}
+
+// migrateReadTablesPerUser rebuilds the read-progress tables with a user_id
+// key; pre-existing single-user progress is assigned to the env admin (id 1).
+func migrateReadTablesPerUser(ctx context.Context, tx *sql.Tx) error {
+	hasUser, exists, err := txHasColumn(ctx, tx, "chapter_read_progress", "user_id")
+	if err != nil || !exists || hasUser {
+		return err
+	}
+	stmts := []string{
+		`CREATE TABLE chapter_read_progress_new (
+			user_id INTEGER NOT NULL DEFAULT 1,
+			chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+			last_page INTEGER NOT NULL DEFAULT 0,
+			read_pages INTEGER NOT NULL DEFAULT 0,
+			total_pages INTEGER NOT NULL DEFAULT 0,
+			completed INTEGER NOT NULL DEFAULT 0,
+			started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			completed_at TEXT,
+			PRIMARY KEY (user_id, chapter_id)
+		)`,
+		`INSERT INTO chapter_read_progress_new (user_id, chapter_id, last_page, read_pages, total_pages, completed, started_at, last_read_at, completed_at)
+			SELECT 1, chapter_id, last_page, read_pages, total_pages, completed, started_at, last_read_at, completed_at FROM chapter_read_progress`,
+		`DROP TABLE chapter_read_progress`,
+		`ALTER TABLE chapter_read_progress_new RENAME TO chapter_read_progress`,
+		`CREATE TABLE chapter_read_pages_new (
+			user_id INTEGER NOT NULL DEFAULT 1,
+			chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+			page INTEGER NOT NULL,
+			read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id, chapter_id, page)
+		)`,
+		`INSERT INTO chapter_read_pages_new (user_id, chapter_id, page, read_at)
+			SELECT 1, chapter_id, page, read_at FROM chapter_read_pages`,
+		`DROP TABLE chapter_read_pages`,
+		`ALTER TABLE chapter_read_pages_new RENAME TO chapter_read_pages`,
+		`CREATE INDEX IF NOT EXISTS idx_chapter_read_pages_chapter_id ON chapter_read_pages(chapter_id)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("migrate read tables per-user: %w", err)
+		}
+	}
+	return nil
+}

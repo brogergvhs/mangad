@@ -1,17 +1,18 @@
 package chapters
 
 import (
-	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
 
-	"github.com/brogergvhs/mangad/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/providers"
 )
 
 type Chapter struct {
 	providers.Chapter
 }
+
+var reUnderscores = regexp.MustCompile(`_+`)
 
 func sanitize(s string) string {
 	s = strings.ToLower(s)
@@ -40,8 +41,7 @@ func sanitize(s string) string {
 	}
 	s = string(clean)
 
-	reUnderscore := regexp.MustCompile(`_+`)
-	s = reUnderscore.ReplaceAllString(s, "_")
+	s = reUnderscores.ReplaceAllString(s, "_")
 
 	return strings.Trim(s, "_")
 }
@@ -66,8 +66,4 @@ func (c Chapter) FolderName() string {
 
 func (c Chapter) OutputCBZ() string {
 	return c.baseName() + ".cbz"
-}
-
-func (c Chapter) OutputCBZPath(out string) string {
-	return filepath.Join(out, c.OutputCBZ())
 }

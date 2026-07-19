@@ -1,0 +1,613 @@
+{{define "cellCover"}}<img id="row-cover-{{.ID}}" hx-preserve class="h-14 w-10 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">{{end}}
+
+{{define "addToCollection"}}
+<div class="grid gap-4">
+  <form class="flex gap-2" hx-post="/ui/library/{{.TitleID}}/collections/add" hx-target="#toast" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){add_to_collection_modal.close()}">
+    <input class="input input-sm w-full" name="name" required placeholder="New collection name…">
+    <button class="btn btn-sm btn-primary shrink-0">Create &amp; add</button>
+  </form>
+  {{if .Custom}}
+  <div>
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-base-content/50">Custom</div>
+    <div class="flex flex-col gap-1">
+      {{range .Custom}}
+      <button class="btn btn-sm btn-block btn-ghost justify-between" hx-post="/ui/library/{{$.TitleID}}/collections/add" hx-vals='{"cid":"{{.CustomID}}"}' hx-target="#toast" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){add_to_collection_modal.close()}">
+        <span class="truncate">{{.Label}}</span><span class="text-xs text-base-content/50">{{.Count}}</span>
+      </button>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{if .Smart}}
+  <div>
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-base-content/50">Smart</div>
+    <div class="flex flex-col gap-1">
+      {{range .Smart}}
+      <button class="btn btn-sm btn-block btn-ghost justify-between" hx-post="/ui/library/{{$.TitleID}}/collections/add" hx-vals='{"smart":"{{.SmartKey}}"}' hx-target="#toast" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){add_to_collection_modal.close()}">
+        <span class="truncate">{{.Label}}</span><span class="text-xs text-base-content/50">{{.Count}}</span>
+      </button>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{if and (not .Custom) (not .Smart)}}
+  <p class="text-sm text-base-content/60">No other collections available — create one above.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "collectionManage"}}
+<div id="collection-manage" class="flex flex-col gap-1">
+  {{if .Members}}
+  {{range .Members}}
+  <div class="flex items-center gap-2 rounded-lg p-1 hover:bg-base-200">
+    <img class="h-10 w-7 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">
+    <span class="min-w-0 flex-1 truncate text-sm">{{.DisplayTitle}}</span>
+    <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/collections/{{$.ID}}/remove" hx-vals='{"title":"{{.ID}}"}' hx-target="#collection-manage" hx-swap="outerHTML">Remove</button>
+  </div>
+  {{end}}
+  {{else}}
+  <p class="text-sm text-base-content/60">This collection has no titles yet.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "cellTitle"}}
+<div class="flex items-center gap-1">
+  <a class="link link-hover font-medium" href="/library/{{.Title.ID}}{{if .Screen}}?screen={{.Screen}}{{end}}">{{.Title.DisplayTitle}}</a>
+  {{if .User.Can "library.manage"}}{{template "monitorToggle" .Title}}{{else}}{{template "monitorBadge" .Title}}{{end}}
+</div>
+<div class="text-xs text-base-content/50">{{humanBytes .Title.SizeBytes}}{{if gt .Title.MissingCount 0}} · {{.Title.MissingCount}} missing{{end}}</div>
+{{end}}
+
+{{define "mangaDetail"}}
+<div class="grid gap-2 py-1">
+  <div class="flex flex-wrap items-center gap-1.5">
+    {{if .Status}}<span class="badge badge-soft badge-sm">{{.Status}}</span>{{end}}
+    {{if .Format}}<span class="badge badge-ghost badge-sm">{{.Format}}</span>{{end}}
+    {{if .AverageScore}}<span class="badge badge-warning badge-soft badge-sm">★ {{.AverageScore}}%</span>{{end}}
+    {{if .Year}}<span class="badge badge-ghost badge-sm">{{.Year}}</span>{{end}}
+  </div>
+  {{if .Description}}<p class="text-sm text-base-content/70 leading-relaxed">{{.Description}}</p>{{end}}
+  <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-base-content/50">
+    {{if .Authors}}<span>By {{range $i, $a := .Authors}}{{if $i}}, {{end}}{{$a}}{{end}}</span>{{end}}
+    {{if .Chapters}}<span>{{.Chapters}} chapters (AniList)</span>{{end}}
+    {{if .Volumes}}<span>{{.Volumes}} volumes (AniList)</span>{{end}}
+  </div>
+  {{if .Genres}}<div class="flex flex-wrap gap-1.5">{{range .Genres}}<span class="badge badge-outline badge-sm">{{.}}</span>{{end}}</div>{{end}}
+</div>
+{{end}}
+
+{{define "chapterName"}}
+{{- $text := .Label}}{{if .Title}}{{$text = printf "%s: %s" .Label .Title}}{{end -}}
+{{if .Downloaded}}<a class="link link-hover font-medium" href="/reader/{{.TitleID}}?chapter={{.ID}}">{{$text}}</a>
+{{- else if .Failed}}<span class="font-medium" title="{{.Error}}">{{$text}}</span>
+{{- else}}<span class="font-medium">{{$text}}</span>{{end}}
+{{end}}
+
+{{define "chapterActions"}}
+{{if or .Downloaded .CanManage}}
+<details class="dropdown dropdown-end">
+  <summary class="btn btn-ghost btn-xs btn-square [&_svg]:size-3.5" aria-label="Chapter actions">{{template "iconDots"}}</summary>
+  <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
+    {{if .CanManage}}<li><button hx-get="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename-dialog" hx-target="#chapter-rename-body" hx-swap="innerHTML" onclick="chapter_rename_modal.showModal()">{{template "iconEdit"}}Rename</button></li>{{end}}
+    {{if .Downloaded}}
+      {{if or .Read (gt .ReadPages 0)}}
+      <li><button hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/unread" hx-target="#chapters-table" hx-swap="outerHTML">{{template "iconEye"}}Mark unread</button></li>
+      {{else}}
+      <li><button hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/read" hx-target="#chapters-table" hx-swap="outerHTML">{{template "iconEyeOff"}}Mark read</button></li>
+      {{end}}
+      <li><a href="/ui/library/{{.TitleID}}/chapters/{{.ID}}/download" download target="_blank" rel="noopener">{{template "iconDownload"}}Download .cbz</a></li>
+      {{if .CanManage}}<li><button class="text-error" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/remove" hx-target="#chapters-table" hx-swap="outerHTML" hx-confirm="Remove this chapter from disk? It will show as missing.">{{template "iconTrash"}}Remove from disk</button></li>{{end}}
+    {{end}}
+  </ul>
+</details>
+{{else}}<span class="text-base-content/30">—</span>{{end}}
+{{end}}
+
+{{define "chapterRenameDialog"}}
+<form class="grid gap-3" hx-post="/ui/library/{{.TitleID}}/chapters/{{.ID}}/rename" hx-target="#chapters-table" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful){chapter_rename_modal.close()}">
+  <input name="title" value="{{.Title}}" class="input w-full" placeholder="Chapter name" autofocus>
+  <div class="modal-action">
+    <button type="button" class="btn btn-ghost" onclick="chapter_rename_modal.close()">Cancel</button>
+    <button class="btn btn-primary">Save</button>
+  </div>
+</form>
+{{end}}
+
+{{define "jobCancel"}}<button class="btn btn-error btn-soft btn-xs" hx-post="/ui/jobs/{{.ID}}/cancel" hx-target="#jobs-table" hx-swap="outerHTML">Cancel</button>{{end}}
+
+{{define "jobStatusIcon"}}
+{{- if eq .Status "done"}}<span class="text-success" title="done">{{template "iconCheckCircle"}}</span>
+{{- else if eq .Status "running"}}<span class="loading loading-xs" title="running" aria-label="running"></span>
+{{- else if eq .Status "queued"}}<span class="text-base-content/50" title="queued">{{template "iconClock"}}</span>
+{{- else if eq .Status "failed"}}<span class="text-warning" title="failed — will retry">{{template "iconAlert"}}</span>
+{{- else if eq .Status "dead"}}<span class="text-error" title="failed permanently">{{template "iconXCircle"}}</span>
+{{- else if eq .Status "cancelled"}}<span class="text-base-content/40" title="cancelled">{{template "iconBan"}}</span>
+{{- else}}<span class="badge badge-ghost badge-sm">{{.Status}}</span>{{end -}}
+{{end}}
+
+{{define "jobCell"}}
+<div class="min-w-0">
+  <span class="text-sm font-medium">{{jobLabel .Type}}</span>
+  <div class="text-xs text-base-content/50">{{if gt .Attempts 0}}{{.Attempts}} attempt{{if gt .Attempts 1}}s{{end}} · {{end}}{{since .UpdatedAt}}{{if .Children}} · {{.Children}} titles{{if .ActiveChildren}} · {{.ActiveChildren}} active{{end}}{{end}}</div>
+</div>
+{{end}}
+
+{{define "jobActions"}}
+<div class="flex items-center justify-end gap-2">
+  {{if .CanCancel}}{{template "jobCancel" .Job}}{{end}}
+  {{template "jobStatusIcon" .Job}}
+</div>
+{{end}}
+
+{{define "jobDetail"}}
+<div class="grid gap-2 py-1 text-sm">
+  <div class="flex flex-wrap gap-x-5 gap-y-2">
+    <div><div class="text-xs text-base-content/50">Payload</div><code class="text-xs">{{.Payload}}</code></div>
+    <div><div class="text-xs text-base-content/50">Run after</div>{{since .RunAfter}}</div>
+    <div><div class="text-xs text-base-content/50">Created</div>{{since .CreatedAt}}</div>
+  </div>
+  {{if .LastError}}<div class="text-sm text-error">{{.LastError}}</div>{{end}}
+</div>
+{{end}}
+
+{{define "chaptersList"}}
+<div id="chapters-table"
+  hx-get="{{.PageURL .Page}}" hx-swap="outerHTML" hx-sync="this:drop"
+  hx-trigger="{{if .Poll}}load delay:4s, {{end}}title-job-started from:body">
+  <div class="divide-y divide-line/25 rounded-xl overflow-hidden">
+    {{range .Chapters}}
+    <div class="flex items-center gap-3 p-4 {{.Tint}}">
+      <div class="min-w-0 flex-1">
+        {{template "chapterName" .ChapterStatus}}
+        <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50 sm:hidden">
+          <span {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
+          <span>{{.Size}}</span>
+        </div>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/60 shrink-0">
+        <span class="w-10 text-right tabular-nums cursor-help" {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
+        <span class="w-20 text-right tabular-nums">{{.Size}}</span>
+      </div>
+      <span class="w-20 text-right text-sm text-base-content/50 whitespace-nowrap shrink-0">{{.When}}</span>
+      {{template "chapterActions" .}}
+    </div>
+    {{else}}
+    <p class="text-base-content/60 py-3">{{.Empty}}</p>
+    {{end}}
+  </div>
+  {{if gt .TotalPages 1}}
+  <div class="mt-3 flex max-sm:flex-col max-sm:gap-2 sm:items-center sm:justify-between">
+    <span class="text-sm text-base-content/60 max-sm:text-center">{{.RangeStart}}–{{.RangeEnd}} of {{.Total}}</span>
+    <div class="join max-sm:w-full">
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#chapters-table" hx-swap="outerHTML" hx-sync="#chapters-table:replace">‹</button>
+      <button class="btn btn-sm join-item pointer-events-none max-sm:flex-1">{{.Page}} / {{.TotalPages}}</button>
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#chapters-table" hx-swap="outerHTML" hx-sync="#chapters-table:replace">›</button>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "jobChildren"}}
+<div class="divide-y divide-line/25">
+  {{range .}}
+  <div class="flex items-center gap-3 py-1.5">
+    <div class="min-w-0 flex-1">
+      <span class="text-sm">{{jobLabel .Type}} <span class="text-xs text-base-content/50">#{{.ID}} · {{.Payload}}</span></span>
+      {{if .LastError}}<div class="truncate text-xs text-error" title="{{.LastError}}">{{.LastError}}</div>{{end}}
+    </div>
+    {{if eq .Status "queued"}}{{template "jobCancel" .}}{{else if eq .Status "running"}}{{template "jobCancel" .}}{{else if eq .Status "failed"}}{{template "jobCancel" .}}{{end}}
+    {{template "jobStatusIcon" .}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "libraryTitleActions"}}
+{{if .CanManage}}
+<details class="dropdown dropdown-end">
+  <summary class="btn btn-sm btn-ghost btn-square" aria-label="Actions">{{template "iconDots"}}</summary>
+  <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
+    {{if and (linked .Title.SourceURL) (or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0))}}
+    <li><button hx-post="/ui/library/{{.Title.ID}}/download" hx-swap="none">{{template "iconDownload"}}Download missing{{if gt .Title.FailedCount 0}} · {{.Title.FailedCount}} failed{{end}}</button></li>{{end}}
+    {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-swap="none">{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
+    <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-swap="none">{{template "iconScan"}}Scan files</button></li>
+    {{if linked .Title.SourceURL}}<li><button hx-get="/ui/library/{{.Title.ID}}/settings-dialog" hx-target="#lib-title-dialog-body" hx-swap="innerHTML" onclick="lib_title_dialog.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+    <li><button hx-get="/ui/library/{{.Title.ID}}/collections" hx-target="#add-collection-body" hx-swap="innerHTML" onclick="add_to_collection_modal.showModal()">{{template "iconLayers"}}Add to collection</button></li>
+    <li><button class="text-error" hx-get="/ui/library/{{.Title.ID}}/remove-dialog" hx-target="#lib-title-dialog-body" hx-swap="innerHTML" onclick="lib_title_dialog.showModal()">{{template "iconTrash"}}Remove title</button></li>
+  </ul>
+</details>
+{{end}}
+{{end}}
+
+{{define "removeTitleDialog"}}
+<h3 class="text-lg font-bold mb-1">Remove {{.Title.DisplayTitle}}?</h3>
+<p class="text-sm text-base-content/60">Tracking, chapters and reading progress are removed from the library.</p>
+<form class="mt-3 grid gap-3" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none">
+  <label class="label cursor-pointer justify-start gap-2">
+    <input type="checkbox" class="checkbox checkbox-sm" name="delete_files">
+    <span><span class="text-sm font-medium">Also delete downloaded files from disk</span>
+    <span class="block text-xs text-base-content/50">Leave unchecked to keep the folder — it will show up on the Import page for re-importing later.</span></span>
+  </label>
+  {{if .AniListConnected}}
+  <label class="label cursor-pointer justify-start gap-2">
+    <input type="checkbox" class="checkbox checkbox-sm" name="delete_anilist">
+    <span><span class="text-sm font-medium">Also delete from AniList</span>
+    <span class="block text-xs text-base-content/50">Removes this manga from your AniList list entirely. Left unchecked, it is set to Dropped instead.</span></span>
+  </label>
+  {{end}}
+  <div class="modal-action">
+    <button type="button" class="btn btn-ghost" onclick="lib_title_dialog.close()">Cancel</button>
+    <button class="btn btn-error">Remove title</button>
+  </div>
+</form>
+{{end}}
+
+{{define "titleSettingsDialog"}}
+<h3 class="text-lg font-bold mb-3">Title settings</h3>
+<form hx-post="/ui/library/{{.Title.ID}}/refresh-interval" hx-swap="none">
+  <label class="fieldset"><span class="fieldset-legend">Check for new chapters every</span>
+    <input class="input w-full" name="interval" value="{{.Title.RefreshInterval}}" placeholder="{{.RefreshEvery}} (global default)">
+    <span class="label">Leave blank to use the global schedule. Example: 6h, 30m.</span>
+  </label>
+  <div class="modal-action">
+    <button type="button" class="btn btn-ghost" onclick="lib_title_dialog.close()">Close</button>
+    <button class="btn btn-primary" onclick="lib_title_dialog.close()">Save</button>
+  </div>
+</form>
+{{end}}
+
+{{define "libraryCard"}}
+<div class="relative min-w-0">
+  <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300{{if .Title.IsAdult}} outline outline-2 -outline-offset-2 outline-error{{end}}">
+    <a href="/library/{{.Title.ID}}{{if .Screen}}?screen={{.Screen}}{{end}}"><img id="card-cover-{{.Title.ID}}" hx-preserve class="h-full w-full object-cover" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a>
+  </div>
+  <div class="absolute right-1 top-1 z-10 flex items-center rounded-lg bg-base-300/70">{{template "favToggle" .Title}}{{if .CanManage}}{{template "monitorToggle" .Title}}{{template "libraryTitleActions" .}}{{end}}</div>
+  <a href="/library/{{.Title.ID}}{{if .Screen}}?screen={{.Screen}}{{end}}" class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Title.DisplayTitle}}</a>
+  <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
+    {{if and (eq .Title.DiscoveredCount 0) (gt .Title.VolumeCount 0)}}
+    <span class="truncate">{{.Title.VolumeReadCount}}/{{.Title.VolumeCount}} vols</span>
+    <span class="shrink-0">{{humanBytes .Title.VolumeBytes}}</span>
+    {{else}}
+    <span class="truncate">{{.Title.CompletedCount}}/{{.Title.DiscoveredCount}}</span>
+    <span class="shrink-0">{{if gt .Title.MissingCount 0}}{{.Title.MissingCount}} missing · {{end}}{{humanBytes .Title.SizeBytes}}</span>
+    {{end}}
+  </div>
+  <div class="mt-1">
+    {{if and (eq .Title.DiscoveredCount 0) (gt .Title.VolumeCount 0)}}
+    {{template "bar" bar (pct .Title.VolumeReadCount .Title.VolumeCount) 100}}
+    {{else}}
+    {{template "bar" bar (pct .Title.ReadCount .Title.DiscoveredCount) (pct .Title.CompletedCount .Title.DiscoveredCount)}}
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "libraryResults"}}
+<div id="{{.ID}}" {{if .Poll}}data-poll hx-get="{{.PageURL .Page}}" hx-trigger="load delay:4s" hx-swap="outerHTML" hx-sync="this:drop"{{end}}>
+  {{if not .Rows}}
+  <p class="text-base-content/60 py-3">{{.Empty}}</p>
+  {{else}}
+  {{if eq .View "table"}}
+  <div class="rounded-xl overflow-hidden">
+    <table class="table">
+      <tbody>
+      {{range .Rows}}
+      <tr class="{{if .Detail}}row-toggle hover:bg-base-100{{end}} {{.Class}}" {{if .Detail}}data-target="det-{{$.ID}}-{{.ID}}"{{end}}>
+        {{if $.HasDetails}}<td class="w-6">{{if .Detail}}<span class="caret text-base-content/50">{{template "iconChevron"}}</span>{{end}}</td>{{end}}
+        {{range .Cells}}<td>{{.}}</td>{{end}}
+      </tr>
+      {{if .Detail}}<tr id="det-{{$.ID}}-{{.ID}}" class="bg-base-300/30" hidden><td colspan="{{$.ColSpan}}">{{.Detail}}</td></tr>{{end}}
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+  {{if or (eq .View "cards") (eq .View "auto")}}
+  <div class="{{if eq .View "auto"}}md:hidden{{end}} grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+    {{$cm := .CanManage}}{{$sn := .Screen}}{{range .Cards}}{{template "libraryCard" cardView . $cm $sn}}{{end}}
+  </div>
+  {{end}}
+  {{if or (eq .View "full") (eq .View "auto")}}
+  <div class="{{if eq .View "auto"}}max-md:hidden{{end}} grid gap-3">
+    {{range .Fulls}}
+    <div class="card bg-base-100 p-4{{if .Title.IsAdult}} outline outline-2 -outline-offset-2 outline-error{{end}}">
+      <div class="flex gap-5 max-sm:flex-col">
+        <figure class="shrink-0 max-sm:self-center"><a href="/library/{{.Title.ID}}{{if $.Screen}}?screen={{$.Screen}}{{end}}"><img id="full-cover-{{.Title.ID}}" hx-preserve class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a></figure>
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <a href="/library/{{.Title.ID}}{{if $.Screen}}?screen={{$.Screen}}{{end}}" class="text-lg font-semibold text-balance">{{.Title.DisplayTitle}}</a>
+            <div class="flex shrink-0 items-center">{{template "favToggle" .Title}}{{if $.CanManage}}{{template "monitorToggle" .Title}}{{template "libraryTitleActions" (cardView .Title $.CanManage 0)}}{{else}}{{template "monitorBadge" .Title}}{{end}}</div>
+          </div>
+          {{template "progressBar" .Title}}
+          {{template "mangaSummary" .Manga}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+  {{end}}
+  {{if gt .TotalPages 1}}
+  <div class="mt-3 flex max-sm:flex-col max-sm:gap-2 sm:items-center sm:justify-between">
+    <span class="text-sm text-base-content/60 max-sm:text-center">{{.RangeStart}}–{{.RangeEnd}} of {{.Total}}</span>
+    <div class="join max-sm:w-full">
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasPrev}}disabled{{end}} hx-get="{{.PageURL .Prev}}" hx-target="#{{.ID}}" hx-swap="outerHTML" hx-sync="#{{.ID}}:replace">‹</button>
+      <button class="btn btn-sm join-item pointer-events-none max-sm:flex-1">{{.Page}} / {{.TotalPages}}</button>
+      <button class="btn btn-sm join-item max-sm:flex-1" {{if not .HasNext}}disabled{{end}} hx-get="{{.PageURL .Next}}" hx-target="#{{.ID}}" hx-swap="outerHTML" hx-sync="#{{.ID}}:replace">›</button>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "anilistSuggestions"}}
+{{if .Items}}
+<div class="collapse collapse-arrow bg-base-100 mt-4 mb-4">
+  <input type="checkbox">
+  <div class="collapse-title font-semibold">From your AniList <span class="badge badge-sm badge-ghost">{{len .Items}} not in library</span></div>
+  <div class="collapse-content">{{template "mangaResults" .}}</div>
+</div>
+{{end}}
+{{end}}
+
+{{define "mangaSummary"}}
+<div class="flex flex-wrap items-center gap-1.5">
+  {{if .Status}}<span class="badge badge-soft badge-sm">{{.Status}}</span>{{end}}
+  {{if .Format}}<span class="badge badge-ghost badge-sm">{{.Format}}</span>{{end}}
+  {{if .AverageScore}}<span class="badge badge-warning badge-soft badge-sm">★ {{.AverageScore}}%</span>{{end}}
+  {{if .Year}}<span class="badge badge-ghost badge-sm">{{.Year}}</span>{{end}}
+  {{if .Chapters}}<span class="badge badge-ghost badge-sm">{{.Chapters}} ch</span>{{end}}
+</div>
+{{if .Description}}<p class="line-clamp-3 text-sm leading-relaxed text-base-content/70">{{.Description}}</p>{{end}}
+{{if or .Genres .Tags}}
+<div class="flex flex-wrap gap-1.5">
+  {{range .Genres}}<span class="badge badge-outline badge-sm">{{.}}</span>{{end}}
+  {{range .Tags}}<span class="badge badge-ghost badge-sm">{{.}}</span>{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "searchResults"}}
+{{if .Error}}
+<form class="py-2 text-center text-sm" hx-post="/ui/search" hx-target="this" hx-swap="outerHTML" hx-indicator="#search-spin">
+  {{template "searchResultsState" .}}
+  <input type="hidden" name="page" value="{{.RetryPage}}">
+  <span class="text-error">Search failed.</span>
+  <button type="submit" class="btn btn-xs btn-outline">Retry</button>
+</form>
+{{else}}
+{{if .Results.Items}}{{template "mangaResults" .Results}}
+{{else if and (not .Append) (not .NextPage)}}{{template "mangaResults" .Results}}
+{{else if not .Append}}<p class="py-2 text-sm text-base-content/60">No matches on the first pages — “Show more” keeps scanning.</p>
+{{else if not .NextPage}}<p class="py-2 text-center text-sm text-base-content/60">End of results.</p>{{end}}
+{{if .NextPage}}
+<form class="py-2 text-center" hx-post="/ui/search" hx-target="this" hx-swap="outerHTML" hx-indicator="#search-spin">
+  {{template "searchResultsState" .}}
+  <input type="hidden" name="page" value="{{.NextPage}}">
+  <button type="submit" class="btn btn-sm btn-outline">Show more</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "searchResultsState"}}
+<input type="hidden" name="q" value="{{.Controls.Q}}">
+<input type="hidden" name="sort" value="{{.Controls.Sort}}">
+<input type="hidden" name="dir" value="{{.Controls.Dir}}">
+<input type="hidden" name="view" value="{{.View}}">
+{{range .Controls.IncludeTags}}<input type="hidden" name="include_tags" value="{{.}}">{{end}}
+{{range .Controls.ExcludeTags}}<input type="hidden" name="exclude_tags" value="{{.}}">{{end}}
+{{end}}
+
+{{define "mangaResults"}}
+{{if .Heading}}<h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.Heading}}</h2>{{end}}
+{{if not .Items}}
+<p class="py-2 text-sm text-base-content/60">Nothing found.</p>
+{{else if eq .View "table"}}
+<div class="rounded-xl overflow-hidden">
+  <table class="table">
+    <tbody>
+      {{$canAdd := .CanAdd}}{{range .Items}}
+      <tr {{if .IsAdult}}class="outline outline-1 -outline-offset-1 outline-error"{{end}}>
+        <td class="w-12"><a href="{{if .TitleID}}/library/{{.TitleID}}{{else}}/manga/{{.ProviderID}}{{end}}"><img class="h-14 w-10 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></a></td>
+        <td class="min-w-0">
+          <a class="font-medium link-hover" href="{{if .TitleID}}/library/{{.TitleID}}{{else}}/manga/{{.ProviderID}}{{end}}">{{mangaTitle .Manga}}</a>
+          <div class="text-xs text-base-content/50">{{.Format}}{{if .Status}} · {{.Status}}{{end}}{{if .Chapters}} · {{.Chapters}} ch{{end}}{{if .AverageScore}} · ★ {{.AverageScore}}%{{end}}</div>
+        </td>
+        <td class="whitespace-nowrap text-right">
+          {{if .TitleID}}<a class="btn btn-sm btn-success btn-soft" href="/library/{{.TitleID}}">✓ In library</a>
+          {{else if $canAdd}}<button class="btn btn-sm btn-outline" hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add</button>{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else if eq .View "full"}}
+<div class="grid gap-3">
+  {{$canAdd := .CanAdd}}{{range .Items}}
+  <div class="card bg-base-100 p-4{{if .IsAdult}} outline outline-2 -outline-offset-2 outline-error{{end}}">
+    <div class="flex gap-5 max-sm:flex-col">
+      <figure class="shrink-0 max-sm:self-center">
+        {{if .TitleID}}<a href="/library/{{.TitleID}}"><img class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></a>
+        {{else}}<a href="/manga/{{.ProviderID}}"><img class="h-52 w-36 rounded-lg object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy"></a>{{end}}
+      </figure>
+      <div class="flex min-w-0 flex-1 flex-col gap-2">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-lg font-semibold text-balance">{{mangaTitle .Manga}}</h3>
+          <div class="shrink-0">
+            {{if .TitleID}}<a class="btn btn-sm btn-success btn-soft" href="/library/{{.TitleID}}">✓ In library</a>
+            {{else if $canAdd}}<button class="btn btn-sm btn-outline" hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}"}' hx-target="this" hx-swap="outerHTML">Add</button>{{end}}
+          </div>
+        </div>
+        {{template "mangaSummary" .Manga}}
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+  {{$canAdd := .CanAdd}}{{range .Items}}
+  <div class="flex min-w-0 flex-col">
+    <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300{{if .IsAdult}} outline outline-2 -outline-offset-2 outline-error{{end}}">
+      {{if .TitleID}}<a href="/library/{{.TitleID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>
+      {{else}}<a href="/manga/{{.ProviderID}}"><img class="h-full w-full object-cover" src="{{.CoverImage}}" alt="" loading="lazy"></a>{{end}}
+    </div>
+    <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{mangaTitle .Manga}}</div>
+    <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
+      <span class="truncate">{{.Format}}{{if .Chapters}} · {{.Chapters}} ch{{end}}</span>
+      <span class="shrink-0">{{if .AverageScore}}★ {{.AverageScore}}%{{end}}</span>
+    </div>
+    {{if .TitleID}}<a class="btn btn-xs btn-success btn-soft mt-auto w-full pt-0.5" href="/library/{{.TitleID}}">✓ In library</a>
+    {{else if $canAdd}}<button class="btn btn-xs btn-outline mt-auto w-full" hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.ProviderID}}","card":"1"}' hx-target="this" hx-swap="outerHTML">Add</button>
+    {{else}}<div class="mt-auto"></div>{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "sessionsCard"}}
+<div id="sessions-card" hx-get="/ui/sessions" hx-trigger="every 15s" hx-swap="outerHTML" hx-sync="this:drop">
+  {{if not .}}
+  <p class="py-2 text-sm text-base-content/60">No active sessions.</p>
+  {{else}}
+  <div class="divide-y divide-line/25 overflow-hidden rounded-xl bg-base-100">
+    {{range .}}
+    <div class="flex items-center gap-3 p-3">
+      {{if .Online}}<span class="badge badge-success badge-soft badge-sm shrink-0">online</span>
+      {{else}}<span class="badge badge-ghost badge-sm shrink-0" title="Last seen">{{.LastSeen}}</span>{{end}}
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-baseline gap-x-2 text-sm">
+          <span class="font-medium">{{.Username}}</span>
+          <span class="text-base-content/50">{{.Device}}</span>
+        </div>
+        <div class="flex max-sm:flex-col truncate text-xs text-base-content/50">
+          <span>{{.IP}} · signed in {{.SignedIn}}</span>
+          {{if .Reading}}<span class="max-sm:hidden"> · </span><span class="text-primary">Reading {{.Reading}}</span>{{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "titleContent"}}
+<div id="title-content" {{if .Attaching}}hx-get="/ui/library/{{.Title.ID}}/content?tab=volumes" hx-trigger="load delay:3s" hx-swap="outerHTML" hx-sync="this:drop"{{end}}>
+  <div class="flex sm:items-center justify-between gap-2 mt-6 mb-3 max-sm:flex-col">
+    <div class="flex items-center gap-4">
+      <button class="text-sm font-semibold uppercase tracking-wide {{if eq .Tab "chapters"}}text-base-content{{else}}text-base-content/40 hover:text-base-content/70{{end}}"
+        hx-get="/ui/library/{{.Title.ID}}/content?tab=chapters" hx-target="#title-content" hx-swap="outerHTML">{{.ChapterCount}} Chapters</button>
+      {{if or .VolumeCount .Attaching}}
+      <button class="text-sm font-semibold uppercase tracking-wide {{if eq .Tab "volumes"}}text-base-content{{else}}text-base-content/40 hover:text-base-content/70{{end}}"
+        hx-get="/ui/library/{{.Title.ID}}/content?tab=volumes" hx-target="#title-content" hx-swap="outerHTML">{{.VolumeCount}} Volumes</button>
+      {{end}}
+    </div>
+    <div class="flex sm:items-center gap-2 max-sm:flex-col">
+      {{if eq .Tab "volumes"}}
+      {{if .VolumeCount}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}?mode=volumes">{{.VolumeReadLabel}}</a>{{end}}
+      {{else if gt .Title.CompletedCount 0}}<a class="btn btn-primary max-sm:w-full" href="/reader/{{.Title.ID}}">{{.ReadLabel}}</a>{{end}}
+      <details class="dropdown dropdown-end max-sm:w-full">
+        <summary class="btn btn-outline max-sm:w-full">Bulk mark</summary>
+        {{if eq .Tab "volumes"}}
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/volumes/range" hx-target="#title-content" hx-swap="outerHTML">
+        {{else}}
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/range" hx-target="#chapters-table" hx-swap="outerHTML">
+        {{end}}
+          <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
+          <div class="join"><button class="btn btn-sm join-item grow" name="action" value="read">Mark read</button><button class="btn btn-sm btn-ghost join-item grow" name="action" value="unread">Unread</button></div>
+        </form>
+      </details>
+      {{if ne .Tab "volumes"}}
+      <details class="dropdown dropdown-end max-sm:w-full">
+        <summary class="btn btn-outline max-sm:w-full">Bulk download</summary>
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" method="get" action="/ui/library/{{.Title.ID}}/chapters/download" target="_blank" rel="noopener">
+          <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
+          <button class="btn btn-sm">Download .zip</button>
+          <p class="text-xs text-base-content/50">Whole chapter numbers. In the installed app, downloads open in Safari.</p>
+        </form>
+      </details>
+      {{if .CanManage}}
+      <details class="dropdown dropdown-end max-sm:w-full">
+        <summary class="btn btn-outline max-sm:w-full">Bulk delete</summary>
+        <form class="dropdown-content card card-sm bg-base-200 z-20 mt-1 w-64 shadow-lg p-3 grid gap-2" hx-post="/ui/library/{{.Title.ID}}/chapters/delete-range" hx-target="#chapters-table" hx-swap="outerHTML" hx-confirm="Remove downloaded files for chapters in this range? They will show as missing.">
+          <div class="join"><input name="from" class="input input-sm join-item w-full" inputmode="numeric" placeholder="from" required><input name="to" class="input input-sm join-item w-full" inputmode="numeric" placeholder="to" required></div>
+          <button class="btn btn-sm btn-error">Remove from disk</button>
+          <p class="text-xs text-base-content/50">Whole chapter numbers. Files are deleted; chapters become missing.</p>
+        </form>
+      </details>
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+
+  {{if eq .Tab "volumes"}}
+  {{if .Attaching}}
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Attaching volumes…</div>
+  {{end}}
+  {{if .Volumes}}
+  <div class="divide-y divide-line/25 rounded-xl bg-base-100 px-4">
+    {{range .Volumes}}
+    <div class="flex items-center gap-3 py-2">
+      <a href="/reader/{{.TitleID}}?mode=volumes&chapter={{.ID}}" class="shrink-0"><img class="h-14 w-10 rounded object-cover bg-base-300" src="/ui/volumes/{{.ID}}/cover?v={{if .CustomCover}}c{{else}}t{{end}}" alt="" loading="lazy"></a>
+      <div class="min-w-0 flex-1">
+        <a class="link link-hover text-sm font-medium" href="/reader/{{.TitleID}}?mode=volumes&chapter={{.ID}}">{{if .Label}}Vol. {{.Label}}{{end}}{{if and .Label .Name}} — {{end}}{{.Name}}</a>
+        <div class="text-xs text-base-content/50">{{if .Pages}}{{.Pages}} pages · {{end}}{{.Size}}</div>
+      </div>
+      <span class="w-10 shrink-0 text-right text-sm tabular-nums text-base-content/60 cursor-help" {{if .ReadTip}}title="{{.ReadTip}}"{{end}}>{{.Percent}}%</span>
+      {{if .Read}}
+      <button class="btn btn-ghost btn-xs btn-square text-success [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/unread" hx-target="#title-content" hx-swap="outerHTML" aria-label="Mark unread" title="Read — click to mark unread">{{template "iconEye"}}</button>
+      {{else}}
+      <button class="btn btn-ghost btn-xs btn-square text-base-content/40 [&_svg]:size-3.5" hx-post="/ui/volumes/{{.ID}}/read" hx-target="#title-content" hx-swap="outerHTML" aria-label="Mark read" title="Unread — click to mark read">{{template "iconEyeOff"}}</button>
+      {{end}}
+      <details class="dropdown dropdown-end">
+        <summary class="btn btn-ghost btn-xs btn-square" aria-label="Volume actions">{{template "iconDots"}}</summary>
+        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
+          <li><label>{{template "iconEdit"}}Upload cover
+            <input type="file" name="cover" accept="image/*" class="hidden"
+              hx-post="/ui/volumes/{{.ID}}/cover" hx-encoding="multipart/form-data" hx-target="#title-content" hx-swap="outerHTML" hx-trigger="change">
+          </label></li>
+          {{if .CustomCover}}<li><button hx-post="/ui/volumes/{{.ID}}/cover/reset" hx-target="#title-content" hx-swap="outerHTML">{{template "iconRefresh"}}Use first page as cover</button></li>{{end}}
+        </ul>
+      </details>
+    </div>
+    {{end}}
+  </div>
+  {{else if not .Attaching}}
+  <p class="py-3 text-base-content/60">No volumes yet — attach a folder from the Import page.</p>
+  {{end}}
+
+  {{else}}
+  <form class="mb-2 flex items-center gap-2"
+    hx-get="/ui/library/{{.Title.ID}}/chapters" hx-target="#chapters-table" hx-swap="outerHTML"
+    hx-trigger="change, keyup changed delay:300ms from:input[name='q']">
+    <input class="input input-sm w-full" name="q" placeholder="Filter chapters…">
+    <select class="select select-sm shrink-0" name="order" aria-label="Sort chapters">
+      <option value="number-asc">Oldest first</option>
+      <option value="number-desc">Newest first</option>
+      <option value="label-asc">Label ↑</option>
+      <option value="label-desc">Label ↓</option>
+      <option value="read-asc">Least read</option>
+      <option value="read-desc">Most read</option>
+      <option value="missing-asc">Missing first</option>
+    </select>
+  </form>
+  {{template "chaptersList" .ChaptersTable}}
+  {{if .CanManage}}
+  <dialog id="chapter_rename_modal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="text-lg font-bold mb-3">Rename chapter</h3>
+      <div id="chapter-rename-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+  {{end}}
+  {{end}}
+</div>
+{{end}}

@@ -1,0 +1,16 @@
+id: mangatown
+name: MangaTown
+domains:
+  - mangatown.com
+  - www.mangatown.com
+  - zjcdn.mangahere.org
+base_url: https://www.mangatown.com/
+sample_manga_url: https://www.mangatown.com/manga/jujutsu_kaisen/
+search_url: https://www.mangatown.com/search?name={query}
+scraper: generic
+allowed_extensions:
+  - jpg
+min_chapters: 270
+requires_browser_solver: false
+enabled: true
+version: "2026-06-28"

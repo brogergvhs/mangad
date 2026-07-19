@@ -13,7 +13,7 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mangad",
+	Use:   "kaodoku",
 	Short: "Manga downloader with CBZ output",
 }
 
@@ -23,8 +23,10 @@ func init() {
 }
 
 func Execute() {
+	// Cobra prints usage on flag errors; print the error once ourselves.
+	rootCmd.SilenceErrors = true
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }

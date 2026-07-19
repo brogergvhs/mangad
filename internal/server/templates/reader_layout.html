@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en" data-theme="{{.Theme}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{.Title}} · Kaodoku</title>
+  <link rel="manifest" href="/static/manifest.webmanifest?v={{assetVer}}">
+  <meta name="theme-color" content="#1e1e2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kaodoku">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <link rel="stylesheet" href="/static/app.css?v={{assetVer}}">
+  {{if .ThemeCSS}}<style>{{.ThemeCSS}}</style>{{end}}
+  <script src="/static/app.js?v={{assetVer}}" defer></script>
+</head>
+<body class="reader-body">
+  {{.Content}}
+</body>
+</html>

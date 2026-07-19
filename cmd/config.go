@@ -3,14 +3,14 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/brogergvhs/mangad/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/config"
 
 	"github.com/spf13/cobra"
 )
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage the config files for the mangad",
+	Short: "Manage the config files for the kaodoku",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, used, err := config.LoadMerged(config.Options{
 			IgnoreConfig: flagIgnoreConfig,

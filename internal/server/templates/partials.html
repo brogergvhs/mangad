@@ -1,0 +1,212 @@
+{{define "toast"}}<div class="alert {{if .OK}}alert-success{{else}}alert-error{{end}} shadow-lg"><span>{{.Msg}}</span></div>{{end}}
+
+{{define "addedButton"}}<a class="btn btn-sm btn-success btn-soft" href="/library/{{.ID}}">✓ In library</a>{{end}}
+
+{{define "addedButtonCard"}}<a class="btn btn-xs btn-success btn-soft w-full" href="/library/{{.ID}}">✓ In library</a>{{end}}
+
+{{define "matches"}}
+{{if .Active}}
+<div id="{{.DomID}}" class="flex items-center gap-2 py-2" hx-get="{{.PollURL}}" hx-trigger="load delay:1200ms" hx-swap="outerHTML">
+  <span class="loading loading-spinner loading-sm"></span> <span class="text-sm text-base-content/60">Searching sources…</span>
+</div>
+{{else}}
+<div id="{{.DomID}}">
+  {{if .Failed}}<p class="text-sm text-error">Source search failed{{if .Error}}: {{.Error}}{{end}}</p>
+  {{else if .Matches}}
+  <div class="divide-y divide-line/25">
+    {{range .Matches}}
+    <div class="flex items-center gap-3 py-2">
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-x-2 text-sm font-medium">{{.SourceID}}
+          <span class="text-xs font-normal text-base-content/50">{{.ChaptersFound}} chapters · {{confidence .Confidence}}</span>
+        </div>
+        <div class="truncate text-xs text-base-content/50" title="{{.SourceURL}}">{{.SourceURL}}</div>
+      </div>
+      <div class="shrink-0">
+        {{if eq .SourceURL $.LinkedURL}}<span class="badge badge-success badge-soft badge-sm">✓ linked</span>
+        {{else}}<button class="btn btn-sm btn-outline" hx-post="/ui/library/{{$.TitleID}}/link" hx-vals='{"match_id":{{.ID}}}'>Use</button>{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}<p class="text-sm text-base-content/60">No matching sources found yet.</p>{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "bar"}}
+<div class="flex h-1.5 w-full overflow-hidden rounded-full bg-base-300">
+  <div class="bg-success" style="width: {{.Read}}%"></div>
+  <div class="bg-primary" style="width: {{sub .Full .Read}}%"></div>
+</div>
+{{end}}
+
+{{define "progressBar"}}
+{{if gt .DiscoveredCount 0}}
+{{template "bar" bar (pct .ReadCount .DiscoveredCount) (pct .CompletedCount .DiscoveredCount)}}
+<div class="mt-1 flex flex-wrap gap-x-2 text-sm text-base-content/60">
+  <span>{{.ReadCount}}/{{.DiscoveredCount}} read</span>
+  {{if gt .MissingCount 0}}<span>· {{.MissingCount}} missing</span>{{end}}
+  {{if gt .FailedCount 0}}<span>· {{.FailedCount}} failed</span>{{end}}
+  <span>· {{humanBytes .SizeBytes}}</span>
+  {{if gt .VolumeCount 0}}<span>· {{.VolumeReadCount}}/{{.VolumeCount}} vols</span>{{end}}
+</div>
+{{else if gt .VolumeCount 0}}
+{{template "bar" bar (pct .VolumeReadCount .VolumeCount) 100}}
+<div class="mt-1 flex flex-wrap gap-x-2 text-sm text-base-content/60">
+  <span>{{.VolumeReadCount}}/{{.VolumeCount}} volumes read</span>
+  <span>· {{humanBytes .VolumeBytes}}</span>
+</div>
+{{end}}
+{{end}}
+
+{{define "favToggle"}}
+<button class="btn btn-sm btn-ghost btn-square" title="{{if .Favourite}}Favourite — click to remove{{else}}Add to favourites{{end}}" aria-label="Toggle favourite"
+  hx-post="/ui/library/{{.ID}}/favourite" hx-target="this" hx-swap="outerHTML">
+  {{if .Favourite}}<span class="text-error leading-none">{{template "iconHeartFilled"}}</span>{{else}}<span class="text-base-content/40 leading-none">{{template "iconHeart"}}</span>{{end}}
+</button>
+{{end}}
+
+{{define "monitorBadge"}}
+<span class="inline-flex h-6 w-6 items-center justify-center" title="{{if .Monitored}}Monitored{{else}}Not monitored{{end}}">
+  {{if .Monitored}}<span class="text-warning leading-none">{{template "iconBellRing"}}</span>{{else}}<span class="text-base-content/40 leading-none">{{template "iconBellOff"}}</span>{{end}}
+</span>
+{{end}}
+
+{{define "monitorToggle"}}
+<button class="btn btn-sm btn-ghost btn-square" title="{{if .Monitored}}Monitored — click to stop{{else}}Not monitored — click to monitor{{end}}" aria-label="Toggle monitoring"
+  hx-post="/ui/library/{{.ID}}/monitored" hx-vals='{"on":{{not .Monitored}}}' hx-target="this" hx-swap="outerHTML">
+  {{if .Monitored}}<span class="text-warning leading-none">{{template "iconBellRing"}}</span>{{else}}<span class="text-base-content/40 leading-none">{{template "iconBellOff"}}</span>{{end}}
+</button>
+{{end}}
+
+{{define "titleProgress"}}
+<div id="title-progress"
+  hx-get="/ui/library/{{.Title.ID}}/progress" hx-swap="outerHTML" hx-sync="this:drop"
+  hx-trigger="{{if or .Running .Queued}}load delay:4s, {{end}}title-job-started from:body">
+  {{template "progressBar" .Title}}
+</div>
+{{end}}
+
+{{define "titleActivity"}}
+<div id="act-{{.Title.ID}}" {{if .Running}}hx-get="/ui/library/{{.Title.ID}}/activity" hx-trigger="load delay:1200ms" hx-swap="outerHTML"{{end}}>
+  {{if or .ActiveLabel .Queued}}
+  <div class="alert py-2">
+    {{if .ActiveLabel}}<span class="loading loading-spinner loading-sm"></span><span class="text-sm">{{.ActiveLabel}}…</span>{{end}}
+    {{if .Queued}}{{if .ActiveLabel}}<span class="text-base-content/40">·</span>{{end}}<span class="text-base-content/60">{{template "iconClock"}}</span><span class="text-sm text-base-content/60">queued: {{range $i, $q := .Queued}}{{if $i}} · {{end}}{{$q}}{{end}}</span>{{end}}
+  </div>
+  {{else if .Failed}}<div class="alert alert-error alert-soft py-2"><span class="text-sm">failed{{if .Error}} — {{.Error}}{{end}}</span></div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sourcesTable"}}
+<div id="sources-table" class="rounded-xl">
+<table class="table table-rounded">
+  {{range .}}{{template "sourceRow" sourceRow .}}{{end}}</table>
+</div>
+{{end}}
+
+{{define "sourceRow"}}
+<tbody id="src-{{.Source.ID}}" {{if .Active}}hx-get="/ui/sources/{{.Source.ID}}/row" hx-trigger="load delay:1500ms" hx-swap="outerHTML"{{end}}>
+<tr class="row-toggle" data-target="det-src-{{.Source.ID}}">
+  <td class="w-6"><span class="caret text-base-content/50">{{template "iconChevron"}}</span></td>
+  <td class="min-w-0"><span class="font-medium">{{.Source.Name}}</span><div class="truncate max-w-40 text-xs text-base-content/50">{{range .Source.Domains}}{{.}} {{end}}</div></td>
+  <td>{{if .Active}}<span class="loading loading-spinner loading-xs"></span> <span class="text-sm">verifying</span>{{else if not .Source.Enabled}}<span class="badge badge-ghost badge-sm">disabled</span>{{else}}{{template "sourceStatusBadge" .Source.Status}}{{end}}</td>
+  <td class="max-sm:hidden">{{.Source.ChaptersFound}}<div class="text-xs text-base-content/50">{{.Source.SampleImagesFound}} imgs</div></td>
+  <td class="text-sm max-sm:hidden">{{orDash .Source.ChapterFetch}} / {{orDash .Source.ImageFetch}}</td>
+  <td class="text-right">
+    <details class="dropdown dropdown-end">
+      <summary class="btn btn-sm btn-ghost btn-square" aria-label="Source actions">{{template "iconDots"}}</summary>
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-48 p-2 shadow-lg border border-base-300">
+        <li><button hx-post="/ui/sources/{{.Source.ID}}/verify" hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML" {{if not .Source.Enabled}}disabled{{end}}>{{template "iconVerify"}}Verify</button></li>
+        <li><button hx-get="/ui/sources/{{.Source.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
+        <li><button {{if .Source.Enabled}}class="text-error" {{end}}hx-post="/ui/sources/{{.Source.ID}}/enabled" hx-vals='{"on":"{{if .Source.Enabled}}false{{else}}true{{end}}"}' hx-target="#src-{{.Source.ID}}" hx-swap="outerHTML">{{template "iconPower"}}{{if .Source.Enabled}}Disable{{else}}Enable{{end}}</button></li>
+        {{if eq .Source.Origin "local"}}<li><button class="text-error" hx-post="/ui/sources/{{.Source.ID}}/delete" hx-target="#sources-table" hx-swap="outerHTML" hx-confirm="Delete this source? Titles linked to it keep their chapters but lose the source.">{{template "iconTrash"}}Delete</button></li>{{end}}
+      </ul>
+    </details>
+  </td>
+</tr>
+<tr id="det-src-{{.Source.ID}}" class="bg-base-200" hidden>
+  <td colspan="6">{{template "sourceSteps" .Source}}</td>
+</tr>
+</tbody>
+{{end}}
+
+{{define "sourceStatusBadge"}}
+{{- if eq . "healthy"}}<span class="badge badge-success badge-soft">healthy</span>
+{{- else if eq . "degraded"}}<span class="badge badge-warning badge-soft">degraded</span>
+{{- else if eq . "requires_cf"}}<span class="badge badge-info badge-soft">requires cf</span>
+{{- else if eq . "broken"}}<span class="badge badge-error badge-soft">broken</span>
+{{- else}}<span class="badge badge-ghost">{{orUnknown .}}</span>{{end -}}
+{{end}}
+
+{{define "sourceSteps"}}
+{{if .VerifySteps}}
+<div class="steps-line my-2">
+  {{range .VerifySteps}}
+  <div class="step-item {{.Status}}">
+    <div class="dot">{{if eq .Status "ok"}}✓{{else if eq .Status "failed"}}✕{{else}}○{{end}}</div>
+    <div class="text-xs mt-1">{{.Name}}</div>
+    {{if .Detail}}<div class="text-xs text-base-content/50 max-w-56 break-all">{{.Detail}}</div>{{end}}
+  </div>
+  {{end}}
+</div>
+{{range .VerifySteps}}{{if .Log}}
+<div class="mt-2"><span class="badge badge-error badge-soft badge-sm">{{.Name}}</span><pre class="mt-1 rounded bg-base-300 p-2 text-xs whitespace-pre-wrap break-all">{{.Log}}</pre></div>
+{{end}}{{end}}
+{{else if .LastError}}<pre class="rounded bg-base-300 p-2 text-xs whitespace-pre-wrap break-all">{{.LastError}}</pre>
+{{else}}<p class="text-sm text-base-content/60 my-2">Not verified yet — run Verify to see the pipeline.</p>{{end}}
+{{if .LastCheckedAt}}<div class="text-xs text-base-content/50 mt-1">Last checked: {{.LastCheckedAt}}</div>{{end}}
+{{end}}
+
+{{define "sourceEdit"}}
+<dialog class="modal modal-open" id="source-edit-modal">
+  <div class="modal-box max-w-xl">
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-bold">Edit {{.Name}}</h3>
+      <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="document.getElementById('source-edit-modal').remove()">✕</button>
+    </div>
+    {{if ne .Origin "local"}}<p class="text-sm text-base-content/60 mt-1">Editing a built-in source saves it as a local override; remove the override to revert.</p>{{end}}
+    <form class="mt-3 grid gap-3" hx-post="/ui/sources/{{.ID}}/edit" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Name</span><input class="input w-full" name="name" value="{{.Name}}"></label>
+      <label class="fieldset"><span class="fieldset-legend">Site base URL</span><input class="input w-full" name="base_url" value="{{.BaseURL}}" required></label>
+      <label class="fieldset"><span class="fieldset-legend">Sample manga URL</span><input class="input w-full" name="manga_url" value="{{.SampleMangaURL}}" required></label>
+      <label class="fieldset"><span class="fieldset-legend">Search URL ({query} placeholder)</span><input class="input w-full" name="search_url" value="{{.SearchURL}}"></label>
+      <label class="fieldset"><span class="fieldset-legend">Domains (comma-separated)</span><input class="input w-full" name="domains" value="{{range $i, $d := .Domains}}{{if $i}}, {{end}}{{$d}}{{end}}"></label>
+      <label class="fieldset"><span class="fieldset-legend">Image types (comma-separated)</span><input class="input w-full" name="extensions" value="{{range $i, $e := .AllowedExtensions}}{{if $i}}, {{end}}{{$e}}{{end}}"></label>
+      <label class="fieldset"><span class="fieldset-legend">Preferred languages (comma-separated)</span><input class="input w-full" name="languages" value="{{range $i, $l := .Languages}}{{if $i}}, {{end}}{{$l}}{{end}}" placeholder="en"><span class="label">For multi-language sources (MangaDex): ISO codes in preference order, e.g. en, it.</span></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="fieldset"><span class="fieldset-legend">Pages fetch</span>
+          <select class="select w-full" name="chapter_fetch">
+            <option value="" {{if eq .ChapterFetch ""}}selected{{end}}>auto</option>
+            <option value="http" {{if eq .ChapterFetch "http"}}selected{{end}}>http</option>
+            <option value="solver" {{if eq .ChapterFetch "solver"}}selected{{end}}>solver (FlareSolverr)</option>
+          </select>
+        </label>
+        <label class="fieldset"><span class="fieldset-legend">Images fetch</span>
+          <select class="select w-full" name="image_fetch">
+            <option value="" {{if eq .ImageFetch ""}}selected{{end}}>auto</option>
+            <option value="http" {{if eq .ImageFetch "http"}}selected{{end}}>http</option>
+            <option value="browser" {{if eq .ImageFetch "browser"}}selected{{end}}>browser (Selenium)</option>
+          </select>
+        </label>
+      </div>
+      <label class="fieldset"><span class="fieldset-legend">Scraper</span>
+        <select class="select w-full" name="scraper">
+          {{$cur := .Scraper}}{{range .Scrapers}}<option value="{{.}}" {{if eq . $cur}}selected{{end}}>{{.}}</option>{{end}}
+        </select><span class="label">How chapter lists are read; generic fits most sites.</span>
+      </label>
+      <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="single_manga" {{if .SingleManga}}checked{{end}}> Single manga source (no search)</label>
+      <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="chapterless" {{if .Chapterless}}checked{{end}}> No chapters — each manga page holds its images directly</label>
+      <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="nsfw" {{if .NSFW}}checked{{end}}> NSFW-only source (hidden from users without adult access)</label>
+      <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="enabled" {{if .Enabled}}checked{{end}}> Enabled</label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('source-edit-modal').remove()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <div class="modal-backdrop" onclick="document.getElementById('source-edit-modal').remove()"></div>
+</dialog>
+{{end}}

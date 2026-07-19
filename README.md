@@ -1,171 +1,180 @@
-MangaD 
-=============================================
+# Kaodoku
 
-[![Go Report Card][go report card]][go report]
+A self-hosted manga server. Point it at the sites you read, add the titles you
+want, and Kaodoku keeps them downloaded — fetching new chapters as they release
+and storing everything as CBZ on your own disk. It ships a web UI to browse,
+read, and track your progress, optionally syncing your AniList account.
 
-A shmol CLI manga downloader. Made to download manga from your liked websites as cbz files and read it offline.
+It is *your* library on *your* server: nothing is streamed from or to third parties
+at read time, and your files stay portable CBZ you can take anywhere.
 
-Inspiration and Goal
---------
+## What it does
 
-Insired by this [manga-downloader](https://github.com/elboletaire/manga-downloader). As good as it gets, eventually I wanted more customizability and generality, which is the goal of MangaD.
+- **Automatic downloads.** Add a title and Kaodoku discovers its chapters and
+  downloads the missing ones. A scheduler keeps checking for and pulling new
+  releases, so your library stays current without manual work.
+- **Read in the browser.** A built-in long-strip reader integrated into the UI.
+  Both chapters and volumes are supported.
+- **Track your progress.** Automatic reading state per user through the reader.
+  If you are a veteran who has been using AniList for a while and don't want to
+  lose anything - connect the personal account to sync progress both ways.
+- **Organize.** Saved library "screens" (filtered views), and Collections that
+  group titles by shared author, by AniList relations (sequels/side-stories), or
+  into your own custom lists.
+- **Multi-user.** An admin manages users and roles; each user gets their own
+  reading progress, favourites, AniList link, and content guards (block tags,
+  genres or adult titles).
+- **Import what you already have.** Point it at existing folders of `.cbz` files
+  and track them as titles.
+- **Handles hard sites.** Optional Cloudflare solving (FlareSolverr) and a
+  headless-browser worker for JavaScript-rendered readers.
 
-Of course it might not work as great on specific websites that are customly implemented in other loaders like the above mentioned one, but it should provide the user with the ability to download from most of the needed websites.
+## How it works
 
-Usage
--------
+Kaodoku is a single Go binary that serves the web UI and runs a background job
+scheduler. State lives in one SQLite database. Downloaded chapters are written
+as CBZ files under a downloads directory you mount.
 
-The **mangad** executable should be run as:
+The download pipeline, per tracked title:
 
-~~~cmd
-mangad <COMMAND> <Optional: sub-command> [Command flags + global flags in random order]
-~~~
+1. **Discover** — the linked source is scraped for the chapter list.
+2. **Download** — missing chapters are fetched and packed into CBZ.
+3. **Scan** — files on disk are indexed so the library reflects reality.
 
-The execution must contain at least *1 command* and a maximum of *1 sub-command*.
+Sources are scraper backends for the sites you read, built on five scraper
+engines: `mangadex`, `madara` and `iken` (site templates), `comickz`, and a
+`generic` scraper that handles many other sites. Title metadata, search, and
+relations come from AniList (available without linking an account, through their
+public API).
 
-**Commands**:
+### Built-in sources
 
-~~~cmd
-config      Manage the config files for mangad donwload
-download    Download the manga CBZ files with a specific configuration
-completion  Generate the autocompletion script for the specified shell
-help        Help about any command
-version     Show the mangad version
-~~~
+Kaodoku ships 15 ready-to-use sources; you can also add your own on top of that
+in the web UI or configs.
 
----
+### Helper services
 
-**Global flags**:
+Two optional services make difficult sites work:
 
-~~~cmd
-    --debug           Enable debug logging
--h, --help            Help for mangad. Can also be used on Commands. Interchangable with the `help` command
-    --ignore-config   Ignore config and use only CLI flags
-~~~
+- **FlareSolverr** — clears Cloudflare challenges.
+- **browser-worker** (+ Selenium/Chromium) — renders JS-heavy reader pages so
+  their images can be extracted.
 
----
+They only matter for sources that declare a need for them, so you can run a
+lighter stack and still use most built-ins:
 
-**Config** sub-commands:
+- **Without FlareSolverr** (browser-worker only): 14 of 15 built-ins work.
+- **Without the browser-worker** (FlareSolverr only): 12 of 15 work.
 
-~~~cmd
-            If non is passed, the current non-empty values are printed
-init        Create the Default config
-add         Create a new config
-list        List all available configs
-reset       Reset the current config to default values
-switch      Switch to a different configuration profile
-edit        Edit current or a config by label (optional: <config_label>)
-remove      Remove a config by label (<config_label>)
-rename      Rename an existing labeled config (<old_label> <new_label>)
-~~~
+Sources you add yourself may need one or both of these depending on the site.
 
-e.g. `mangad config init` or `mangad config switch Test`
+## Quick start (Docker Compose)
 
----
+The recommended way to run Kaodoku is Docker Compose. A working example with all
+services wired up is in [`docker-compose.example.yml`](docker-compose.example.yml).
 
-**Completion** sub-commands:
+```bash
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d --build
+```
 
-~~~cmd
-bash        Generate the autocompletion script for bash
-fish        Generate the autocompletion script for fish
-powershell  Generate the autocompletion script for powershell
-zsh         Generate the autocompletion script for zsh
-~~~
+Open <http://127.0.0.1:8080>.
 
-e.g. `mangad completion zsh`
+By default the example binds only to `127.0.0.1` (local machine). 
 
-----------------------------------------------------------
+### Single-user vs. accounts
 
-**Donwload** flags:
+- **No login (default).** If `KAODOKU_ADMIN_PASSWORD` is unset, Kaodoku runs
+  single-user with no sign-in.
+- **Accounts.** Set `KAODOKU_ADMIN_USER` and `KAODOKU_ADMIN_PASSWORD` to enable
+  sign-in. That environment admin is immutable in-app and manages further users,
+  roles, and permissions from the **Users** page. Each user then has their own
+  progress, favourites, AniList connection, and content guards.
 
-~~~cmd
---url string             Required. manga series (not chapter) page URL
+## Using it
 
---chapter       string   Download chapter by LABEL (e.g. 5 or 28.5)
---range         string   Download range of chapters by INDEX (e.g. 5-12)
---exclude-range string   Exclude range of chapters by INDEX (e.g. 5-12)
---list          string   Download specific chapter INDICES (e.g. 1,3,5)
---exclude-list  string   Exclude specific chapter INDICES (e.g. 1,3,5)
---allow-ext string       Allowed image extensions (e.g. "webp|jpg|png")
+Once the server is up:
 
---output string          Output folder for CBZ files
+1. **Add a source.** Go to **Sources** and configure the site(s) you download
+   from. A source tells Kaodoku which scraper to use and where to fetch from.
+2. **(Optional) Connect AniList.** In **Settings**, register an AniList API
+   application (client id/secret) to enable personal-list sync. This is done
+   once and then each user then connects their own AniList account from Settings.
+3. **Add titles.** Use **Search** to find titles and add it to the
+   library, then link it to one of your sources so chapters can be discovered.
+   Already have files? Use **Import** to track existing `.cbz` folders.
+4. **Let it download.** The scheduler discovers and downloads chapters in the
+   background; you can also trigger "Download missing", "Refresh chapters", or
+   "Scan files" per title from its actions menu. Watch progress under
+   **Management → jobs**.
+5. **Read and track.** Open a title and read. Progress is saved
+   automatically; mark chapters read/unread, export a chapter or a range as
+   CBZ/ZIP, and organize titles into Collections. If AniList is connected, your
+   progress syncs.
 
---dry-run                Show what would be downloaded, don’t actually download
---chapter-workers int    Amount of parallel chapters to download (default 2)
---image-workers   int    Amount of parallel images to download per chapter (default 5)
---check-js               Tries a generic JS scanning & dynamic AJAX endpoint discovery
-                         try if the images are loaded in a post-load script
---with-cf                Allow using embedded Selenium fallback when Cloudflare blocks requests
-                         requires a working 'python3' executable with SeleniumBase installed
+### Content guards & AniList (per user)
 
---keep-folders           Keep temporary folders with images that were used for CBZ conversion
---skip-broken            Skip failed images instead of failing the whole chapter
+Users can be restricted to hide adult titles and block specific tags/genres —
+guarded titles are hidden throughout the app. AniList sync respects this: only
+titles a user is allowed to view are synced, and a user's list is only
+auto-populated with titles they added themselves or have actually started
+reading. Titles others added can still be planned manually from the title's
+"Sync AniList" action.
 
---cookie      string     Cookie string, e.g. "key=value; other=123"
---cookie-file string     Path to a text file with cookies (one header line)
---user-agent  string     Override User-Agent
-~~~
+## Configuration
 
-e.g. `mangad download --url https://www.gachiakuta.net/ --range 1-20 --exclude-list 4,9,18`
+Configuration is via environment variables (see the compose example) and a few
+`serve` flags. All are optional; sensible defaults apply.
 
-The LABEL and INDEX in the `range`/`list`/`chapter` flags are reffering to the indeces of chapters in the array of all found chapters and numerical label of a chapter found on the website respectfully.
+### Environment variables
 
-E.g. having 2 chapters with the buttons "Ch. 140" and "Ch. 140-2", to download the "Ch. 140-2" we could either add `--chapter 140-2` or `--list 2` (considering those are the only 2 chapters).
+| Variable | Purpose |
+| --- | --- |
+| `KAODOKU_ADMIN_USER` / `KAODOKU_ADMIN_PASSWORD` | Enable sign-in and define the environment admin. Unset = single-user, no login. |
+| `KAODOKU_DOWNLOAD_DIR` | Where CBZ files are written (mount a volume here). |
+| `KAODOKU_DB` | SQLite database path (the `--db` flag takes precedence). |
+| `KAODOKU_ENCRYPTION_KEY` | 64 hex chars; encrypts stored secrets (AniList tokens). If unset, a `kaodoku.key` is generated next to the database. |
+| `KAODOKU_BROWSER_SOLVER_ENABLED` / `_ENDPOINT` / `_TIMEOUT_SECONDS` | FlareSolverr for Cloudflare-protected sites. |
+| `KAODOKU_BROWSER_DOWNLOADER_ENABLED` / `_ENDPOINT` / `_TIMEOUT_SECONDS` | Headless-browser worker for JS-rendered readers. |
+| `XDG_CONFIG_HOME` | Config directory (source definitions, profiles). |
 
-The `chapter` flag will be improved in the future to actually allow full names of chapters, not only numerical parts.
+### `serve` flags
 
-----
+```
+--addr            HTTP listen address (default 127.0.0.1:8080)
+--db              SQLite database path
+--refresh-every   Discover-new-chapters schedule, e.g. 1h (0 disables)
+--download-every  Download-missing schedule, e.g. 10m (0 disables)
+--scan-every      File-scan schedule, e.g. 30m (0 disables)
+--run-every       Job-runner tick interval, e.g. 5s
+```
 
-**version** command doesn't have any specific flags or sub-commands. Just prints out the version.
+Schedules can also be set from **Settings** in the UI; the UI values take over
+once configured.
 
------
+## Build from source
 
-Config
-------
+Requires Go 1.26+.
 
-As you could see, there are quite a bunch of config sub-commands.
+```bash
+go build -o kaodoku ./main.go
+./kaodoku serve --addr :8080 --db ./kaodoku.db
+```
 
-That’s because, in my humble (and definitely not biased) opinion, managing configuration parameters through the CLI is both inefficient and unnecessarily painful.
+Most built-in sources work with just the binary. The few that need FlareSolverr
+or the browser-worker (see [Built-in sources](#built-in-sources)) require those
+services running and pointed at via the `KAODOKU_BROWSER_*` variables above; the
+Compose file wires all of them up.
 
-All the config files are by default `.yaml` and are saved into:
-- Linux/Mac: either `XDG_CONFIG_HOME/mangad/configs/` or `~/.config/mangad/configs/`
-- Windows: `APPDATA\mangad\configs`
+## CLI one-off downloads
 
-`config init` also creates a `current_config` file in the `/mangad` directory, together with the `configs/Default.yaml`.
+Kaodoku started as a CLI downloader and still supports one-off grabs without the
+server:
 
-After this is done, we can `switch` between configs, fully eliminating the CLI flags, which is useful when downloading from the same website multiple times over.
+```bash
+kaodoku download --url "https://example.com/series/some-manga" \
+  --chapter 5 --output ./out --allow-ext "jpg,webp"
+```
 
-Also helps with history to not spam that `up` key in searh of the needed command.
-
-Download --with-cf and --check-js flags
------
-
-These are the fun ones.
-
-`--check-js` came into existance after stumbling on some websites that would post-load the image urls after the initial HTML response from AJAX scripts.
-
-It enables scanning all <script> tags for patterns like `fetch("/ajax/...")` or `axios.get("/api/...")`, and then probes those endpoints automatically.
-
-It won’t handle obfuscated, dynamically built, or event-triggered scripts.
-
----
-
-`--with-cg` solves the CF guard on the protected pages.
-
-It is run with an embedded `python` script cause I couldn't be bothered (for now at least) to roll a proper solver in `go`.
-
-Inherently, to be able to use the feature you'll need a `python3` executable in your path and the `SeleniumBase` lib installed (`pip install seleniumbase`).
-
-In the future the plan is to add a `--force-cf` flag that will basically provide a much more robust `--check-js` behaviour by actually getting all the post-load scripts executed.
-
-Contributing
----
-
-PRs are always welcome :)
-
-Unless it's absolutely necessary, I want to avoid website-specific implementations, so those have a higher chance of being turned down.
-
-
-
-[go report]: https://goreportcard.com/report/github.com/brogergvhs/mangad
-[go report card]: https://goreportcard.com/badge/github.com/brogergvhs/mangad
+Run `kaodoku help` (or `kaodoku <command> --help`) for the full command and flag
+reference. For everyday use, the self-hosted server above is the intended path.

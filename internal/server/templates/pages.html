@@ -1,0 +1,1133 @@
+{{define "home"}}
+{{range .Rows}}
+<h2 class="mb-2 mt-6 first:mt-0 text-sm font-semibold uppercase tracking-wide text-base-content/60">{{.Heading}}</h2>
+<div class="flex gap-3 overflow-x-auto">
+  {{range .Cards}}
+  <a href="{{.Href}}" class="w-40 shrink-0">
+    <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300">
+      <img class="h-full w-full object-cover" src="{{.Cover}}" alt="" loading="lazy">
+    </div>
+    <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight">{{.Title}}</div>
+    <div class="mt-0.5 text-xs text-base-content/50">{{.Sub}}</div>
+    {{if ge .Percent 0}}<div class="mt-1">{{template "bar" bar .Percent 100}}</div>{{end}}
+  </a>
+  {{end}}
+</div>
+{{end}}
+{{if not .Rows}}
+{{if .User.Can "library.view"}}
+<p class="py-4 text-base-content/60">Nothing here yet — add manga from Search or Import, and your reading activity will build this page.</p>
+{{end}}
+{{end}}
+<h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-base-content/60">Suggested for you</h2>
+<div hx-get="/ui/search/trending" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading suggestions…</div>
+</div>
+{{end}}
+
+{{define "dashboard"}}
+{{if .User.Can "stats.view"}}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Stats</h2>
+<div class="stats bg-base-100 w-full mb-6">
+  <div class="stat"><div class="stat-title">Tracked titles</div><div class="stat-value text-3xl">{{len .Titles}}</div></div>
+  <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.TotalChaps}}</div><div class="stat-desc">{{missingTotal .Titles}} missing</div></div>
+  <div class="stat"><div class="stat-title">Volumes</div><div class="stat-value text-3xl">{{.TotalVols}}</div></div>
+  <div class="stat"><div class="stat-title">Library size</div><div class="stat-value text-3xl">{{humanBytes .TotalBytes}}</div><div class="stat-desc">{{.TotalPages}} pages</div></div>
+  <div class="stat"><div class="stat-title">Sources healthy</div><div class="stat-value text-3xl">{{healthyCount .Sources}}<span class="text-base-content/40">/{{len .Sources}}</span></div></div>
+</div>
+{{end}}
+{{if .User.Can "services.view"}}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
+<div id="services-health" hx-get="/ui/health" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Checking services…</div>
+</div>
+{{end}}
+{{if .User.Can "sessions.view"}}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Sessions</h2>
+<div id="sessions-card" hx-get="/ui/sessions" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading sessions…</div>
+</div>
+{{end}}
+{{if .User.Can "jobs.view"}}
+<div class="mt-6 mb-2 flex items-center justify-between">
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Recent jobs</h2>
+  {{if .User.Can "jobs.manage"}}<button class="btn btn-sm btn-outline" onclick="job_start_modal.showModal()">Start a new job</button>{{end}}
+</div>
+<div hx-get="/ui/jobs/table" hx-trigger="load"></div>
+{{if .User.Can "jobs.manage"}}
+<dialog id="job_start_modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="text-lg font-bold mb-3">Start a job</h3>
+    <div class="grid gap-2">
+      {{range globalJobs}}
+      <button class="btn btn-outline justify-start" hx-post="/ui/jobs/start" hx-vals='{"type": "{{.Type}}"}' hx-target="#jobs-table" hx-swap="outerHTML" onclick="job_start_modal.close()">{{.Label}}</button>
+      {{end}}
+    </div>
+    <div class="modal-action"><button class="btn btn-ghost" onclick="job_start_modal.close()">Cancel</button></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "servicesHealth"}}
+<div id="services-health" class="overflow-x-auto rounded-xl" hx-get="/ui/health" hx-trigger="every {{.Interval}}" hx-swap="outerHTML">
+  <table class="table">
+    <tbody>
+    {{range .Services}}
+    <tr>
+      <td class="min-w-0">
+        <span class="font-medium">{{.Name}}</span>
+        <div class="truncate max-w-60 text-xs text-base-content/50">{{orDash .Endpoint}}</div>
+      </td>
+      <td class="align-middle whitespace-nowrap">
+        {{if not .Enabled}}<span class="badge badge-ghost badge-sm">disabled</span>
+        {{else if .Healthy}}<span class="badge badge-success badge-soft badge-sm">healthy</span>
+        {{else}}<span class="badge badge-error badge-soft badge-sm">unreachable</span>{{end}}
+        {{if .Error}}<div class="text-xs text-base-content/50 max-w-md break-all">{{.Error}}</div>{{end}}
+      </td>
+    </tr>
+    {{else}}<tr><td colspan="2" class="text-base-content/60">No services configured.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+{{define "search"}}
+<form id="search-form" class="mb-4 grid gap-3" hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML" hx-indicator="#search-spin"
+  hx-trigger="submit, change[event.target.name && event.target.name !== 'q'], keyup changed delay:400ms from:input[name='q']">
+  <input type="checkbox" id="search-filters" class="peer sr-only">
+  <div class="flex items-center gap-2">
+    <input name="q" class="input w-full" placeholder="Search AniList…" value="{{.Controls.Q}}" autofocus>
+    <select name="view" class="select w-28 shrink-0" aria-label="Results view">
+      <option value="cards" {{if eq .Controls.View "cards"}}selected{{end}}>Cards</option>
+      <option value="table" {{if eq .Controls.View "table"}}selected{{end}}>Table</option>
+      <option value="full" {{if eq .Controls.View "full"}}selected{{end}}>Full</option>
+    </select>
+    <label for="search-filters" class="btn btn-outline shrink-0">Filters {{template "iconChevron"}}</label>
+  </div>
+  <div class="hidden peer-checked:grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <label class="fieldset"><span class="fieldset-legend">Sort</span>
+      <select name="sort" class="select select-sm w-full">
+        <option value="" {{if eq .Controls.Sort ""}}selected{{end}}>Relevance</option>
+        <option value="rating" {{if eq .Controls.Sort "rating"}}selected{{end}}>Rating</option>
+        <option value="title" {{if eq .Controls.Sort "title"}}selected{{end}}>Title</option>
+        <option value="year" {{if eq .Controls.Sort "year"}}selected{{end}}>Year</option>
+        <option value="chapters" {{if eq .Controls.Sort "chapters"}}selected{{end}}>Chapters</option>
+      </select></label>
+    <label class="fieldset"><span class="fieldset-legend">Direction</span>
+      <select name="dir" class="select select-sm w-full">
+        <option value="desc" {{if eq .Controls.Dir "desc"}}selected{{end}}>Descending</option>
+        <option value="asc" {{if eq .Controls.Dir "asc"}}selected{{end}}>Ascending</option>
+      </select></label>
+    <div class="col-span-2">{{template "tagPicker" tagPicker .TagOptions .Controls.IncludeTags "include_tags" "Include tags/genres (all of)" ""}}</div>
+    <div class="col-span-2">{{template "tagPicker" tagPicker .TagOptions .Controls.ExcludeTags "exclude_tags" "Exclude tags/genres" ""}}</div>
+  </div>
+</form>
+<div class="text-center"><span id="search-spin" class="htmx-indicator loading my-4"></span></div>
+<div hx-get="/ui/anilist/suggestions" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML"></div>
+<div id="search-results"><div hx-post="/ui/search" hx-include="#search-form" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading…</div>
+</div></div>
+{{end}}
+
+{{define "library"}}
+{{if .CollectionName}}
+<div class="mb-3">
+  <a href="/collections{{if .CollectionID}}?by=custom{{end}}" class="link link-hover text-sm text-base-content/60">‹ Collections</a>
+  <div class="mt-1 flex items-center gap-2">
+    <h1 class="min-w-0 flex-1 truncate text-lg font-semibold">{{.CollectionName}}</h1>
+    {{if .CollectionID}}
+    <details class="dropdown dropdown-end shrink-0">
+      <summary class="btn btn-sm btn-ghost btn-square" aria-label="Collection actions">{{template "iconDots"}}</summary>
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-lg border border-base-300">
+        <li><button hx-get="/ui/collections/{{.CollectionID}}/manage" hx-target="#collection-manage-body" hx-swap="innerHTML" onclick="collection_manage_modal.showModal()">{{template "iconLayers"}}Manage titles</button></li>
+        <li><button onclick="rename_collection_modal.showModal()">{{template "iconEdit"}}Rename</button></li>
+        <li><button class="text-error" hx-post="/ui/collections/{{.CollectionID}}/delete" hx-swap="none" hx-confirm="Delete this collection? The titles themselves are not affected.">{{template "iconTrash"}}Delete</button></li>
+      </ul>
+    </details>
+    {{end}}
+  </div>
+</div>
+{{if .CollectionID}}
+<dialog id="rename_collection_modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="text-lg font-bold mb-3">Rename collection</h3>
+    <form class="grid gap-3" hx-post="/ui/collections/{{.CollectionID}}/rename" hx-swap="none">
+      <input class="input w-full" name="name" required value="{{.CollectionName}}">
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="rename_collection_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<dialog id="collection_manage_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Manage members</h3>
+    <div id="collection-manage-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+    <div class="modal-action"><button type="button" class="btn btn-ghost" onclick="collection_manage_modal.close()">Done</button></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+{{end}}
+{{if .Screen}}
+<div class="mb-3 flex items-center justify-between gap-2">
+  <h1 class="min-w-0 truncate text-lg font-semibold">{{.Screen.Name}}</h1>
+  <details class="dropdown dropdown-end shrink-0">
+    <summary class="btn btn-sm btn-ghost btn-square" aria-label="Screen actions">{{template "iconDots"}}</summary>
+    <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+      <li><button onclick="screen_modal.showModal()">{{template "iconEdit"}}Edit screen</button></li>
+      <li><button class="text-error" hx-post="/ui/screens/{{.Screen.ID}}/delete" hx-swap="none" hx-confirm="Delete this screen? Titles are not affected.">{{template "iconTrash"}}Delete</button></li>
+    </ul>
+  </details>
+</div>
+{{end}}
+{{if .ShowEditor}}
+<dialog id="screen_modal" class="modal" {{if .OpenEditor}}open{{end}}>
+  <div class="modal-box max-w-xl">
+    <h3 class="text-lg font-bold mb-3">{{if .Screen}}Edit screen{{else}}New screen{{end}}</h3>
+    <form class="grid gap-3" hx-post="/ui/screens{{if .Screen}}/{{.Screen.ID}}{{end}}" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Name</span>
+        <input class="input w-full" name="name" value="{{if .Screen}}{{.Screen.Name}}{{end}}" required placeholder="e.g. Seinen shelf"></label>
+      {{template "tagPicker" tagPicker .TagOptions .IncludeTags "include_tags" "Include tags/genres (any of)" ""}}
+      {{template "tagPicker" tagPicker .TagOptions .ExcludeTags "exclude_tags" "Exclude tags/genres" ""}}
+      <div class="grid grid-cols-2 gap-3">
+        <label class="fieldset"><span class="fieldset-legend">Adult</span>
+          <select name="adult" class="select w-full">
+            <option value="" {{if eq .Cfg.Adult ""}}selected{{end}}>Any</option>
+            <option value="only" {{if eq .Cfg.Adult "only"}}selected{{end}}>Only adult</option>
+            <option value="exclude" {{if eq .Cfg.Adult "exclude"}}selected{{end}}>Exclude adult</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Favourites</span>
+          <select name="fav" class="select w-full">
+            <option value="" {{if eq .Cfg.Fav ""}}selected{{end}}>Any</option>
+            <option value="only" {{if eq .Cfg.Fav "only"}}selected{{end}}>Favourites only</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Monitored</span>
+          <select name="monitor" class="select w-full">
+            <option value="" {{if eq .Cfg.Monitor ""}}selected{{end}}>Any</option>
+            <option value="on" {{if eq .Cfg.Monitor "on"}}selected{{end}}>Monitored</option>
+            <option value="off" {{if eq .Cfg.Monitor "off"}}selected{{end}}>Not monitored</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Content</span>
+          <select name="content" class="select w-full">
+            <option value="" {{if eq .Cfg.Content ""}}selected{{end}}>Any</option>
+            <option value="chapters" {{if eq .Cfg.Content "chapters"}}selected{{end}}>With chapters</option>
+            <option value="no-chapters" {{if eq .Cfg.Content "no-chapters"}}selected{{end}}>Without chapters</option>
+            <option value="volumes" {{if eq .Cfg.Content "volumes"}}selected{{end}}>With volumes</option>
+            <option value="no-volumes" {{if eq .Cfg.Content "no-volumes"}}selected{{end}}>Without volumes</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Progress</span>
+          <select name="progress" class="select w-full">
+            <option value="" {{if eq .Cfg.Progress ""}}selected{{end}}>Any</option>
+            <option value="missing" {{if eq .Cfg.Progress "missing"}}selected{{end}}>Missing chapters</option>
+            <option value="complete" {{if eq .Cfg.Progress "complete"}}selected{{end}}>Complete</option>
+            <option value="empty" {{if eq .Cfg.Progress "empty"}}selected{{end}}>No chapters yet</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Default view</span>
+          <select name="view" class="select w-full">
+            <option value="" {{if eq .Cfg.View ""}}selected{{end}}>Auto</option>
+            <option value="table" {{if eq .Cfg.View "table"}}selected{{end}}>Table</option>
+            <option value="cards" {{if eq .Cfg.View "cards"}}selected{{end}}>Cards</option>
+            <option value="full" {{if eq .Cfg.View "full"}}selected{{end}}>Full</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Default sort</span>
+          <select name="sort" class="select w-full">
+            <option value="" {{if eq .Cfg.Sort ""}}selected{{end}}>Last added</option>
+            <option value="title" {{if eq .Cfg.Sort "title"}}selected{{end}}>Title</option>
+            <option value="missing" {{if eq .Cfg.Sort "missing"}}selected{{end}}>Missing chapters</option>
+            <option value="rating" {{if eq .Cfg.Sort "rating"}}selected{{end}}>Rating</option>
+            <option value="updated" {{if eq .Cfg.Sort "updated"}}selected{{end}}>Updated</option>
+            <option value="size" {{if eq .Cfg.Sort "size"}}selected{{end}}>Size</option>
+          </select></label>
+        <label class="fieldset"><span class="fieldset-legend">Direction</span>
+          <select name="dir" class="select w-full">
+            <option value="" {{if eq .Cfg.Dir ""}}selected{{end}}>Ascending</option>
+            <option value="desc" {{if eq .Cfg.Dir "desc"}}selected{{end}}>Descending</option>
+          </select></label>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="screen_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+<form class="mb-4 grid gap-3" method="get" action="/library" hx-get="/ui/library/table" hx-trigger="change[event.target.name && event.target.name !== 'q'], keyup changed delay:300ms from:input[name='q']" hx-target="#library-results" hx-swap="innerHTML" hx-sync="#library-table:replace">
+  <button type="submit" class="sr-only" tabindex="-1">Apply filters</button>
+  {{if .Screen}}<input type="hidden" name="screen" value="{{.Screen.ID}}">{{end}}
+  {{if .CollectionIDs}}<input type="hidden" name="ids" value="{{.CollectionIDs}}">{{end}}
+  <input type="checkbox" id="lib-filters" class="peer sr-only">
+  <div class="flex items-center gap-2">
+    <input name="q" class="input input-sm w-full" value="{{.Controls.Q}}" placeholder="Search library…" hx-trigger="keyup changed delay:300ms">
+    <label for="lib-filters" class="btn btn-sm btn-outline shrink-0">Filters {{template "iconChevron"}}</label>
+  </div>
+  <div class="hidden peer-checked:grid grid-cols-2 gap-3 lg:grid-cols-4">
+  <label class="fieldset"><span class="fieldset-legend">Monitor</span>
+    <select name="monitor" class="select select-sm w-full">
+      <option value="all" {{if eq .Controls.Monitor "all"}}selected{{end}}>All</option>
+      <option value="on" {{if eq .Controls.Monitor "on"}}selected{{end}}>Monitored</option>
+      <option value="off" {{if eq .Controls.Monitor "off"}}selected{{end}}>Off</option>
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Source</span>
+    <select name="source" class="select select-sm w-full">
+      <option value="all" {{if eq .Controls.Source "all"}}selected{{end}}>All</option>
+      <option value="linked" {{if eq .Controls.Source "linked"}}selected{{end}}>Linked</option>
+      <option value="unlinked" {{if eq .Controls.Source "unlinked"}}selected{{end}}>Unlinked</option>
+      <option value="imported" {{if eq .Controls.Source "imported"}}selected{{end}}>Imported</option>
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Content</span>
+    <select name="content" class="select select-sm w-full">
+      <option value="all" {{if eq .Controls.Content "all"}}selected{{end}}>All</option>
+      <option value="chapters" {{if eq .Controls.Content "chapters"}}selected{{end}}>With chapters</option>
+      <option value="no-chapters" {{if eq .Controls.Content "no-chapters"}}selected{{end}}>Without chapters</option>
+      <option value="volumes" {{if eq .Controls.Content "volumes"}}selected{{end}}>With volumes</option>
+      <option value="no-volumes" {{if eq .Controls.Content "no-volumes"}}selected{{end}}>Without volumes</option>
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Favourites</span>
+    <select name="fav" class="select select-sm w-full">
+      <option value="all" {{if eq .Controls.Fav "all"}}selected{{end}}>All</option>
+      <option value="only" {{if eq .Controls.Fav "only"}}selected{{end}}>Favourites</option>
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Progress</span>
+    <select name="progress" class="select select-sm w-full">
+      <option value="all" {{if eq .Controls.Progress "all"}}selected{{end}}>All</option>
+      <option value="missing" {{if eq .Controls.Progress "missing"}}selected{{end}}>Missing</option>
+      <option value="complete" {{if eq .Controls.Progress "complete"}}selected{{end}}>Complete</option>
+      <option value="empty" {{if eq .Controls.Progress "empty"}}selected{{end}}>No chapters</option>
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Sort</span>
+    <select name="sort" class="select select-sm w-full">
+      <option value="added" {{if eq .Controls.Sort "added"}}selected{{end}}>Last added</option>
+      <option value="title" {{if eq .Controls.Sort "title"}}selected{{end}}>Title</option>
+      <option value="missing" {{if eq .Controls.Sort "missing"}}selected{{end}}>Missing chapters</option>
+      <option value="failed" {{if eq .Controls.Sort "failed"}}selected{{end}}>Failed chapters</option>
+      <option value="chapters" {{if eq .Controls.Sort "chapters"}}selected{{end}}>Total chapters</option>
+      <option value="volumes" {{if eq .Controls.Sort "volumes"}}selected{{end}}>Total volumes</option>
+      <option value="size" {{if eq .Controls.Sort "size"}}selected{{end}}>Size (total)</option>
+      <option value="size-chapters" {{if eq .Controls.Sort "size-chapters"}}selected{{end}}>Size (chapters)</option>
+      <option value="size-volumes" {{if eq .Controls.Sort "size-volumes"}}selected{{end}}>Size (volumes)</option>
+      <option value="rating" {{if eq .Controls.Sort "rating"}}selected{{end}}>Rating</option>
+      <option value="updated" {{if eq .Controls.Sort "updated"}}selected{{end}}>Updated</option>
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">Direction</span>
+    <select name="dir" class="select select-sm w-full">
+      <option value="asc" {{if eq .Controls.Dir "asc"}}selected{{end}}>Ascending</option>
+      <option value="desc" {{if eq .Controls.Dir "desc"}}selected{{end}}>Descending</option>
+    </select></label>
+  <label class="fieldset"><span class="fieldset-legend">View</span>
+    <select name="view" class="select select-sm w-full">
+      <option value="auto" {{if eq .Controls.View "auto"}}selected{{end}}>Auto</option>
+      <option value="table" {{if eq .Controls.View "table"}}selected{{end}}>Table</option>
+      <option value="cards" {{if eq .Controls.View "cards"}}selected{{end}}>Cards</option>
+      <option value="full" {{if eq .Controls.View "full"}}selected{{end}}>Full</option>
+    </select></label>
+  <div class="col-span-2">{{template "tagPicker" tagPicker .TagOptions .Controls.IncludeTags "include_tags" "Include tags/genres (any of)" ""}}</div>
+  <div class="col-span-2">{{template "tagPicker" tagPicker .TagOptions .Controls.ExcludeTags "exclude_tags" "Exclude tags/genres" ""}}</div>
+  </div>
+</form>
+{{if not .CollectionName}}<div hx-get="/ui/anilist/suggestions?view={{.Controls.View}}" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
+<div id="library-results">{{template "libraryResults" .Table}}</div>
+{{if .Table.CanManage}}
+<dialog id="lib_title_dialog" class="modal">
+  <div class="modal-box">
+    <div id="lib-title-dialog-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<dialog id="add_to_collection_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Add to collection</h3>
+    <div id="add-collection-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+{{end}}
+
+{{define "collections"}}
+<div class="mb-4 flex items-center gap-2">
+  <a href="/collections" class="btn btn-sm {{if eq .Mode "author"}}btn-primary{{else}}btn-outline{{end}}">By author</a>
+  <a href="/collections?by=relation" class="btn btn-sm {{if eq .Mode "smart"}}btn-primary{{else}}btn-outline{{end}}">Smart</a>
+  <a href="/collections?by=custom" class="btn btn-sm {{if eq .Mode "custom"}}btn-primary{{else}}btn-outline{{end}}">Custom</a>
+  {{if eq .Mode "custom"}}<button class="btn btn-sm btn-ghost ml-auto" onclick="new_collection_modal.showModal()">+ New collection</button>{{end}}
+</div>
+{{if .Cards}}
+<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+  {{range .Cards}}{{template "collectionCard" .}}{{end}}
+</div>
+{{else if eq .Mode "custom"}}
+<p class="py-3 text-base-content/60">No custom collections yet. Use “New collection” to group titles manually, or add a title to one from its actions menu.</p>
+{{else if and (eq .Mode "smart") (not .HasRelations)}}
+<p class="py-3 text-base-content/60">No connections stored yet. Run a Catalog refresh (Management → Recent jobs → Start new job) to fetch AniList relations, then check back.</p>
+{{else}}
+<p class="py-3 text-base-content/60">Nothing to collect yet — you need two or more {{if eq .Mode "smart"}}connected titles{{else}}titles by the same author{{end}} in your library.</p>
+{{end}}
+{{if eq .Mode "custom"}}
+<dialog id="new_collection_modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="text-lg font-bold mb-3">New collection</h3>
+    <form class="grid gap-3" hx-post="/ui/collections" hx-swap="none">
+      <input class="input w-full" name="name" required autofocus placeholder="Collection name">
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="new_collection_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+{{end}}
+
+{{define "collectionCard"}}
+<div class="group relative min-w-0">
+  {{if .CustomID}}
+  <details class="dropdown dropdown-end absolute right-1 top-1 z-10">
+    <summary class="btn btn-xs btn-square border-none bg-base-100/80 shadow" aria-label="Collection actions">{{template "iconDots"}}</summary>
+    <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-lg border border-base-300">
+      <li><button class="text-error" hx-post="/ui/collections/{{.CustomID}}/delete" hx-swap="none" hx-confirm="Delete this collection? The titles themselves are not affected.">{{template "iconTrash"}}Delete collection</button></li>
+    </ul>
+  </details>
+  {{end}}
+  <a href="{{.URL}}" class="block">
+    <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg transition group-hover:opacity-90">
+      <div class="grid h-full gap-2 {{if .Stacked}}grid-rows-2{{else}}grid-cols-2 grid-rows-2{{end}}">
+        {{range .Covers}}<img class="h-full w-full object-cover rounded-lg" src="{{.}}" alt="" loading="lazy">{{end}}
+        {{if .Extra}}<div class="flex items-center justify-center bg-base-300 text-lg rounded-lg font-semibold text-base-content/70">+{{.Extra}}</div>{{end}}
+      </div>
+    </div>
+    <div class="mt-1.5 min-h-[2.5em] line-clamp-2 text-sm font-medium leading-tight group-hover:text-primary">{{.Name}}</div>
+    <div class="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-base-content/50">
+      <span class="truncate">{{.Count}} titles</span>
+      <span class="shrink-0">{{humanBytes .SizeBytes}}</span>
+    </div>
+    <div class="mt-0.5 flex justify-between gap-2 text-xs text-base-content/50">
+      {{if .Chapters}}<span>{{.Chapters}} ch</span>{{end}}
+      {{if .Volumes}}<span>{{.Volumes}} vol</span>{{end}}
+      {{if .Pages}}<span>{{.Pages}} pages</span>{{end}}
+    </div>
+    <div class="mt-1">{{template "bar" bar .ReadPct .FullPct}}</div>
+  </a>
+</div>
+{{end}}
+
+{{define "catalogManga"}}
+<div class="flex gap-5 mb-4 max-lg:flex-col">
+  <figure class="shrink-0 max-lg:self-center"><img class="h-72 w-48 rounded-lg bg-base-300 object-cover" src="{{.Manga.CoverImage}}" alt="" loading="lazy"></figure>
+  <div class="flex min-w-0 flex-1 flex-col gap-3">
+    <h1 class="text-2xl font-bold text-balance">{{mangaTitle .Manga}}</h1>
+    {{template "mangaDetail" .Manga}}
+  </div>
+</div>
+{{if .CanAdd}}
+<div class="mt-8 flex justify-center">
+  <button class="btn btn-primary btn-wide" hx-post="/ui/library/add" hx-vals='{"provider_id":"{{.Manga.ProviderID}}","redirect":"1"}' hx-swap="none">Add to Library</button>
+</div>
+{{end}}
+{{end}}
+
+{{define "title"}}
+<div class="flex gap-5 mb-4 max-lg:flex-col">
+  <figure class="shrink-0 max-lg:self-center"><img class="rounded-lg bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
+  <div class="flex min-w-0 flex-1 flex-col gap-3">
+    <div class="flex items-start justify-between gap-3">
+      <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
+      <div class="flex items-center gap-1 shrink-0">
+        {{template "favToggle" .Title}}
+        {{if .User.Can "library.manage"}}{{template "monitorToggle" .Title}}{{else}}{{template "monitorBadge" .Title}}{{end}}
+        {{if .User.Can "library.manage"}}
+        <details class="dropdown dropdown-end">
+          <summary class="btn btn-sm btn-ghost btn-square" aria-label="Actions">{{template "iconDots"}}</summary>
+          <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-56 p-2 shadow-lg border border-base-300">
+            {{if and (linked .Title.SourceURL) (or (gt .Title.MissingCount 0) (gt .Title.FailedCount 0))}}
+            <li><button hx-post="/ui/library/{{.Title.ID}}/download" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "download_missing"}}disabled{{end}}>{{template "iconDownload"}}Download missing{{if gt .Title.FailedCount 0}} · {{.Title.FailedCount}} failed{{end}}</button></li>{{end}}
+            {{if linked .Title.SourceURL}}<li><button hx-post="/ui/library/{{.Title.ID}}/refresh" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "refresh_title"}}disabled{{end}}>{{template "iconRefresh"}}Refresh chapters</button></li>{{end}}
+            <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
+            {{if .AniList.Connected}}<li><button hx-post="/ui/library/{{.Title.ID}}/anilist-sync" hx-swap="none">{{template "iconVerify"}}Sync AniList</button></li>{{end}}
+            {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+            <li><button hx-get="/ui/library/{{.Title.ID}}/collections" hx-target="#add-collection-body" hx-swap="innerHTML" onclick="add_to_collection_modal.showModal()">{{template "iconLayers"}}Add to collection</button></li>
+            <li><button class="text-error" onclick="remove_title_modal.showModal()">{{template "iconTrash"}}Remove title</button></li>
+          </ul>
+        </details>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- <div class="text-sm text-base-content/60"> -->
+    <!--   {{if linked .Title.SourceURL}}{{.Title.SourceID}} · <a class="link link-hover" href="{{.Title.SourceURL}}" target="_blank" rel="noreferrer noopener">source ↗</a> -->
+    <!--   {{else if imported .Title.SourceURL}}Imported from disk · no source linked -->
+    <!--   {{else}}No source linked{{end}} -->
+    <!-- </div> -->
+    {{template "titleProgress" .}}
+    {{template "mangaDetail" .Manga}}
+  </div>
+</div>
+
+{{if and (gt .Title.LanguageGap 0) (eq .Title.LanguageMode "") (.User.Can "library.manage")}}
+<div class="alert alert-warning alert-soft mt-3 flex-wrap">
+  <span class="text-sm">{{.Title.LanguageGap}} chapters are only available in other languages. Download them anyway?</span>
+  <div class="flex flex-wrap gap-2">
+    <button class="btn btn-sm btn-warning" hx-post="/ui/library/{{.Title.ID}}/language-mode" hx-vals='{"mode":"all"}' hx-swap="none">Download all languages</button>
+    <button class="btn btn-sm btn-outline" hx-post="/ui/library/{{.Title.ID}}/language-mode" hx-vals='{"mode":"preferred"}' hx-swap="none">Preferred only</button>
+    <button class="btn btn-sm btn-ghost" hx-post="/ui/library/{{.Title.ID}}/language-mode" hx-vals='{"mode":"off"}' hx-swap="none">Stop downloads</button>
+  </div>
+</div>
+{{end}}
+
+{{template "titleActivity" .}}
+
+<dialog id="add_to_collection_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Add to collection</h3>
+    <div id="add-collection-body"><p class="text-sm text-base-content/60">Loading…</p></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="remove_title_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-1">Remove {{.Title.DisplayTitle}}?</h3>
+    <p class="text-sm text-base-content/60">Tracking, chapters and reading progress are removed from the library.</p>
+    <form class="mt-3 grid gap-3" hx-post="/ui/library/{{.Title.ID}}/remove" hx-swap="none">
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="delete_files">
+        <span><span class="text-sm font-medium">Also delete downloaded files from disk</span>
+        <span class="block text-xs text-base-content/50">Leave unchecked to keep the folder — it will show up on the Import page for re-importing later.</span></span>
+      </label>
+      {{if .AniList.Connected}}
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="delete_anilist">
+        <span><span class="text-sm font-medium">Also delete from AniList</span>
+        <span class="block text-xs text-base-content/50">Removes this manga from your AniList list entirely. Left unchecked, it is set to Dropped instead.</span></span>
+      </label>
+      {{end}}
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="remove_title_modal.close()">Cancel</button>
+        <button class="btn btn-error">Remove title</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+{{if linked .Title.SourceURL}}
+<dialog id="title_settings_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Title settings</h3>
+    <form hx-post="/ui/library/{{.Title.ID}}/refresh-interval" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Check for new chapters every</span>
+        <input class="input w-full" name="interval" value="{{.Title.RefreshInterval}}" placeholder="{{.RefreshEvery}} (global default)">
+        <span class="label">Leave blank to use the global schedule. Example: 6h, 30m.</span>
+      </label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="title_settings_modal.close()">Close</button>
+        <button class="btn btn-primary" onclick="title_settings_modal.close()">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+
+{{if .User.Can "library.manage"}}
+<div class="collapse collapse-arrow bg-base-100 mt-4">
+  <input type="checkbox" {{if not .LinkedSources}}checked{{end}}>
+  <div class="collapse-title font-semibold">Sources{{if .LinkedSources}} <span class="badge badge-sm badge-ghost">{{len .LinkedSources}} linked</span>{{end}}</div>
+  <div class="collapse-content space-y-4">
+    {{if .LinkedSources}}
+    <div class="divide-y divide-line/25">
+      {{range .LinkedSources}}
+      <div class="flex items-center gap-3 py-2">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 text-sm font-medium">{{.Name}}{{if .Active}} <span class="badge badge-success badge-soft badge-sm">active</span>{{end}}</div>
+          <a class="block truncate text-xs text-base-content/50 link-hover" href="{{.URL}}" target="_blank" rel="noreferrer noopener" title="{{.URL}}">{{.URL}}</a>
+        </div>
+        <div class="flex shrink-0 gap-1">
+          {{if not .Active}}<button class="btn btn-ghost btn-sm" hx-post="/ui/library/{{$.Title.ID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Use</button>{{end}}
+          <button class="btn btn-outline btn-sm text-error" hx-post="/ui/library/{{$.Title.ID}}/unlink-source" hx-vals='{"url":"{{.URL}}"}' hx-swap="none">Unlink</button>
+        </div>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <button class="btn btn-sm btn-outline max-sm:w-full" hx-post="/ui/library/{{.Title.ID}}/find-sources" hx-target="#sources-{{.Title.ID}}" hx-swap="outerHTML">Auto-search sources</button>
+    </div>
+    {{template "matches" .Sources}}
+
+    {{if or .SingleSources .LinkSources}}
+    <details class="group">
+      <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium select-none">
+        Link manually
+        <span class="text-base-content/50 transition-transform group-open:rotate-90">{{template "iconChevron"}}</span>
+      </summary>
+      <div class="mt-2 grid gap-4">
+        {{if .SingleSources}}
+        <form hx-post="/ui/library/{{.Title.ID}}/link-source" hx-swap="none" class="grid gap-2">
+          <span class="text-xs text-base-content/60">Single-manga source</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <select name="source_id" class="select select-sm min-w-40 flex-1">{{range .SingleSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+            <button class="btn btn-sm btn-outline max-sm:w-full">Use this source</button>
+          </div>
+        </form>
+        {{end}}
+        {{if .LinkSources}}
+        <form hx-post="/ui/library/{{.Title.ID}}/verify-source" hx-target="#verify-{{.Title.ID}}" hx-indicator="#verify-spin" class="grid gap-2">
+          <span class="text-xs text-base-content/60">Paste a specific manga page URL — it is checked before linking</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <select name="source_id" class="select select-sm shrink-0">{{range .LinkSources}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+            <input name="url" class="input input-sm min-w-40 flex-1" placeholder="https://source/manga/…" required>
+            <button class="btn btn-sm btn-outline max-sm:w-full">Check &amp; link</button>
+            <span id="verify-spin" class="htmx-indicator loading loading-sm"></span>
+          </div>
+        </form>
+        {{end}}
+      </div>
+    </details>
+    <div id="verify-{{.Title.ID}}" class="empty:hidden"></div>
+    {{end}}
+  </div>
+</div>
+
+{{end}}
+
+{{if .Title.CatalogMangaID}}
+<div class="collapse collapse-arrow bg-base-100 mt-4">
+  <input type="checkbox">
+  <div class="collapse-title font-semibold">Related manga</div>
+  <div class="collapse-content">
+    <div hx-get="/ui/library/{{.Title.ID}}/related" hx-trigger="load" hx-swap="outerHTML"></div>
+  </div>
+</div>
+{{end}}
+
+{{template "titleContent" .Content}}
+
+{{end}}
+
+{{define "sourceProbe"}}
+<div class="card bg-base-100 card-sm mt-3"><div class="card-body">
+  {{if .Result.Error}}<div class="alert alert-error alert-soft">{{.Result.Error}}</div>{{end}}
+  {{if gt .Result.ChaptersFound 0}}
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <span>Found <strong>{{.Result.ChaptersFound}}</strong> chapters{{if .Result.SampleChapter}} · first: {{.Result.SampleChapter}}{{end}}</span>
+    <button class="btn btn-sm btn-primary" hx-post="/ui/library/{{.TitleID}}/link-source-url" hx-vals='{"source_id":"{{.SourceID}}","url":"{{.URL}}"}' hx-swap="none">Link this page</button>
+  </div>
+  {{end}}
+</div></div>
+{{end}}
+
+{{define "import"}}
+<p class="text-sm text-base-content/60 mb-4">Folders in your download directory that aren't tracked yet. Match each to an AniList title to import it and recognize its existing chapters.</p>
+<div hx-get="/ui/import/candidates" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Scanning download folder…</div>
+</div>
+{{end}}
+
+{{define "importCandidates"}}
+{{range $i, $c := .Candidates}}
+<div class="card bg-base-100 mb-3"><div class="card-body p-4">
+  <div class="flex items-center justify-between gap-2 flex-wrap">
+    <div><strong>{{$c.Folder}}</strong> <span class="text-sm text-base-content/50">· {{$c.ChapterFiles}} chapter files</span></div>
+    <button class="btn btn-sm" hx-post="/ui/import/{{pathEscape $c.Folder}}/search" hx-target="#picker-{{$i}}" hx-swap="innerHTML">Match on AniList</button>
+  </div>
+  <div id="picker-{{$i}}"></div>
+  {{if $.Titles}}
+  <details class="group mt-1">
+    <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium select-none">
+      Add as volumes to an existing manga
+      <span class="text-base-content/50 transition-transform group-open:rotate-90">{{template "iconChevron"}}</span>
+    </summary>
+    <form hx-post="/ui/import/attach-volumes" hx-swap="none" class="mt-2 flex flex-wrap items-center gap-2">
+      <input type="hidden" name="folder" value="{{$c.Folder}}">
+      <select name="title_id" class="select select-sm min-w-48">
+        {{range $.Titles}}<option value="{{.ID}}">{{.DisplayTitle}}</option>{{end}}
+      </select>
+      <button class="btn btn-sm btn-outline">Attach volumes</button>
+    </form>
+  </details>
+  {{end}}
+</div></div>
+{{else}}<p class="text-base-content/60">No untracked folders with chapter files found in the download directory.</p>{{end}}
+{{end}}
+
+{{define "importPicker"}}
+<form hx-post="/ui/import" hx-swap="none" class="mt-3 grid gap-3">
+  <input type="hidden" name="folder" value="{{.Folder}}">
+  <input name="q" class="input input-sm w-full" value="{{.Query}}" placeholder="Refine search…"
+    hx-post="/ui/import/{{pathEscape .Folder}}/search" hx-target="closest form" hx-swap="outerHTML" hx-trigger="keyup changed delay:500ms">
+  <div class="grid gap-1">
+    {{range $i, $m := .Results}}
+    <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-base-200 cursor-pointer">
+      <input type="radio" class="radio radio-sm" name="anilist_id" value="{{$m.ProviderID}}" {{if eq $i 0}}checked{{end}}>
+      <img class="h-12 w-8 rounded object-cover bg-base-300" src="{{$m.CoverImage}}" loading="lazy">
+      <span>{{mangaTitle $m}} <span class="text-xs text-base-content/50">{{$m.Format}} {{$m.Status}}{{if $m.Chapters}} · {{$m.Chapters}} ch{{end}}</span></span>
+    </label>
+    {{else}}<p class="text-sm text-base-content/50">No AniList results — refine the search above.</p>{{end}}
+  </div>
+  {{if .Results}}
+  <div class="flex flex-wrap items-center gap-2">
+    <select name="kind" class="select select-sm w-36" aria-label="Import as">
+      <option value="chapters">Chapters</option>
+      <option value="volumes">Volumes</option>
+    </select>
+    <button class="btn btn-primary btn-sm">Import this folder</button>
+    <span class="text-xs text-base-content/50">Volumes are disk-only: no source search is started.</span>
+  </div>
+  {{end}}
+</form>
+{{end}}
+
+{{define "sources"}}
+<div class="flex items-center justify-between gap-2 mb-4">
+  <button class="btn btn-sm btn-outline" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
+  <button class="btn btn-sm btn-primary" onclick="source_add_modal.showModal()">+ Add source</button>
+</div>
+{{template "sourcesTable" .Sources}}
+
+<dialog id="source_add_modal" class="modal">
+  <div class="modal-box max-w-xl">
+    <h3 class="text-lg font-bold mb-1">Add a custom source</h3>
+    <p class="text-sm text-base-content/60 mb-3">Fill in the essentials; fetch methods are detected automatically on the test run.</p>
+    <form id="custom-source" class="grid gap-3">
+      <label class="fieldset"><span class="fieldset-legend">Name</span><input class="input w-full" name="name" placeholder="Manga site name"></label>
+      <label class="fieldset"><span class="fieldset-legend">Site base URL</span><input class="input w-full" name="base_url" placeholder="https://site.example/"><span class="label">The home URL — used to match this source to chapter links.</span></label>
+      <label class="fieldset"><span class="fieldset-legend">Sample manga page URL</span><input class="input w-full" name="manga_url" placeholder="https://site.example/manga/xyz/"><span class="label">A manga to scrape chapters from and test-run.</span></label>
+      <details class="collapse collapse-arrow bg-base-200">
+        <summary class="collapse-title text-sm font-medium">Advanced options</summary>
+        <div class="collapse-content grid gap-2">
+          <div class="text-sm">Image types
+            <div class="flex flex-wrap gap-3 mt-1">
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="jpg" checked> jpg</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="jpeg" checked> jpeg</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="png" checked> png</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="webp" checked> webp</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="gif"> gif</label>
+              <label class="label cursor-pointer gap-1"><input type="checkbox" class="checkbox checkbox-xs" name="ext" value="avif"> avif</label>
+            </div>
+          </div>
+          <label class="fieldset"><span class="fieldset-legend">Scraper</span>
+            <select class="select w-full" name="scraper">
+              {{range .Scrapers}}<option value="{{.}}" {{if eq . "generic"}}selected{{end}}>{{.}}</option>{{end}}
+            </select><span class="label">How chapter lists are read; generic fits most sites.</span>
+          </label>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="solver"> Load pages with FlareSolverr (Cloudflare)</label>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="browser"> Capture images with a browser</label>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="single_manga"> Single-manga source (no search)</label>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="chapterless"> No chapters — each manga page holds its images directly</label>
+          <label class="label cursor-pointer justify-start gap-2"><input type="checkbox" class="checkbox checkbox-sm" name="nsfw"> NSFW-only source (hidden from users without adult access)</label>
+        </div>
+      </details>
+      <div id="source-test"></div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-outline mr-auto" hx-post="/ui/sources/test" hx-target="#source-test" hx-indicator="#test-spin">Test run <span id="test-spin" class="htmx-indicator loading loading-xs"></span></button>
+        <button type="button" class="btn btn-ghost" onclick="source_add_modal.close()">Cancel</button>
+        <button type="button" class="btn btn-primary" hx-post="/ui/sources/custom">Save source</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+
+{{define "sourceTest"}}
+<div class="card bg-base-200 card-sm mt-2"><div class="card-body">
+  {{if .Error}}<div class="alert alert-error alert-soft">{{.Error}}</div>{{end}}
+  <div class="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+    <div><div class="text-xs text-base-content/50">Chapters found</div>{{.ChaptersFound}}</div>
+    <div><div class="text-xs text-base-content/50">Chapter fetch</div>{{.ChapterFetch}}</div>
+    {{if .SampleChapter}}<div><div class="text-xs text-base-content/50">Sample chapter</div>{{.SampleChapter}}</div>{{end}}
+    <div><div class="text-xs text-base-content/50">Images in sample</div>{{len .Images}}</div>
+    {{if .ImageFetch}}<div><div class="text-xs text-base-content/50">Image fetch</div>{{.ImageFetch}}</div>{{end}}
+  </div>
+  {{if .ImageExtensions}}<div class="text-xs text-base-content/50 mt-2">Detected image types: {{range $i, $e := .ImageExtensions}}{{if $i}}, {{end}}{{$e}}{{end}}</div>{{end}}
+</div></div>
+{{end}}
+
+{{define "settings"}}
+<div hx-get="/ui/account" hx-trigger="load" hx-swap="outerHTML"></div>
+<div class="card bg-base-100 card-body p-4 gap-2 mb-4">
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">AniList account</h2>
+  {{if .AniList.Connected}}
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <div class="text-sm">Connected as <span class="font-medium">{{.AniList.Name}}</span></div>
+      {{if .AniList.ExpiresAt}} <span class="text-xs {{if .AniList.ExpiringSoon}}text-warning{{else}}text-base-content/50{{end}}">Token valid until {{.AniList.ExpiresAt}}</span>{{end}}
+    </div>
+    <div class="flex max-sm:flex-col max-sm:w-full items-center gap-2 ">
+      {{if .AniList.ExpiringSoon}}<a class="btn btn-sm btn-warning" href="/anilist/connect">Reconnect</a>{{end}}
+      <button class="btn btn-sm btn-outline max-sm:w-full" hx-post="/ui/anilist/sync" hx-target="#anilist-sync-msg" hx-swap="innerHTML">Sync now</button>
+      <span id="anilist-sync-msg"></span>
+      <button class="btn btn-sm btn-outline max-sm:w-full text-error" hx-post="/ui/anilist/disconnect" hx-swap="none" hx-confirm="Disconnect your AniList account?">Disconnect</button>
+    </div>
+  </div>
+  <details class="mt-1">
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Browse your AniList list<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <div hx-get="/ui/anilist/library" hx-trigger="intersect once" hx-swap="outerHTML">
+      <div class="flex items-center gap-2 py-2 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading your list…</div>
+    </div>
+  </details>
+  {{else if .AppConfigured}}
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div class="text-sm text-base-content/60">Link your AniList account for personal syncing and recommendations.</div>
+    <a class="btn btn-sm btn-primary" href="/anilist/connect">Connect AniList</a>
+  </div>
+  {{else}}
+  <div class="text-sm text-base-content/60">
+    No AniList application is configured yet. An admin creates one at
+    <span class="font-medium">anilist.co/settings/developer</span> using this redirect URL:
+  </div>
+  <code class="rounded-lg bg-base-300 px-3 py-2 text-sm break-all select-all">{{.RedirectURL}}</code>
+  <div class="text-xs text-base-content/50">Then enter the client ID and secret in the AniList application section below (admins only).</div>
+  {{end}}
+</div>
+<form class="grid gap-4" hx-put="/ui/settings" hx-target="#settings-msg">
+  {{range .Groups}}
+  {{if eq .Title "Appearance"}}
+  <div class="card bg-base-100 card-body p-4 gap-0">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">{{.Title}}</h2>
+    {{range .Fields}}{{if eq .Kind "select"}}
+    <div class="flex items-start justify-between gap-4 py-3 max-sm:flex-col max-sm:gap-1">
+      <div class="min-w-0">
+        <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
+        {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
+      </div>
+      <select class="select select-sm max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}">
+        {{$v := .Value}}{{range .Options}}<option value="{{.}}" {{if eq . $v}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </div>
+    {{end}}{{end}}
+    <details class="mt-2">
+      <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Custom theme colors<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+      <div class="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+        {{range .Fields}}{{if eq .Kind "color"}}
+        <label class="flex items-center justify-between gap-2 text-sm">
+          <span class="text-base-content/70">{{.Label}}</span>
+          <input type="color" class="h-8 w-12 cursor-pointer rounded border border-line bg-base-300" name="{{.Key}}" value="{{.Value}}">
+        </label>
+        {{end}}{{end}}
+      </div>
+      <p class="mt-2 text-xs text-base-content/50">Applied when the theme is set to custom.</p>
+    </details>
+  </div>
+  {{else}}
+  <div class="card bg-base-100 card-body p-4 gap-0">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">{{.Title}}</h2>
+    {{range .Fields}}
+    <div class="flex items-start justify-between gap-4 py-3 border-b border-base-200 last:border-0 max-sm:flex-col max-sm:gap-1">
+      <div class="min-w-0">
+        <label class="font-medium" for="set-{{.Key}}">{{.Label}}</label>
+        {{if .Desc}}<div class="text-sm text-base-content/60 max-w-prose">{{.Desc}}</div>{{end}}
+      </div>
+      <input class="input input-sm max-sm:w-full shrink-0" id="set-{{.Key}}" name="{{.Key}}" value="{{.Value}}"{{if eq .Kind "secret"}} type="password" autocomplete="off"{{end}}>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+  {{end}}
+  <div class="flex items-center gap-3">
+    <button class="w-full btn btn-primary btn-sm">Save settings</button>
+    <span id="settings-msg"></span>
+  </div>
+</form>
+{{end}}
+
+{{define "users"}}
+{{template "usersContent" .}}
+{{end}}
+
+{{define "usersContent"}}
+<div id="users-content" class="grid gap-4">
+  <div class="card bg-base-100 card-body p-4 gap-2">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Users</h2>
+      <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">+ Add user</button>
+    </div>
+    <div class="divide-y divide-line/25">
+      {{range .Users}}
+      <div class="flex items-center gap-3 py-2">
+        <div class="min-w-0 flex-1">
+          <span class="text-sm font-medium">{{.Username}}</span>
+          <span class="badge badge-ghost badge-sm">{{.RoleName}}</span>
+          {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; role and password are env-owned, content preferences editable">env</span>{{end}}
+        </div>
+        <details class="dropdown dropdown-end">
+          <summary class="btn btn-sm btn-ghost btn-square" aria-label="User actions">{{template "iconDots"}}</summary>
+          <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+            <li><button hx-get="/ui/users/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
+            {{if not .IsEnvAdmin}}<li><button class="text-error" hx-post="/ui/users/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this user? Their reading progress is kept but orphaned.">{{template "iconTrash"}}Delete</button></li>{{end}}
+          </ul>
+        </details>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="card bg-base-100 card-body p-4 gap-2">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Roles</h2>
+      <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">+ Add role</button>
+    </div>
+    <div class="list-rounded divide-y divide-line/25">
+      {{range .Roles}}
+      <div>
+        <div class="row-toggle flex items-center gap-3 py-2 hover:bg-base-200/50" data-target="role-perms-{{.ID}}">
+          <span class="caret text-base-content/50">{{template "iconChevron"}}</span>
+          <div class="min-w-0 flex-1">
+            <span class="text-sm font-medium">{{.Name}}</span>
+            {{if eq .Origin "builtin"}}<span class="badge badge-ghost badge-sm">built-in</span>{{end}}
+            <span class="badge badge-outline badge-sm">{{len .Perms}} permissions</span>
+          </div>
+          {{if ne .Origin "builtin"}}
+          <details class="dropdown dropdown-end">
+            <summary class="btn btn-sm btn-ghost btn-square" aria-label="Role actions">{{template "iconDots"}}</summary>
+            <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+              <li><button hx-get="/ui/users/roles/{{.ID}}/edit" hx-target="body" hx-swap="beforeend">{{template "iconEdit"}}Edit</button></li>
+              <li><button class="text-error" hx-post="/ui/users/roles/{{.ID}}/delete" hx-target="#users-content" hx-swap="outerHTML" hx-confirm="Delete this role?">{{template "iconTrash"}}Delete</button></li>
+            </ul>
+          </details>
+          {{end}}
+        </div>
+        <div id="role-perms-{{.ID}}" class="grid gap-2 rounded-lg bg-base-200/40 px-4 py-3 mb-2" hidden>
+          {{range .Perms}}
+          <div>
+            <span class="text-sm font-medium">{{permLabel .}}</span>
+            <div class="text-xs text-base-content/50">{{permDesc .}}</div>
+          </div>
+          {{else}}<p class="text-sm text-base-content/60">No permissions.</p>{{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<dialog id="user_add_modal" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold mb-3">Add user</h3>
+    <form class="grid gap-3" hx-post="/ui/users" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Username</span><input class="input w-full" name="username" required autocomplete="off"></label>
+      <label class="fieldset"><span class="fieldset-legend">Password</span><input class="input w-full" type="password" name="password" required autocomplete="new-password"></label>
+      <label class="fieldset"><span class="fieldset-legend">Role</span>
+        <select name="role_id" class="select w-full">{{range .Roles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+      </label>
+      {{template "tagPicker" tagPicker .TagOptions nil "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
+      {{template "tagPicker" tagPicker .TagOptions nil "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult">
+        <span><span class="text-sm font-medium">Allow adult content</span>
+        <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
+      </label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="user_add_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Create user</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="role_add_modal" class="modal">
+  <div class="modal-box max-w-xl">
+    <h3 class="text-lg font-bold mb-3">Add role</h3>
+    <form class="grid gap-3" hx-post="/ui/users/roles" hx-swap="none">
+      <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" required></label>
+      <div class="fieldset"><span class="fieldset-legend">Permissions</span>
+        <div class="grid max-h-80 gap-3 overflow-y-auto">
+          {{range .Groups}}
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">{{.Title}}</div>
+            <div class="mt-1 grid gap-1 sm:grid-cols-2">
+              {{range .Perms}}
+              <label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
+                <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}">
+                <span><span class="text-sm font-medium">{{permLabel .}}</span>
+                <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
+              </label>
+              {{end}}
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="role_add_modal.close()">Cancel</button>
+        <button class="btn btn-primary">Create role</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{{end}}
+
+{{define "tagPicker"}}
+<div class="fieldset"><span class="fieldset-legend">{{.Label}}</span>
+  {{if .HasOptions}}
+  <details class="dropdown w-full">
+    <summary class="select select-sm w-full flex cursor-pointer items-center" data-tag-count>{{if .Selected}}{{len .Selected}} selected{{else}}None selected{{end}}</summary>
+    <div class="dropdown-content z-30 mt-1 w-full rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+      <input class="input input-sm mb-2 w-full" placeholder="Filter tags…" data-tag-filter form="">
+      <div class="grid max-h-52 grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto" data-tag-list>
+        {{range .SelectedOptions}}
+        <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.Name}}" checked>
+          <span class="truncate{{if .IsAdult}} text-error{{end}}">{{.Name}}</span>
+          {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
+        </label>
+        {{end}}
+        {{range .Extras}}
+        <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.}}" checked>
+          <span class="truncate">{{.}}</span>
+        </label>
+        {{end}}
+        {{if and (or .SelectedOptions .Extras) .Options}}<div class="col-span-2 my-1 border-t border-base-300" data-tag-divider></div>{{end}}
+        {{range .Options}}
+        <label class="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" class="checkbox checkbox-xs shrink-0" name="{{$.Name}}" value="{{.Name}}">
+          <span class="truncate{{if .IsAdult}} text-error{{end}}">{{.Name}}</span>
+          {{if eq .Kind "genre"}}<span class="badge badge-ghost badge-xs shrink-0">genre</span>{{end}}
+        </label>
+        {{end}}
+      </div>
+    </div>
+  </details>
+  {{if .Hint}}<span class="label">{{.Hint}}</span>{{end}}
+  {{else}}
+  <input class="input w-full" name="{{.Name}}" value="{{range $i, $t := .Values}}{{if $i}}, {{end}}{{$t}}{{end}}" placeholder="Gore, Horror, …">
+  <span class="label">Comma-separated (AniList tag list unavailable).{{if .Hint}} {{.Hint}}{{end}}</span>
+  {{end}}
+</div>
+{{end}}
+
+{{define "userEditModal"}}
+<dialog class="modal modal-open" id="user-edit-modal">
+  <div class="modal-box">
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-bold">Edit {{.User.Username}}</h3>
+      <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="document.getElementById('user-edit-modal').remove()">✕</button>
+    </div>
+    <form class="mt-3 grid gap-3" hx-post="/ui/users/{{.User.ID}}" hx-swap="none">
+      {{if .User.IsEnvAdmin}}
+      <p class="text-sm text-base-content/60">Role and password come from the environment (KAODOKU_ADMIN_USER / KAODOKU_ADMIN_PASSWORD); only content preferences are editable here.</p>
+      {{else}}
+      <label class="fieldset"><span class="fieldset-legend">Role</span>
+        <select name="role_id" class="select w-full">
+          {{$rid := .User.RoleID}}{{range .Roles}}<option value="{{.ID}}" {{if eq .ID $rid}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select></label>
+      <label class="fieldset"><span class="fieldset-legend">New password</span>
+        <input class="input w-full" type="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
+      {{end}}
+      {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
+      {{template "tagPicker" tagPicker .TagOptions .User.AllowedTags "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}
+      <label class="label cursor-pointer justify-start gap-2">
+        <input type="checkbox" class="checkbox checkbox-sm" name="allow_adult"{{if .User.AllowAdult}} checked{{end}}>
+        <span><span class="text-sm font-medium">Allow adult content</span>
+        <span class="block text-xs text-base-content/50">Adult-flagged manga appear in search, the library and suggestions.</span></span>
+      </label>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('user-edit-modal').remove()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <div class="modal-backdrop" onclick="document.getElementById('user-edit-modal').remove()"></div>
+</dialog>
+{{end}}
+
+{{define "roleEditModal"}}
+<dialog class="modal modal-open" id="role-edit-modal">
+  <div class="modal-box">
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-bold">Edit role {{.Role.Name}}</h3>
+      <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="document.getElementById('role-edit-modal').remove()">✕</button>
+    </div>
+    <form class="mt-3 grid gap-3" hx-post="/ui/users/roles" hx-swap="none">
+      <input type="hidden" name="id" value="{{.Role.ID}}">
+      <label class="fieldset"><span class="fieldset-legend">Role name</span><input class="input w-full" name="name" value="{{.Role.Name}}" required></label>
+      <div class="fieldset"><span class="fieldset-legend">Permissions</span>
+        <div class="grid max-h-80 gap-3 overflow-y-auto">
+          {{$role := .Role}}{{range .Groups}}
+          <div>
+            <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">{{.Title}}</div>
+            <div class="mt-1 grid gap-1 sm:grid-cols-2">
+              {{range .Perms}}
+              <label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-base-200">
+                <input type="checkbox" class="checkbox checkbox-sm mt-0.5" name="perm" value="{{.}}" {{if has $role.Perms .}}checked{{end}}>
+                <span><span class="text-sm font-medium">{{permLabel .}}</span>
+                <span class="block text-xs text-base-content/50">{{permDesc .}}</span></span>
+              </label>
+              {{end}}
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('role-edit-modal').remove()">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  <div class="modal-backdrop" onclick="document.getElementById('role-edit-modal').remove()"></div>
+</dialog>
+{{end}}
+
+{{define "accountCard"}}
+<div id="account-card" class="card bg-base-100 card-body p-4 gap-3 mb-4">
+  <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Account · {{.User.Username}}</h2>
+
+  {{if not .User.IsEnvAdmin}}
+  <details>
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Change password<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <form class="mt-2 flex flex-wrap items-center gap-2" hx-post="/ui/account/password" hx-target="#account-msg" hx-swap="innerHTML">
+      <input class="input input-sm min-w-40 flex-1" type="password" name="current" placeholder="Current password" required autocomplete="current-password">
+      <input class="input input-sm min-w-40 flex-1" type="password" name="password" placeholder="New password" required autocomplete="new-password">
+      <button class="btn btn-sm btn-primary">Change</button>
+      <span id="account-msg"></span>
+    </form>
+  </details>
+  {{end}}
+
+  <details>
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">Sessions ({{len .Sessions}})<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <div class="mt-2 grid gap-1">
+      {{range .Sessions}}
+      <div class="flex items-center justify-between gap-2 text-sm">
+        <span>signed in {{.CreatedAt}} · expires {{.ExpiresAt}}</span>
+        {{if .Current}}<span class="badge badge-success badge-soft badge-sm">this session</span>{{end}}
+      </div>
+      {{end}}
+      <button class="btn btn-sm btn-outline text-error justify-self-start" hx-post="/ui/account/sessions/revoke" hx-target="#account-card" hx-swap="outerHTML" hx-confirm="Sign out everywhere else?">Sign out other sessions</button>
+    </div>
+  </details>
+
+  <details {{if .NewToken}}open{{end}}>
+    <summary class="flex cursor-pointer list-none items-center justify-between py-1 text-sm font-medium select-none">API tokens ({{len .Tokens}})<span class="text-base-content/50">{{template "iconChevron"}}</span></summary>
+    <div class="mt-2 grid gap-2">
+      {{if .NewToken}}
+      <div class="alert alert-success alert-soft text-sm">Copy it now — it won't be shown again:
+        <code class="break-all select-all">{{.NewToken}}</code></div>
+      {{end}}
+      {{range .Tokens}}
+      <div class="flex items-center justify-between gap-2 text-sm">
+        <span>{{.Name}} <span class="text-xs text-base-content/50">· created {{.CreatedAt}}</span></span>
+        <button class="btn btn-ghost btn-xs text-error" hx-post="/ui/account/tokens/{{.ID}}/delete" hx-target="#account-card" hx-swap="outerHTML" hx-confirm="Revoke this token?">Revoke</button>
+      </div>
+      {{else}}<p class="text-sm text-base-content/60">Use tokens as <code>X-API-Key</code> or <code>Bearer</code> headers for scripts — they act with your permissions.</p>{{end}}
+      <form class="flex items-center gap-2" hx-post="/ui/account/tokens" hx-target="#account-card" hx-swap="outerHTML">
+        <input class="input input-sm w-40" name="name" placeholder="Token name">
+        <button class="btn btn-sm btn-outline">Create token</button>
+      </form>
+    </div>
+  </details>
+</div>
+{{end}}

@@ -1,0 +1,15 @@
+id: asurascans
+name: AsuraScans
+domains:
+  - asurascans.com
+  - cdn.asurascans.com
+base_url: https://asurascans.com/
+sample_manga_url: https://asurascans.com/comics/academys-genius-swordmaster
+search_url: https://asurascans.com/browse?search={query}
+scraper: generic
+allowed_extensions:
+  - webp
+min_chapters: 140
+requires_browser_solver: false
+enabled: true
+version: "2026-06-28"

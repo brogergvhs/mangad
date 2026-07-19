@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="{{.Theme}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{.Title}} · Kaodoku</title>
+  <link rel="manifest" href="/static/manifest.webmanifest?v={{assetVer}}">
+  <meta name="theme-color" content="#1e1e2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kaodoku">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <link rel="stylesheet" href="/static/app.css?v={{assetVer}}">
+  {{if .ThemeCSS}}<style>{{.ThemeCSS}}</style>{{end}}
+  <script src="/static/htmx.min.js?v={{assetVer}}"></script>
+  <script src="/static/app.js?v={{assetVer}}" defer></script>
+</head>
+<body>
+<div class="drawer">
+  <input id="app-drawer" type="checkbox" class="drawer-toggle">
+  <div class="drawer-content min-h-screen bg-base-200">
+    <div class="navbar bg-base-200 border-b border-base-100 lg:hidden sticky top-0 z-30">
+      <label for="app-drawer" class="btn btn-ghost btn-square drawer-button" aria-label="Open menu">{{template "iconMenu"}}</label>
+      <a href="/" class="text-lg font-bold px-2">Kao<span class="text-primary">doku</span></a>
+    </div>
+    <div id="toast" class="toast toast-top toast-end z-50"></div>
+    <main class="w-full p-4 lg:p-8">{{.Content}}</main>
+  </div>
+  <div class="drawer-side z-40">
+    <label for="app-drawer" aria-label="Close menu" class="drawer-overlay"></label>
+    <div class="app-sidebar flex min-h-full w-64 flex-col bg-base-300">
+      <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Kao<span class="text-primary">doku</span></a>
+      <ul class="menu w-full grow px-4">
+        <li><a href="/" class="{{if eq .Nav "home"}}menu-active{{end}}">{{template "iconHome"}}Home</a></li>
+        {{if .User.Can "library.add"}}<li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>{{end}}
+        <li>
+          <details class="group/screens" {{if or (eq .Nav "library") (eq .Nav "collections")}}open{{end}}>
+            <summary class="flex cursor-pointer list-none items-center gap-[0.6rem] rounded-lg px-3 py-2 transition-colors hover:bg-neutral">
+              {{template "iconLibrary"}}Library
+              <span class="ml-auto text-base-content/50 transition-transform group-open/screens:rotate-90">{{template "iconChevron"}}</span>
+            </summary>
+            <ul class="mt-0.5 flex flex-col gap-0.5 pl-6">
+              <li><a href="/library" class="{{if and (eq .Nav "library") (not .ActiveID)}}menu-active{{end}}">All</a></li>
+              <li><a href="/collections" class="{{if eq .Nav "collections"}}menu-active{{end}}">Collections</a></li>
+            </ul>
+            <ul class="mt-0.5 flex flex-col gap-0.5 pl-6" data-screen-list>
+              {{$active := .ActiveID}}{{range .Screens}}
+              <li draggable="true" data-screen-id="{{.ID}}" class="flex items-center gap-1 rounded-lg [&.dragging]:opacity-50">
+                <span class="cursor-grab select-none px-1 text-base-content/30" data-screen-handle>⠿</span>
+                <a href="/library?screen={{.ID}}" class="min-w-0 flex-1 {{if eq .ID $active}}menu-active{{end}}"><span class="truncate">{{.Name}}</span></a>
+              </li>
+              {{end}}
+              <li><a href="/library?new-screen=1" class="text-base-content/60">+ New screen</a></li>
+            </ul>
+          </details>
+        </li>
+        {{if .User.Can "import.use"}}<li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>{{end}}
+        {{if .User.Can "sources.manage"}}<li><a href="/sources" class="{{if eq .Nav "sources"}}menu-active{{end}}">{{template "iconSources"}}Sources</a></li>{{end}}
+        {{if .User.Can "users.manage"}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users</a></li>{{end}}
+      </ul>
+      <ul class="menu w-full px-4 pb-4">
+        {{if or (or (.User.Can "stats.view") (.User.Can "services.view")) (or (.User.Can "sessions.view") (.User.Can "jobs.view"))}}<li><a href="/management" class="{{if eq .Nav "management"}}menu-active{{end}}">{{template "iconGauge"}}Management</a></li>{{end}}
+        {{if or (.User.Can "settings.appearance") (.User.Can "settings.manage")}}<li><a href="/settings" class="{{if eq .Nav "settings"}}menu-active{{end}}">{{template "iconSettings"}}Settings</a></li>{{end}}
+        {{if .User}}<li><button hx-post="/logout" hx-swap="none" title="Sign out">{{template "iconLogout"}}<span class="truncate">{{.User.Username}}</span></button></li>{{end}}
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>
