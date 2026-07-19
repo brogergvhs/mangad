@@ -29,7 +29,7 @@
   <div class="drawer-side z-40">
     <label for="app-drawer" aria-label="Close menu" class="drawer-overlay"></label>
     <div class="app-sidebar flex min-h-full w-64 flex-col bg-base-300">
-      <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Kao<span class="text-primary">doku</span> <span class="text-sm font-normal text-base-content/40">顔読</span></a>
+      <a href="/" class="px-6 pt-6 pb-2 text-xl font-bold">Kao<span class="text-primary">doku</span></a>
       <ul class="menu w-full grow px-4">
         <li><a href="/" class="{{if eq .Nav "home"}}menu-active{{end}}">{{template "iconHome"}}Home</a></li>
         {{if .User.Can "library.add"}}<li><a href="/search" class="{{if eq .Nav "search"}}menu-active{{end}}">{{template "iconSearch"}}Search</a></li>{{end}}
