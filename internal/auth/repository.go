@@ -342,8 +342,12 @@ func (s *Service) DeleteUser(ctx context.Context, id int64) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ? AND origin != 'env'`, id); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, id)
-	return err
+	for _, table := range []string{"sessions", "user_favourites", "chapter_read_progress", "chapter_read_pages", "volume_read_progress"} {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE user_id = ?`, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ListRoles returns all roles.

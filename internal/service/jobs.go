@@ -1043,7 +1043,7 @@ func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressMan
 		if err != nil {
 			continue
 		}
-		if err := s.want.RefreshManga(ctx, mediaID); err != nil {
+		if err := s.want.RefreshManga(ctx, mediaID); err != nil && !catalog.IsNotFound(err) {
 			errs = append(errs, fmt.Errorf("refresh %s: %w", pid, err))
 		}
 	}

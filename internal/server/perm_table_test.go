@@ -1,0 +1,35 @@
+package server
+
+import (
+	"net/http/httptest"
+	"testing"
+
+	"github.com/brogergvhs/kaodoku/internal/auth"
+)
+
+// TestRequiredPerm locks the route→permission gate so a route can't silently
+// lose its guard.
+func TestRequiredPerm(t *testing.T) {
+	cases := []struct {
+		method, path, want string
+	}{
+		{"GET", "/library", auth.PermLibraryView},
+		{"POST", "/ui/library/add", auth.PermLibraryAdd},
+		{"POST", "/ui/library/5/remove", auth.PermLibraryManage},
+		{"POST", "/ui/library/5/chapters/9/remove", auth.PermLibraryManage},
+		{"POST", "/ui/library/5/chapters/9/rename", auth.PermLibraryManage},
+		{"POST", "/ui/library/5/chapters/delete-range", auth.PermLibraryManage},
+		{"POST", "/ui/library/5/chapters/9/read", auth.PermReaderUse},
+		{"POST", "/ui/collections", auth.PermLibraryView},
+		{"POST", "/ui/library/5/collections/add", auth.PermLibraryView},
+		{"GET", "/users", auth.PermUsersManage},
+		{"POST", "/ui/users/3/delete", auth.PermUsersManage},
+		{"POST", "/ui/sources/x/delete", auth.PermSourcesManage},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(c.method, c.path, nil)
+		if got := requiredPerm(r); got != c.want {
+			t.Errorf("%s %s: perm=%q want %q", c.method, c.path, got, c.want)
+		}
+	}
+}

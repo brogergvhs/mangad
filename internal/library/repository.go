@@ -1077,7 +1077,6 @@ func (r *Repository) ReconcileStartedDownloads(ctx context.Context) (int64, erro
 		UPDATE downloads
 		SET status = 'failed',
 			error = 'download interrupted before completion',
-			attempts = attempts + 1,
 			completed_at = NULL,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE status = 'started'

@@ -21,6 +21,9 @@ const AniListProvider = "anilist"
 // already-absent entry can be treated as success.
 var errAniListNotFound = errors.New("anilist: not found")
 
+// IsNotFound reports whether err is an AniList 404 (entry deleted upstream).
+func IsNotFound(err error) bool { return errors.Is(err, errAniListNotFound) }
+
 // AniListClient queries AniList GraphQL.
 type AniListClient struct {
 	endpoint string
