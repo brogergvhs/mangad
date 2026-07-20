@@ -22,6 +22,11 @@ func authEnabled() bool { return os.Getenv("KAODOKU_ADMIN_PASSWORD") != "" }
 // session cookie when auth is enabled, the env admin otherwise.
 func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" {
 			next.ServeHTTP(w, r)
 			return

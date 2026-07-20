@@ -46,6 +46,9 @@ func New(
 				return
 			}
 			for key, value := range values {
+				if key == service.SettingAniListClientSecret && value == redactedSecret {
+					continue
+				}
 				if err := service.ValidateSetting(key, value); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
@@ -715,10 +718,15 @@ func csrfGuard(next http.Handler) http.Handler {
 	})
 }
 
+const redactedSecret = "••••••••"
+
 func serveSettings(r *http.Request, svc *service.JobService) map[string]string {
 	out := map[string]string{}
 	for _, key := range service.SettingKeys() {
 		out[key] = svc.Setting(r.Context(), key, service.SettingDefault(key))
+	}
+	if out[service.SettingAniListClientSecret] != "" {
+		out[service.SettingAniListClientSecret] = redactedSecret
 	}
 	return out
 }
