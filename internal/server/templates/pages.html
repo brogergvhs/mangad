@@ -863,24 +863,16 @@
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Backups</h2>
-        <p class="text-sm text-base-content/60">User data only: progress, settings, users, roles, library metadata, collections and sources.</p>
       </div>
       <button class="btn btn-sm btn-primary" hx-post="/ui/backups" hx-target="#backups-content" hx-swap="outerHTML">{{template "iconDownload"}}Create backup</button>
     </div>
-    <form class="flex flex-wrap items-end gap-2" hx-put="/ui/settings" hx-target="#toast">
-      <label class="fieldset">
-        <span class="fieldset-legend">Schedule interval</span>
-        <input class="input input-sm w-44" name="{{.BackupEveryKey}}" value="{{.BackupEvery}}" placeholder="disabled">
-      </label>
-      <button class="btn btn-sm">Save schedule</button>
-      <span class="text-xs text-base-content/50">Empty disables scheduled backups.</span>
-    </form>
-    <form class="flex flex-wrap items-end gap-2" hx-post="/ui/backups/upload" hx-target="#backups-content" hx-swap="outerHTML" enctype="multipart/form-data">
-      <label class="fieldset">
+    <form class="flex flex-wrap items-end gap-3 rounded-lg border border-base-300 bg-base-200 p-3" hx-post="/ui/backups/upload" hx-target="#backups-content" hx-swap="outerHTML" enctype="multipart/form-data">
+      <label class="fieldset flex-1">
         <span class="fieldset-legend">Upload backup</span>
-        <input type="file" class="file-input file-input-sm" name="backup" required>
+        <input type="file" class="file-input file-input-sm w-full" name="backup" required>
+        <span class="label">Restore-ready SQLite backup exports.</span>
       </label>
-      <button class="btn btn-sm">Upload</button>
+      <button class="btn btn-sm">Upload backup</button>
     </form>
   </div>
 
@@ -893,12 +885,15 @@
         <td class="font-medium">{{.Name}}</td>
         <td>{{humanBytes .Size}}</td>
         <td>{{since .ModTime}}</td>
-        <td>
-          <div class="flex justify-end gap-1">
-            <a class="btn btn-xs btn-outline" href="/ui/backups/{{pathEscape .Name}}/download">{{template "iconDownload"}}Export</a>
-            <button class="btn btn-xs btn-outline" hx-post="/ui/backups/{{pathEscape .Name}}/restore" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Restore this backup? Current user data will be replaced.">Restore</button>
-            <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/backups/{{pathEscape .Name}}/delete" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Delete this backup?">{{template "iconTrash"}}</button>
-          </div>
+        <td class="text-right">
+          <details class="dropdown dropdown-end">
+            <summary class="btn btn-sm btn-ghost btn-square" aria-label="Backup actions">{{template "iconDots"}}</summary>
+            <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+              <li><a href="/ui/backups/{{pathEscape .Name}}/download">{{template "iconDownload"}}Export</a></li>
+              <li><button hx-post="/ui/backups/{{pathEscape .Name}}/restore" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Restore this backup? Current user data will be replaced.">{{template "iconRefresh"}}Restore</button></li>
+              <li><button class="text-error" hx-post="/ui/backups/{{pathEscape .Name}}/delete" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Delete this backup?">{{template "iconTrash"}}Delete</button></li>
+            </ul>
+          </details>
         </td>
       </tr>
       {{else}}

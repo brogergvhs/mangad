@@ -112,6 +112,26 @@ document.addEventListener("change", function (e) {
   summary.textContent = count ? count + " selected" : "None selected";
 });
 
+function updateLibraryBulk() {
+  var form = document.getElementById("library-bulk");
+  if (!form) return;
+  var seen = {};
+  var count = 0;
+  document.querySelectorAll("[data-bulk-title]:checked").forEach(function (c) {
+    if (seen[c.value]) return;
+    seen[c.value] = true;
+    count++;
+  });
+  form.hidden = count === 0;
+  var button = form.querySelector("[data-bulk-apply]");
+  if (button) button.textContent = "Apply to " + count + " selected title" + (count === 1 ? "" : "s");
+}
+document.addEventListener("change", function (e) {
+  if (e.target.matches("[data-bulk-title]")) updateLibraryBulk();
+});
+document.body.addEventListener("htmx:afterSwap", updateLibraryBulk);
+updateLibraryBulk();
+
 // Library filters: mirror table refreshes into the URL so reloads and
 // back-navigation keep them; plain sidebar links reset them.
 document.body.addEventListener("htmx:afterRequest", function (e) {

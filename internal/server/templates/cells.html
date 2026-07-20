@@ -265,7 +265,7 @@
 
 {{define "libraryCard"}}
 <div class="relative min-w-0">
-  {{if .CanManage}}<input form="library-bulk" type="checkbox" class="checkbox checkbox-sm absolute left-1 top-1 z-10 bg-base-100" name="title_id" value="{{.Title.ID}}" aria-label="Select {{.Title.DisplayTitle}}">{{end}}
+  {{if .CanManage}}<input form="library-bulk" type="checkbox" class="checkbox checkbox-sm absolute left-1 top-1 z-10 bg-base-100" name="title_id" value="{{.Title.ID}}" aria-label="Select {{.Title.DisplayTitle}}" data-bulk-title>{{end}}
   <div class="relative aspect-[5/7] w-full overflow-hidden rounded-lg bg-base-300{{if .Title.IsAdult}} outline outline-2 -outline-offset-2 outline-error{{end}}">
     <a href="/library/{{.Title.ID}}{{if .Screen}}?screen={{.Screen}}{{end}}"><img id="card-cover-{{.Title.ID}}" hx-preserve class="h-full w-full object-cover" src="{{.Title.CoverImage}}" alt="" loading="lazy"></a>
   </div>
@@ -291,7 +291,7 @@
 {{end}}
 
 {{define "bulkTitleCheckbox"}}
-<input form="library-bulk" type="checkbox" class="checkbox checkbox-sm" name="title_id" value="{{.ID}}" aria-label="Select {{.DisplayTitle}}">
+<input form="library-bulk" type="checkbox" class="checkbox checkbox-sm" name="title_id" value="{{.ID}}" aria-label="Select {{.DisplayTitle}}" data-bulk-title>
 {{end}}
 
 {{define "libraryResults"}}
@@ -300,12 +300,8 @@
   <p class="text-base-content/60 py-3">{{.Empty}}</p>
   {{else}}
   {{if .CanManage}}
-  <form id="library-bulk" class="mb-3 flex flex-wrap items-center gap-2" hx-post="/ui/library/bulk" hx-target="#library-results" hx-swap="innerHTML" hx-confirm="Apply this action to the selected titles?">
+  <form id="library-bulk" class="mb-3 flex flex-wrap items-center gap-2" hx-post="/ui/library/bulk" hx-target="#library-results" hx-swap="innerHTML" hx-confirm="Apply this action to the selected titles?" hidden>
     {{range $k, $vs := .Params}}{{range $v := $vs}}<input type="hidden" name="{{$k}}" value="{{$v}}">{{end}}{{end}}
-    <label class="label cursor-pointer gap-2">
-      <input type="checkbox" class="checkbox checkbox-sm" onchange="document.querySelectorAll('[form=library-bulk][name=title_id]').forEach(function(c){c.checked = this.checked}, this)">
-      <span class="text-sm">Select visible</span>
-    </label>
     <select name="action" class="select select-sm">
       <option value="refresh">Refresh chapters</option>
       <option value="download">Download missing</option>
@@ -314,7 +310,7 @@
       <option value="monitor-off">Stop monitoring</option>
       <option value="remove">Remove from library</option>
     </select>
-    <button class="btn btn-sm">Apply</button>
+    <button class="btn btn-sm" data-bulk-apply>Apply to 0 selected titles</button>
   </form>
   {{end}}
   {{if eq .View "table"}}
@@ -346,7 +342,7 @@
         <div class="flex min-w-0 flex-1 flex-col gap-2">
           <div class="flex items-center justify-between gap-3">
             <div class="flex min-w-0 items-center gap-2">
-              {{if $.CanManage}}<input form="library-bulk" type="checkbox" class="checkbox checkbox-sm shrink-0" name="title_id" value="{{.Title.ID}}" aria-label="Select {{.Title.DisplayTitle}}">{{end}}
+              {{if $.CanManage}}<input form="library-bulk" type="checkbox" class="checkbox checkbox-sm shrink-0" name="title_id" value="{{.Title.ID}}" aria-label="Select {{.Title.DisplayTitle}}" data-bulk-title>{{end}}
               <a href="/library/{{.Title.ID}}{{if $.Screen}}?screen={{$.Screen}}{{end}}" class="min-w-0 text-lg font-semibold text-balance">{{.Title.DisplayTitle}}</a>
             </div>
             <div class="flex shrink-0 items-center">{{template "favToggle" .Title}}{{if $.CanManage}}{{template "monitorToggle" .Title}}{{template "libraryTitleActions" (cardView .Title $.CanManage 0)}}{{else}}{{template "monitorBadge" .Title}}{{end}}</div>

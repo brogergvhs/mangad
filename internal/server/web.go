@@ -207,7 +207,7 @@ func settingMeta(key string) (label, desc string) {
 	case service.SettingServeSourceVerifyEvery:
 		return "Verify sources", "How often enabled source definitions are re-checked against their sites. Use 0 to disable."
 	case service.SettingServeBackupEvery:
-		return "Back up user data", "How often user data is backed up. Empty disables scheduled backups."
+		return "Back up user data", "How often user data is backed up. User data only: progress, settings, users, roles, library metadata, collections and sources. Empty disables scheduled backups."
 	case service.SettingServeRunEvery:
 		return "Background task interval", "How often the background worker wakes to run queued jobs. Lower is more responsive, higher is less busy."
 	case service.SettingBrowserSolverEnabled:
@@ -2621,9 +2621,7 @@ type sourcesPageView struct {
 }
 
 type backupsView struct {
-	Backups        []service.BackupInfo
-	BackupEveryKey string
-	BackupEvery    string
+	Backups []service.BackupInfo
 }
 
 func (u *webUI) backupsPage(w http.ResponseWriter, r *http.Request) {
@@ -2636,11 +2634,7 @@ func (u *webUI) backupsFrag(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) backupsView(ctx context.Context) backupsView {
 	backups, _ := u.svc.ListBackups(ctx)
-	return backupsView{
-		Backups:        backups,
-		BackupEveryKey: service.SettingServeBackupEvery,
-		BackupEvery:    u.svc.Setting(ctx, service.SettingServeBackupEvery, service.SettingDefault(service.SettingServeBackupEvery)),
-	}
+	return backupsView{Backups: backups}
 }
 
 func (u *webUI) backupCreate(w http.ResponseWriter, r *http.Request) {
