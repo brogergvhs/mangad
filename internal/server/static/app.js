@@ -129,6 +129,11 @@ function updateLibraryBulk() {
 document.addEventListener("change", function (e) {
   if (e.target.matches("[data-bulk-title]")) updateLibraryBulk();
 });
+document.addEventListener("click", function (e) {
+  if (!e.target.matches("[data-bulk-cancel]")) return;
+  document.querySelectorAll("[data-bulk-title]:checked").forEach(function (c) { c.checked = false; });
+  updateLibraryBulk();
+});
 document.body.addEventListener("htmx:afterSwap", updateLibraryBulk);
 updateLibraryBulk();
 
