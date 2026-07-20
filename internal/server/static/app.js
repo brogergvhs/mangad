@@ -33,6 +33,20 @@ document.body.addEventListener("htmx:responseError", function (e) {
     showErrorToast("Server error. Check the logs and try again.");
   }
 });
+document.body.addEventListener("htmx:beforeRequest", function (e) {
+  if (!e.target.matches("[data-backup-upload]")) return;
+  var bar = document.getElementById("backup-upload-progress");
+  if (!bar) return;
+  bar.hidden = false;
+  bar.value = 0;
+});
+document.body.addEventListener("htmx:xhr:progress", function (e) {
+  if (!e.target.matches("[data-backup-upload]")) return;
+  var bar = document.getElementById("backup-upload-progress");
+  if (!bar || !e.detail.lengthComputable || !e.detail.total) return;
+  bar.hidden = false;
+  bar.value = Math.round(e.detail.loaded * 100 / e.detail.total);
+});
 
 // confirm modal: replaces native hx-confirm (browsers can suppress the
 // native dialog); renders an in-app daisyUI modal instead
