@@ -203,6 +203,8 @@ func settingMeta(key string) (label, desc string) {
 		return "Re-scan downloaded files", "How often the download folders are re-checked to reconcile which chapters are already on disk."
 	case service.SettingServeDownloadEvery:
 		return "Download missing chapters", "How often missing chapters of monitored manga are downloaded automatically."
+	case service.SettingServeSourceVerifyEvery:
+		return "Verify sources", "How often enabled source definitions are re-checked against their sites. Use 0 to disable."
 	case service.SettingServeRunEvery:
 		return "Background task interval", "How often the background worker wakes to run queued jobs. Lower is more responsive, higher is less busy."
 	case service.SettingBrowserSolverEnabled:
@@ -3535,7 +3537,8 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 		groups = append(groups,
 			settingGroup{Title: "Scheduling", Fields: fields(
 				service.SettingServeRefreshEvery, service.SettingServeScanEvery,
-				service.SettingServeDownloadEvery, service.SettingServeRunEvery,
+				service.SettingServeDownloadEvery, service.SettingServeSourceVerifyEvery,
+				service.SettingServeRunEvery,
 				service.SettingServeAniListSyncEvery,
 				service.SettingServeCatalogEvery)},
 			settingGroup{Title: "Jobs & downloads", Fields: fields(

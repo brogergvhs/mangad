@@ -78,10 +78,11 @@ type RunSummary struct {
 }
 
 const (
-	SettingServeRefreshEvery  = "serve.refresh_every"
-	SettingServeScanEvery     = "serve.scan_every"
-	SettingServeDownloadEvery = "serve.download_every"
-	SettingServeRunEvery      = "serve.run_every"
+	SettingServeRefreshEvery      = "serve.refresh_every"
+	SettingServeScanEvery         = "serve.scan_every"
+	SettingServeDownloadEvery     = "serve.download_every"
+	SettingServeSourceVerifyEvery = "sources.verify_every"
+	SettingServeRunEvery          = "serve.run_every"
 
 	SettingBrowserSolverEnabled            = "browser_solver.enabled"
 	SettingBrowserSolverProvider           = "browser_solver.provider"
@@ -125,6 +126,8 @@ func SettingDefault(key string) string {
 		return "30m"
 	case SettingServeDownloadEvery:
 		return "10m"
+	case SettingServeSourceVerifyEvery:
+		return "168h"
 	case SettingServeRunEvery:
 		return "5s"
 	case SettingBrowserSolverEnabled:
@@ -204,6 +207,7 @@ func SettingKeys() []string {
 		SettingServeRefreshEvery,
 		SettingServeScanEvery,
 		SettingServeDownloadEvery,
+		SettingServeSourceVerifyEvery,
 		SettingServeRunEvery,
 		SettingBrowserSolverEnabled,
 		SettingBrowserSolverProvider,
@@ -258,7 +262,7 @@ func ValidateSetting(key, value string) error {
 			return nil
 		}
 		return validateDurationSetting(key, value)
-	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery, SettingServicesHealthInterval:
+	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeSourceVerifyEvery, SettingServeRunEvery, SettingServicesHealthInterval:
 		return validateDurationSetting(key, value)
 	case SettingBrowserSolverEnabled, SettingBrowserDownloaderEnabled, SettingRateLimitDisabled:
 		if _, err := strconv.ParseBool(value); err != nil {
@@ -2131,6 +2135,26 @@ func (s *JobService) EnqueueSource(ctx context.Context, sourceID string, runAfte
 	return s.enqueue(ctx, jobs.TypeVerifySource, JobPayload{SourceID: strings.TrimSpace(sourceID)}, runAfter)
 }
 
+func (s *JobService) EnqueueSourceVerification(ctx context.Context, runAfter time.Time) (int, error) {
+	srcs, err := s.ListSources(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var errs []error
+	n := 0
+	for _, src := range srcs {
+		if !src.Enabled {
+			continue
+		}
+		_, err := s.EnqueueSource(ctx, src.ID, runAfter)
+		if err == nil {
+			n++
+		}
+		errs = append(errs, err)
+	}
+	return n, errors.Join(errs...)
+}
+
 // EnqueueCatalog creates a catalog-scoped job.
 func (s *JobService) EnqueueCatalog(ctx context.Context, typ string, catalogID int64, runAfter time.Time) (jobs.Job, error) {
 	return s.enqueue(ctx, typ, JobPayload{CatalogID: catalogID}, runAfter)
@@ -2388,7 +2412,11 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 			if err != nil {
 				return err
 			}
-			if _, err = s.lib.RefreshTitle(ctx, cfg, logSvc, title); err != nil {
+			_, err = s.lib.RefreshTitle(ctx, cfg, logSvc, title)
+			if markErr := s.markTitleSourceHealth(ctx, title, err); markErr != nil {
+				return errors.Join(err, markErr)
+			}
+			if err != nil {
 				return err
 			}
 			if payload.DownloadAfterRefresh {
@@ -2415,14 +2443,21 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 				return err
 			}
 			if title.DiscoveredCount == 0 {
-				if _, err := s.lib.RefreshTitle(ctx, cfg, logSvc, title); err != nil {
+				_, err := s.lib.RefreshTitle(ctx, cfg, logSvc, title)
+				if markErr := s.markTitleSourceHealth(ctx, title, err); markErr != nil {
+					return errors.Join(err, markErr)
+				}
+				if err != nil {
 					return err
 				}
 			}
-			if _, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID, progress); err != nil {
-				return err
+			results, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID, progress)
+			if err != nil || len(results) > 0 {
+				if markErr := s.markTitleSourceHealth(ctx, title, err); markErr != nil {
+					return errors.Join(err, markErr)
+				}
 			}
-			return nil
+			return err
 		}
 		return s.expandTitleJob(ctx, jobs.TypeDownloadMissing, job.ID)
 	case jobs.TypeSyncAniList:
@@ -2447,6 +2482,19 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 	default:
 		return fmt.Errorf("unknown job type %q", job.Type)
 	}
+}
+
+func (s *JobService) markTitleSourceHealth(ctx context.Context, title library.Title, runErr error) error {
+	if strings.TrimSpace(title.SourceID) == "" {
+		return nil
+	}
+	status := sources.StatusHealthy
+	lastError := ""
+	if runErr != nil {
+		status = fetchFailureStatus(runErr)
+		lastError = runErr.Error()
+	}
+	return s.src.repo.UpdateHealth(ctx, title.SourceID, status, lastError)
 }
 
 func (s *JobService) expandTitleJob(ctx context.Context, typ string, parentID int64) error {
