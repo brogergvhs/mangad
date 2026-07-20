@@ -14,6 +14,7 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/server"
 	"github.com/brogergvhs/kaodoku/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/util"
 
 	"github.com/spf13/cobra"
 )
@@ -75,6 +76,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	defer closeDB()
 	svc.SetRuntimeConfig(runtimeConfig)
 	warnDownloadDir(cmd)
+	cleanupDownloadTemps()
 
 	// Make built-in sources available immediately (registry sync stays manual).
 	if err := svc.SyncSources(ctx, ""); err != nil {
@@ -230,6 +232,13 @@ func seedServeSetting(cmd *cobra.Command, svc *service.JobService, ctx context.C
 		return nil
 	}
 	return svc.SetSetting(ctx, key, value.String())
+}
+
+func cleanupDownloadTemps() {
+	cfg, _, err := runtimeConfig()
+	if err == nil {
+		util.CleanupUnfinishedTempFolders(cfg.DownloadDir)
+	}
 }
 
 func serveDuration(svc *service.JobService, ctx context.Context, key string) time.Duration {

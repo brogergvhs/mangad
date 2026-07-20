@@ -809,7 +809,7 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 	}
 	entries, err := s.want.AniList().UserList(actx, aid)
 	if err != nil {
-		return err
+		return s.aniListAuthError(ctx, userID, err)
 	}
 	remote := make(map[string]catalog.AniListEntry, len(entries))
 	for _, e := range entries {
@@ -913,7 +913,17 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 		}
 	}
 	s.invalidateRecs(userID)
-	return errs2err(errs)
+	return s.aniListAuthError(ctx, userID, errs2err(errs))
+}
+
+func (s *JobService) aniListAuthError(ctx context.Context, userID int64, err error) error {
+	if !catalog.IsUnauthorized(err) {
+		return err
+	}
+	if derr := s.DisconnectAniList(ctx, userID); derr != nil {
+		return errors.Join(fmt.Errorf("anilist authorization expired; reconnect AniList in settings"), derr)
+	}
+	return fmt.Errorf("anilist authorization expired; reconnect AniList in settings")
 }
 
 // contentAllowedFor mirrors the server's per-user content guard so AniList

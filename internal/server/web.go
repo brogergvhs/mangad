@@ -3342,6 +3342,9 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		value := strings.TrimSpace(r.FormValue(key))
+		if key == service.SettingAniListClientSecret && value == redactedSecret {
+			continue
+		}
 		// Personal appearance values are always stored explicitly: "equals the
 		// built-in default" must not clear them, or a differing pre-multi-user
 		// global value (e.g. an old ui.theme) silently takes over again.
@@ -3412,6 +3415,9 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 			f.Kind = "color"
 		case key == service.SettingAniListClientID, key == service.SettingAniListClientSecret:
 			f.Kind = "secret"
+			if key == service.SettingAniListClientSecret && f.Value != "" {
+				f.Value = redactedSecret
+			}
 		}
 		return f
 	}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -50,6 +51,46 @@ func TestAPISettings(t *testing.T) {
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingBrowserSolverTimeoutSeconds: "0"}, http.StatusBadRequest, nil)
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingBrowserDownloaderTimeoutSeconds: "0"}, http.StatusBadRequest, nil)
 	requestJSON(t, api, http.MethodPut, "/api/settings", map[string]string{service.SettingJobsWorkers: "0"}, http.StatusBadRequest, nil)
+}
+
+func TestSettingsPageRedactsAniListSecret(t *testing.T) {
+	ctx := context.Background()
+	svc, closeDB, err := service.OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeDB()
+	api := New(
+		svc,
+		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
+	)
+	if err := svc.SetSetting(ctx, service.SettingAniListClientSecret, "top-secret"); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("settings status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); strings.Contains(body, "top-secret") || !strings.Contains(body, redactedSecret) {
+		t.Fatalf("settings secret redaction failed: %s", body)
+	}
+
+	form := url.Values{service.SettingAniListClientSecret: {redactedSecret}}
+	req := httptest.NewRequest(http.MethodPut, "/ui/settings", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("settings save status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := svc.Setting(ctx, service.SettingAniListClientSecret, ""); got != "top-secret" {
+		t.Fatalf("stored secret = %q, want original", got)
+	}
 }
 
 func TestAPIJobs(t *testing.T) {
