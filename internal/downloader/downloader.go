@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -16,6 +17,11 @@ import (
 
 	"github.com/brogergvhs/kaodoku/internal/util"
 )
+
+// imageSlots caps total concurrent image downloads across every running job.
+var imageSlots = make(chan struct{}, 8)
+
+const maxImageBytes = 64 << 20
 
 type Downloader struct {
 	client     *http.Client
@@ -262,9 +268,14 @@ func (d *Downloader) download(
 	u, output, referer string,
 	progress func(done int64),
 ) (err error) {
+	select {
+	case imageSlots <- struct{}{}:
+		defer func() { <-imageSlots }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	// Page fetches stay paced; image bodies skip the per-host limiter.
 	ctx = util.ExemptFromRateLimit(ctx)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
@@ -312,9 +323,12 @@ func (d *Downloader) download(
 		err = errors.Join(err, f.Close())
 	}()
 
-	written, err := copyWithProgress(f, resp.Body, progress)
+	written, err := copyWithProgress(f, io.LimitReader(resp.Body, maxImageBytes+1), progress)
 	if err != nil {
 		return err
+	}
+	if written > maxImageBytes {
+		return fmt.Errorf("image exceeds %d bytes", maxImageBytes)
 	}
 
 	if progress != nil && resp.ContentLength > 0 && written < resp.ContentLength {
