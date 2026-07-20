@@ -789,7 +789,7 @@
   <div class="text-xs text-base-content/50">Then enter the client ID and secret in the AniList application section below (admins only).</div>
   {{end}}
 </div>
-<form class="grid gap-4" hx-put="/ui/settings" hx-target="#settings-msg">
+<form class="grid gap-4" hx-put="/ui/settings" hx-target="#toast">
   {{range .Groups}}
   {{if eq .Title "Appearance"}}
   <div class="card bg-base-100 card-body p-4 gap-0">
@@ -835,7 +835,6 @@
   {{end}}
   <div class="flex items-center gap-3">
     <button class="w-full btn btn-primary btn-sm">Save settings</button>
-    <span id="settings-msg"></span>
   </div>
 </form>
 {{end}}

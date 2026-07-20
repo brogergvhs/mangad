@@ -15,6 +15,25 @@ document.addEventListener("click", function (e) {
   if (toggle && window.matchMedia("(max-width: 1023px)").matches) toggle.checked = false;
 });
 
+function showErrorToast(msg) {
+  var toast = document.getElementById("toast");
+  if (!toast) return;
+  toast.innerHTML = '<div class="alert alert-error shadow-lg"><span></span></div>';
+  toast.querySelector("span").textContent = msg;
+}
+
+document.body.addEventListener("htmx:sendError", function () {
+  showErrorToast("Network error. Check the server connection.");
+});
+document.body.addEventListener("htmx:timeout", function () {
+  showErrorToast("Request timed out. Try again.");
+});
+document.body.addEventListener("htmx:responseError", function (e) {
+  if (e.detail.xhr && e.detail.xhr.status >= 500) {
+    showErrorToast("Server error. Check the logs and try again.");
+  }
+});
+
 // confirm modal: replaces native hx-confirm (browsers can suppress the
 // native dialog); renders an in-app daisyUI modal instead
 document.addEventListener("htmx:confirm", function (e) {

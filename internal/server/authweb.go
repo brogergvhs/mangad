@@ -136,16 +136,59 @@ func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 	return nil
 }
 
-// clientIP prefers the proxy-forwarded address over the socket peer.
+// clientIP prefers the proxy-forwarded address from a local proxy.
 func clientIP(r *http.Request) string {
-	if fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); fwd != "" {
+	peer := remoteIP(r.RemoteAddr)
+	if trustedProxy(peer) {
+		fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+		if net.ParseIP(fwd) != nil {
+			return fwd
+		}
+	}
+	if peer != "" {
+		return peer
+	}
+	return r.RemoteAddr
+}
+
+func remoteIP(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err == nil {
+		return host
+	}
+	if net.ParseIP(addr) != nil {
+		return addr
+	}
+	return ""
+}
+
+func trustedProxy(addr string) bool {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
+}
+
+func forwardedProto(r *http.Request) string {
+	if trustedProxy(remoteIP(r.RemoteAddr)) {
+		return strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	}
+	return ""
+}
+
+func forwardedHost(r *http.Request) string {
+	if trustedProxy(remoteIP(r.RemoteAddr)) {
+		return strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	}
+	return ""
+}
+
+func requestHost(r *http.Request) string {
+	if fwd := forwardedHost(r); fwd != "" {
 		return fwd
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return r.Host
 }
 
 func headerToken(r *http.Request) string {
@@ -158,7 +201,7 @@ func headerToken(r *http.Request) string {
 // secureRequest reports whether the request arrived over https (directly or
 // via a TLS-terminating proxy) so cookies can carry the Secure flag.
 func secureRequest(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	return r.TLS != nil || forwardedProto(r) == "https"
 }
 
 const loginPage = `<!doctype html><html lang="en" data-theme="mocha"><meta charset="utf-8">
