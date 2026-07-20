@@ -31,9 +31,50 @@ func boolInt(b bool) int {
 type Service struct {
 	db      *sql.DB
 	touched sync.Map // session token hash -> last_seen_at write
+	loginMu sync.Mutex
+	logins  map[string]*loginState
 }
 
-func NewService(db *sql.DB) *Service { return &Service{db: db} }
+type loginState struct {
+	fails int
+	until time.Time
+}
+
+const (
+	loginMaxFails   = 5
+	loginLockWindow = 15 * time.Minute
+)
+
+func NewService(db *sql.DB) *Service { return &Service{db: db, logins: map[string]*loginState{}} }
+
+// loginAllowed rejects a username that has hit the failed-attempt cap within
+// the lock window.
+func (s *Service) loginAllowed(username string) error {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	if st := s.logins[username]; st != nil && st.fails >= loginMaxFails && time.Now().Before(st.until) {
+		return fmt.Errorf("too many failed attempts, try again later")
+	}
+	return nil
+}
+
+func (s *Service) loginFailed(username string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	st := s.logins[username]
+	if st == nil {
+		st = &loginState{}
+		s.logins[username] = st
+	}
+	st.fails++
+	st.until = time.Now().Add(loginLockWindow)
+}
+
+func (s *Service) loginReset(username string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	delete(s.logins, username)
+}
 
 // Bootstrap seeds built-in roles and the env admin (user id 1). It runs at
 // every startup so the admin credentials always mirror the environment and
@@ -81,18 +122,25 @@ func (s *Service) Bootstrap(ctx context.Context, adminUser, adminPassword string
 
 // Login verifies credentials and returns a new session token.
 func (s *Service) Login(ctx context.Context, username, password, userAgent, ip string) (string, error) {
+	username = strings.TrimSpace(username)
+	if err := s.loginAllowed(username); err != nil {
+		return "", err
+	}
 	var id int64
 	var hash string
-	err := s.db.QueryRowContext(ctx, `SELECT id, password_hash FROM users WHERE username = ?`, strings.TrimSpace(username)).Scan(&id, &hash)
+	err := s.db.QueryRowContext(ctx, `SELECT id, password_hash FROM users WHERE username = ?`, username).Scan(&id, &hash)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && hash == "") {
+		s.loginFailed(username)
 		return "", fmt.Errorf("invalid credentials")
 	}
 	if err != nil {
 		return "", err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+		s.loginFailed(username)
 		return "", fmt.Errorf("invalid credentials")
 	}
+	s.loginReset(username)
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -388,7 +436,10 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, current, nex
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, string(newHash), userID)
+	if _, err = s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, string(newHash), userID); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
 	return err
 }
 
