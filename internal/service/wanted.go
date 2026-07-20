@@ -461,12 +461,13 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 // slow browser path for search.
 func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (body, finalURL string, err error) {
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
-		Timeout:    30 * time.Second,
-		UserAgent:  util.PickUserAgent(cfg.UserAgent),
-		Cookie:     cfg.Cookie,
-		CookieFile: cfg.CookieFile,
-		Transport:  cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
-		RateLimit:  hostRateLimit(&cfg),
+		Timeout:              30 * time.Second,
+		UserAgent:            util.PickUserAgent(cfg.UserAgent),
+		Cookie:               cfg.Cookie,
+		CookieFile:           cfg.CookieFile,
+		Transport:            cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
+		RateLimit:            hostRateLimit(&cfg),
+		BlockPrivateNetworks: true,
 	})
 	if err != nil {
 		return "", "", err

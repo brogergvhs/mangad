@@ -2234,7 +2234,11 @@ func fetchCover(ctx context.Context, coverURL string) (name string, data []byte,
 	if err != nil {
 		return "", nil, false
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client, err := util.NewHTTPClient(util.HTTPClientOptions{Timeout: 20 * time.Second, BlockPrivateNetworks: true})
+	if err != nil {
+		return "", nil, false
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, false
 	}

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -16,14 +18,15 @@ import (
 )
 
 type HTTPClientOptions struct {
-	Timeout     time.Duration
-	UserAgent   string
-	Cookie      string
-	CookieFile  string
-	Transport   http.RoundTripper
-	State       *BrowserState
-	RateLimit   HostRateLimit
-	DebugLogger interface {
+	Timeout              time.Duration
+	UserAgent            string
+	Cookie               string
+	CookieFile           string
+	Transport            http.RoundTripper
+	State                *BrowserState
+	RateLimit            HostRateLimit
+	BlockPrivateNetworks bool
+	DebugLogger          interface {
 		Debugf(string, ...any)
 	}
 }
@@ -76,6 +79,7 @@ func NewHTTPClient(opts HTTPClientOptions) (*http.Client, error) {
 			cookieHeader: joinCookies(opts.Cookie, opts.CookieFile),
 			state:        opts.State,
 			limiters:     newHostLimiters(opts.RateLimit),
+			blockPrivate: opts.BlockPrivateNetworks,
 			log:          opts.DebugLogger,
 		},
 		Jar: jar,
@@ -95,6 +99,7 @@ type roundTripper struct {
 	cookieHeader string
 	state        *BrowserState
 	limiters     *hostLimiters
+	blockPrivate bool
 	log          interface{ Debugf(string, ...any) }
 }
 
@@ -121,11 +126,56 @@ func (rt roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if rt.log != nil {
 		rt.log.Debugf("HTTP %s %s", req.Method, req.URL.String())
 	}
+	if rt.blockPrivate {
+		if err := rejectPrivateTarget(req.Context(), req.URL); err != nil {
+			return nil, err
+		}
+	}
 	if err := rt.limiters.Wait(req.Context(), req.URL.Host); err != nil {
 		return nil, err
 	}
 
 	return rt.base.RoundTrip(req)
+}
+
+func rejectPrivateTarget(ctx context.Context, u *url.URL) error {
+	if u == nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("blocked unsupported target URL")
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("blocked target with no host")
+	}
+	if privateTarget(ctx, host) {
+		return fmt.Errorf("blocked private network target %q", host)
+	}
+	return nil
+}
+
+func privateTarget(ctx context.Context, host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return privateIP(ip)
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return true
+	}
+	if len(addrs) == 0 {
+		return true
+	}
+	for _, addr := range addrs {
+		if privateIP(addr.IP) {
+			return true
+		}
+	}
+	return false
+}
+
+func privateIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()
 }
 
 func joinCookies(inline, file string) string {

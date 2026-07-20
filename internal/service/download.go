@@ -131,14 +131,15 @@ func newDownloadServiceWithScraper(
 ) (*DownloadService, error) {
 	browserState := &util.BrowserState{}
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
-		Timeout:     30 * time.Second,
-		UserAgent:   util.PickUserAgent(cfg.UserAgent),
-		Cookie:      cfg.Cookie,
-		Transport:   cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
-		CookieFile:  cfg.CookieFile,
-		State:       browserState,
-		RateLimit:   hostRateLimit(cfg),
-		DebugLogger: log,
+		Timeout:              30 * time.Second,
+		UserAgent:            util.PickUserAgent(cfg.UserAgent),
+		Cookie:               cfg.Cookie,
+		Transport:            cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
+		CookieFile:           cfg.CookieFile,
+		State:                browserState,
+		RateLimit:            hostRateLimit(cfg),
+		BlockPrivateNetworks: true,
+		DebugLogger:          log,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP client: %w", err)
