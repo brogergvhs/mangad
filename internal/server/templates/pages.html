@@ -858,50 +858,56 @@
 {{end}}
 
 {{define "backupsContent"}}
-<div id="backups-content" class="grid gap-4">
-  <div class="card bg-base-100 card-body p-4 gap-3">
-    <div class="flex items-center justify-between gap-3 flex-wrap">
-      <div>
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Backups</h2>
-      </div>
+<div id="backups-content" class="grid gap-3">
+  <div class="flex items-center justify-between gap-3">
+    <h1 class="text-2xl font-bold">Backups</h1>
+    <div class="flex items-center gap-2 shrink-0">
+      <button class="btn btn-sm" onclick="backup_upload_modal.showModal()">{{template "iconImport"}}Upload</button>
       <button class="btn btn-sm btn-primary" hx-post="/ui/backups" hx-target="#backups-content" hx-swap="outerHTML">{{template "iconDownload"}}Create backup</button>
     </div>
-    <form class="flex flex-wrap items-end gap-3 rounded-lg border border-base-300 bg-base-200 p-3" hx-post="/ui/backups/upload" hx-target="#backups-content" hx-swap="outerHTML" enctype="multipart/form-data">
-      <label class="fieldset flex-1">
-        <span class="fieldset-legend">Upload backup</span>
-        <input type="file" class="file-input file-input-sm w-full" name="backup" required>
-        <span class="label">Restore-ready SQLite backup exports.</span>
-      </label>
-      <button class="btn btn-sm">Upload backup</button>
-    </form>
   </div>
 
-  <div class="rounded-xl bg-base-100">
-    <table class="table table-sm">
-      <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th class="text-right">Actions</th></tr></thead>
-      <tbody>
-      {{range .Backups}}
-      <tr>
-        <td class="font-medium">{{.Name}}</td>
-        <td>{{humanBytes .Size}}</td>
-        <td>{{since .ModTime}}</td>
-        <td class="text-right">
-          <details class="dropdown dropdown-end">
-            <summary class="btn btn-sm btn-ghost btn-square" aria-label="Backup actions">{{template "iconDots"}}</summary>
-            <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
-              <li><a href="/ui/backups/{{pathEscape .Name}}/download">{{template "iconDownload"}}Export</a></li>
-              <li><button hx-post="/ui/backups/{{pathEscape .Name}}/restore" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Restore this backup? Current user data will be replaced.">{{template "iconRefresh"}}Restore</button></li>
-              <li><button class="text-error" hx-post="/ui/backups/{{pathEscape .Name}}/delete" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Delete this backup?">{{template "iconTrash"}}Delete</button></li>
-            </ul>
-          </details>
-        </td>
-      </tr>
-      {{else}}
-      <tr><td colspan="4" class="text-base-content/60">No backups yet.</td></tr>
-      {{end}}
-      </tbody>
-    </table>
+  <div class="divide-y divide-line/25 rounded-xl bg-base-100">
+    {{range .Backups}}
+    <div class="flex items-center gap-3 p-4">
+      <div class="min-w-0 flex-1">
+        <div class="truncate font-medium">{{.Name}}</div>
+        <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50 sm:hidden">
+          <span>{{humanBytes .Size}}</span>
+          <span>{{since .ModTime}}</span>
+        </div>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/60 shrink-0">
+        <span class="w-20 text-right tabular-nums">{{humanBytes .Size}}</span>
+      </div>
+      <span class="w-24 text-right text-sm text-base-content/50 whitespace-nowrap shrink-0">{{since .ModTime}}</span>
+      <details class="dropdown dropdown-end">
+        <summary class="btn btn-sm btn-ghost btn-square" aria-label="Backup actions">{{template "iconDots"}}</summary>
+        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+          <li><a href="/ui/backups/{{pathEscape .Name}}/download">{{template "iconDownload"}}Export</a></li>
+          <li><button hx-post="/ui/backups/{{pathEscape .Name}}/restore" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Restore this backup? Current user data will be replaced.">{{template "iconRefresh"}}Restore</button></li>
+          <li><button class="text-error" hx-post="/ui/backups/{{pathEscape .Name}}/delete" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Delete this backup?">{{template "iconTrash"}}Delete</button></li>
+        </ul>
+      </details>
+    </div>
+    {{else}}
+    <p class="text-base-content/60 p-4">No backups yet.</p>
+    {{end}}
   </div>
+
+  <dialog id="backup_upload_modal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="text-lg font-bold mb-3">Upload backup</h3>
+      <form class="grid gap-3" hx-post="/ui/backups/upload" hx-target="#backups-content" hx-swap="outerHTML" enctype="multipart/form-data">
+        <input type="file" class="file-input w-full" name="backup" required>
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost" onclick="backup_upload_modal.close()">Cancel</button>
+          <button class="btn btn-primary">Upload</button>
+        </div>
+      </form>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 </div>
 {{end}}
 
