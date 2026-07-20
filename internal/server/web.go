@@ -74,18 +74,19 @@ type dashData struct {
 	User       *auth.User
 }
 type libraryView struct {
-	Controls       libraryControls
-	Table          libraryResults
-	Screen         *library.Screen
-	ShowEditor     bool
-	OpenEditor     bool
-	TagOptions     []catalog.ContentTag
-	IncludeTags    []string
-	ExcludeTags    []string
-	Cfg            library.ScreenConfig
-	CollectionName string
-	CollectionIDs  string
-	CollectionID   int64
+	Controls           libraryControls
+	Table              libraryResults
+	Screen             *library.Screen
+	ShowEditor         bool
+	OpenEditor         bool
+	TagOptions         []catalog.ContentTag
+	IncludeTags        []string
+	ExcludeTags        []string
+	Cfg                library.ScreenConfig
+	CollectionName     string
+	CollectionIDs      string
+	CollectionID       int64
+	CollectionSmartKey string
 }
 type libraryControls struct {
 	Q           string
@@ -317,6 +318,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/collections/{id}/delete", u.collectionDelete)
 	mux.HandleFunc("POST /ui/collections/{id}/remove", u.collectionRemoveMember)
 	mux.HandleFunc("GET /ui/collections/{id}/manage", u.collectionManage)
+	mux.HandleFunc("GET /ui/collections/smart/{key}/manage", u.smartCollectionManage)
+	mux.HandleFunc("POST /ui/collections/smart/{key}/remove", u.smartCollectionRemovePin)
 	mux.HandleFunc("GET /ui/library/{id}/collections", u.libCollectionsDialog)
 	mux.HandleFunc("POST /ui/library/{id}/collections/add", u.libAddToCollection)
 	mux.HandleFunc("GET /ui/library/{id}/content", u.titleContentFrag)
@@ -700,8 +703,9 @@ func (u *webUI) healthView(ctx context.Context) healthView {
 }
 
 const (
-	libraryPerPage = 20
-	jobsPerPage    = 15
+	libraryPerPage     = 20
+	jobsPerPage        = 15
+	collectionsPerPage = 24
 )
 
 func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
@@ -743,6 +747,7 @@ type collectionCard struct {
 	Name      string
 	URL       string // link to the members subpage
 	CustomID  int64  // >0 enables the rename/delete menu on the card
+	SmartKey  string
 	Count     int
 	Chapters  int64
 	Volumes   int64
@@ -759,11 +764,42 @@ type collectionsView struct {
 	Mode         string // "author" | "smart" | "custom"
 	Cards        []collectionCard
 	HasRelations bool
+	Page         int
+	PerPage      int
+	Total        int
+}
+
+func (v collectionsView) TotalPages() int {
+	if v.PerPage <= 0 {
+		return 1
+	}
+	pages := (v.Total + v.PerPage - 1) / v.PerPage
+	if pages < 1 {
+		return 1
+	}
+	return pages
+}
+
+func (v collectionsView) HasPrev() bool { return v.Page > 1 }
+func (v collectionsView) HasNext() bool { return v.Page < v.TotalPages() }
+func (v collectionsView) Prev() int     { return v.Page - 1 }
+func (v collectionsView) Next() int     { return v.Page + 1 }
+
+func (v collectionsView) PageURL(page int) template.URL {
+	q := url.Values{}
+	if v.Mode == "smart" {
+		q.Set("by", "relation")
+	} else if v.Mode != "author" {
+		q.Set("by", v.Mode)
+	}
+	q.Set("page", strconv.Itoa(page))
+	return template.URL("/collections?" + q.Encode())
 }
 
 func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	author, smart, custom, hasRelations := u.buildAllCollections(ctx)
+	page, _, _ := tableParams(r.URL.Query(), collectionsPerPage)
 	mode := r.URL.Query().Get("by")
 	var cols []collection
 	switch mode {
@@ -776,10 +812,17 @@ func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 		mode = "author"
 		cols = author
 	}
+	pageCols, total := paginate(cols, page, collectionsPerPage)
+	if pages := (total + collectionsPerPage - 1) / collectionsPerPage; pages > 0 && page > pages {
+		page = pages
+	}
 	u.page(w, r, "collections", "Collections", collectionsView{
 		Mode:         mode,
-		Cards:        collectionCards(cols),
+		Cards:        collectionCards(pageCols),
 		HasRelations: hasRelations,
+		Page:         page,
+		PerPage:      collectionsPerPage,
+		Total:        total,
 	})
 }
 
@@ -849,11 +892,12 @@ func (u *webUI) collectionMembersPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := libraryView{
-		Table:          u.buildLibraryTable(ctx, values),
-		Controls:       libraryControlsFrom(values),
-		CollectionName: name,
-		CollectionIDs:  values.Get("ids"),
-		CollectionID:   collectionID,
+		Table:              u.buildLibraryTable(ctx, values),
+		Controls:           libraryControlsFrom(values),
+		CollectionName:     name,
+		CollectionIDs:      values.Get("ids"),
+		CollectionID:       collectionID,
+		CollectionSmartKey: values.Get("smart"),
 	}
 	u.page(w, r, "library", name, view)
 }
@@ -872,9 +916,10 @@ type addToCollectionView struct {
 }
 
 type collectionManageView struct {
-	ID      int64
-	Name    string
-	Members []library.Title
+	ID       int64
+	SmartKey string
+	Name     string
+	Members  []library.Title
 }
 
 func collectionHasTitle(c collection, id int64) bool {
@@ -1000,6 +1045,20 @@ func (u *webUI) collectionRemoveMember(w http.ResponseWriter, r *http.Request) {
 	u.renderCollectionManage(w, r, id)
 }
 
+func (u *webUI) smartCollectionRemovePin(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.PathValue("key"))
+	tid, _ := strconv.ParseInt(r.FormValue("title"), 10, 64)
+	if key == "" || tid <= 0 {
+		u.fail(w, fmt.Errorf("pinned title not found"))
+		return
+	}
+	if err := u.svc.RemoveSmartPin(r.Context(), key, tid); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.renderSmartCollectionManage(w, r, key)
+}
+
 func (u *webUI) collectionManage(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -1007,6 +1066,15 @@ func (u *webUI) collectionManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.renderCollectionManage(w, r, id)
+}
+
+func (u *webUI) smartCollectionManage(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.PathValue("key"))
+	if key == "" {
+		u.fail(w, fmt.Errorf("smart collection not found"))
+		return
+	}
+	u.renderSmartCollectionManage(w, r, key)
 }
 
 func (u *webUI) renderCollectionManage(w http.ResponseWriter, r *http.Request, id int64) {
@@ -1040,6 +1108,25 @@ func (u *webUI) renderCollectionManage(w http.ResponseWriter, r *http.Request, i
 	u.frag(w, "collectionManage", collectionManageView{ID: id, Name: name, Members: mem})
 }
 
+func (u *webUI) renderSmartCollectionManage(w http.ResponseWriter, r *http.Request, key string) {
+	ctx := r.Context()
+	pins, _ := u.svc.SmartPins(ctx)
+	titles, _ := u.svc.ListTitles(ctx)
+	titles = filterRestrictedTitles(ctx, titles)
+	byID := make(map[int64]library.Title, len(titles))
+	for _, t := range titles {
+		byID[t.ID] = t
+	}
+	var mem []library.Title
+	for _, tid := range pins[key] {
+		if t, ok := byID[tid]; ok {
+			mem = append(mem, t)
+		}
+	}
+	sortByTitle(mem)
+	u.frag(w, "collectionManage", collectionManageView{SmartKey: key, Name: "Pinned titles", Members: mem})
+}
+
 func restrictToIDs(titles []library.Title, csv string) []library.Title {
 	want := map[int64]bool{}
 	for _, s := range strings.Split(csv, ",") {
@@ -1059,7 +1146,7 @@ func restrictToIDs(titles []library.Title, csv string) []library.Title {
 func collectionCards(cols []collection) []collectionCard {
 	out := make([]collectionCard, 0, len(cols))
 	for _, c := range cols {
-		card := collectionCard{Name: c.Name, Count: len(c.Members), CustomID: c.CustomID}
+		card := collectionCard{Name: c.Name, Count: len(c.Members), CustomID: c.CustomID, SmartKey: c.SmartKey}
 		var total, read int64
 		ids := make([]string, 0, len(c.Members))
 		for _, m := range c.Members {
@@ -1074,6 +1161,9 @@ func collectionCards(cols []collection) []collectionCard {
 		q := url.Values{"name": {c.Name}, "ids": {strings.Join(ids, ",")}}
 		if c.CustomID > 0 {
 			q.Set("cid", strconv.FormatInt(c.CustomID, 10))
+		}
+		if c.SmartKey != "" {
+			q.Set("smart", c.SmartKey)
 		}
 		card.URL = "/collections/view?" + q.Encode()
 		card.ReadPct = percent(read, total)

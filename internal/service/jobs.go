@@ -351,6 +351,10 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 		_ = db.Close()
 		return nil, nil, err
 	}
+	if err := svc.auth.PurgeExpiredSessions(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
 	if _, err := svc.lib.ReconcileStartedDownloads(ctx); err != nil {
 		_ = db.Close()
 		return nil, nil, err
@@ -1602,6 +1606,10 @@ func (s *JobService) RemoveFromCollection(ctx context.Context, collectionID, tit
 
 func (s *JobService) PinToSmart(ctx context.Context, smartKey string, titleID int64) error {
 	return s.want.library.AddSmartPin(ctx, smartKey, titleID)
+}
+
+func (s *JobService) RemoveSmartPin(ctx context.Context, smartKey string, titleID int64) error {
+	return s.want.library.RemoveSmartPin(ctx, smartKey, titleID)
 }
 
 func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {

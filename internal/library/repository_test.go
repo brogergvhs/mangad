@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/brogergvhs/kaodoku/internal/auth"
 	"github.com/brogergvhs/kaodoku/internal/chapters"
 	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/providers"
@@ -136,6 +137,41 @@ func TestRepositoryTitleAndMissingChapters(t *testing.T) {
 	}
 	if chapterCount != 0 {
 		t.Fatalf("chapter count after remove = %d, want 0", chapterCount)
+	}
+}
+
+func TestSmartPinsRemove(t *testing.T) {
+	t.Parallel()
+
+	ctx := auth.WithUser(context.Background(), &auth.User{ID: auth.EnvAdminID})
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	if err := auth.NewService(db).Bootstrap(ctx, "admin", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+	title, err := repo.AddTitle(ctx, AddTitleParams{SourceURL: "https://example.test/a", DisplayTitle: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddSmartPin(ctx, "100", title.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RemoveSmartPin(ctx, "100", title.ID); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := repo.SmartPins(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pins["100"]) != 0 {
+		t.Fatalf("pins = %#v, want none", pins)
 	}
 }
 

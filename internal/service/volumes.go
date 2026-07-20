@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/brogergvhs/kaodoku/internal/config"
 	"github.com/brogergvhs/kaodoku/internal/library"
@@ -99,7 +102,7 @@ func (s *LibraryService) EnsureVolumeChapterSplit(ctx context.Context, cfg *conf
 			continue
 		}
 		next := filepath.Join(chaptersDir, filepath.Base(d.OutputFile))
-		if err := os.Rename(d.OutputFile, next); err != nil && !os.IsNotExist(err) {
+		if err := moveFile(d.OutputFile, next); err != nil && !os.IsNotExist(err) {
 			return "", "", fmt.Errorf("move %s: %w", d.OutputFile, err)
 		}
 		if err := s.repo.UpdateDownloadFile(ctx, d.ChapterID, next); err != nil {
@@ -115,7 +118,7 @@ func (s *LibraryService) EnsureVolumeChapterSplit(ctx context.Context, cfg *conf
 		if filepath.Dir(v.File) != base {
 			continue
 		}
-		if err := os.Rename(v.File, filepath.Join(volumesDir, filepath.Base(v.File))); err != nil && !os.IsNotExist(err) {
+		if err := moveFile(v.File, filepath.Join(volumesDir, filepath.Base(v.File))); err != nil && !os.IsNotExist(err) {
 			return "", "", fmt.Errorf("move %s: %w", v.File, err)
 		}
 	}
@@ -148,7 +151,7 @@ func (s *LibraryService) AttachVolumesFolder(ctx context.Context, cfg *config.Co
 		if _, err := os.Stat(dst); err == nil {
 			continue // keep the existing volume; the leftover source file stays behind
 		}
-		if err := os.Rename(filepath.Join(srcDir, f), dst); err != nil {
+		if err := moveFile(filepath.Join(srcDir, f), dst); err != nil {
 			return fmt.Errorf("move %s: %w", f, err)
 		}
 	}
@@ -158,3 +161,31 @@ func (s *LibraryService) AttachVolumesFolder(ctx context.Context, cfg *config.Co
 	}
 	return s.GenerateVolumeThumbs(ctx, title.ID)
 }
+
+func moveFile(src, dst string) error {
+	if err := renameFile(src, dst); err == nil || !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode())
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if err := errors.Join(copyErr, closeErr); err != nil {
+		_ = os.Remove(dst)
+		return err
+	}
+	return os.Remove(src)
+}
+
+var renameFile = os.Rename

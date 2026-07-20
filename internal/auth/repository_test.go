@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/database"
 )
@@ -80,5 +81,46 @@ func TestUserContentGuardsRoundTrip(t *testing.T) {
 	}
 	if len(got.AllowedTags) != 0 || !got.AllowAdult {
 		t.Errorf("after update: allowed = %v, adult = %v", got.AllowedTags, got.AllowAdult)
+	}
+}
+
+func TestPurgeExpiredSessions(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	svc := NewService(db)
+	if err := svc.Bootstrap(ctx, "admin", "secret"); err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('old', 1, ?), ('fresh', 1, ?)`,
+		database.FormatTime(time.Now().Add(-time.Hour)), database.FormatTime(time.Now().Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.PurgeExpiredSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	rows, err := db.QueryContext(ctx, `SELECT token_hash FROM sessions ORDER BY token_hash`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, hash)
+	}
+	if !reflect.DeepEqual(got, []string{"fresh"}) {
+		t.Fatalf("sessions = %v, want fresh only", got)
 	}
 }

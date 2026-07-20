@@ -227,6 +227,12 @@ func (s *Service) ActiveSessions(ctx context.Context) ([]ActiveSession, error) {
 	return out, rows.Err()
 }
 
+// PurgeExpiredSessions deletes expired sessions in bulk.
+func (s *Service) PurgeExpiredSessions(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, database.FormatTime(time.Now()))
+	return err
+}
+
 // Logout deletes the session for a token.
 func (s *Service) Logout(ctx context.Context, token string) {
 	sum := sha256.Sum256([]byte(token))

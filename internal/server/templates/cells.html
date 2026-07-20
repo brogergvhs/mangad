@@ -43,11 +43,15 @@
   <div class="flex items-center gap-2 rounded-lg p-1 hover:bg-base-200">
     <img class="h-10 w-7 rounded object-cover bg-base-300" src="{{.CoverImage}}" alt="" loading="lazy">
     <span class="min-w-0 flex-1 truncate text-sm">{{.DisplayTitle}}</span>
+    {{if $.SmartKey}}
+    <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/collections/smart/{{pathEscape $.SmartKey}}/remove" hx-vals='{"title":"{{.ID}}"}' hx-target="#collection-manage" hx-swap="outerHTML">Unpin</button>
+    {{else}}
     <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/collections/{{$.ID}}/remove" hx-vals='{"title":"{{.ID}}"}' hx-target="#collection-manage" hx-swap="outerHTML">Remove</button>
+    {{end}}
   </div>
   {{end}}
   {{else}}
-  <p class="text-sm text-base-content/60">This collection has no titles yet.</p>
+  <p class="text-sm text-base-content/60">{{if .SmartKey}}No pinned titles. Related titles stay in this smart collection automatically.{{else}}This collection has no titles yet.{{end}}</p>
   {{end}}
 </div>
 {{end}}
