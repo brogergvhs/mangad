@@ -363,7 +363,7 @@
   <a href="/collections" class="btn btn-sm {{if eq .Mode "author"}}btn-primary{{else}}btn-outline{{end}}">By author</a>
   <a href="/collections?by=relation" class="btn btn-sm {{if eq .Mode "smart"}}btn-primary{{else}}btn-outline{{end}}">Smart</a>
   <a href="/collections?by=custom" class="btn btn-sm {{if eq .Mode "custom"}}btn-primary{{else}}btn-outline{{end}}">Custom</a>
-  {{if eq .Mode "custom"}}<button class="btn btn-sm btn-ghost ml-auto" onclick="new_collection_modal.showModal()">+ New collection</button>{{end}}
+  {{if eq .Mode "custom"}}<button class="btn btn-sm btn-ghost ml-auto" onclick="new_collection_modal.showModal()">{{template "iconPlus"}}New collection</button>{{end}}
 </div>
 {{if .Cards}}
 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
@@ -703,7 +703,7 @@
 {{define "sources"}}
 <div class="flex items-center justify-between gap-2 mb-4">
   <button class="btn btn-sm btn-outline" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
-  <button class="btn btn-sm btn-primary" onclick="source_add_modal.showModal()">+ Add source</button>
+  <button class="btn btn-sm btn-primary" onclick="source_add_modal.showModal()">{{template "iconPlus"}}Add source</button>
 </div>
 {{template "sourcesTable" .Sources}}
 
@@ -859,12 +859,9 @@
 
 {{define "backupsContent"}}
 <div id="backups-content" class="grid gap-3">
-  <div class="flex items-center justify-between gap-3">
-    <h1 class="text-2xl font-bold">Backups</h1>
-    <div class="flex items-center gap-2 shrink-0">
-      <button class="btn btn-sm" onclick="backup_upload_modal.showModal()">{{template "iconImport"}}Upload</button>
-      <button class="btn btn-sm btn-primary" hx-post="/ui/backups" hx-target="#backups-content" hx-swap="outerHTML">{{template "iconDownload"}}Create backup</button>
-    </div>
+  <div class="flex items-center justify-between gap-3 max-sm:flex-col">
+    <button class="btn btn-outline max-sm:w-full" onclick="backup_upload_modal.showModal()">{{template "iconUpload"}}Upload</button>
+    <button class="btn btn-primary max-sm:w-full" hx-post="/ui/backups" hx-target="#backups-content" hx-swap="outerHTML">{{template "iconPlus"}}Create backup</button>
   </div>
 
   <div class="divide-y divide-line/25 rounded-xl bg-base-100">
@@ -920,7 +917,7 @@
   <div class="card bg-base-100 card-body p-4 gap-2">
     <div class="flex items-center justify-between gap-2">
       <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Users</h2>
-      <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">+ Add user</button>
+      <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">{{template "iconPlus"}}Add user</button>
     </div>
     <div class="divide-y divide-line/25">
       {{range .Users}}
@@ -945,7 +942,7 @@
   <div class="card bg-base-100 card-body p-4 gap-2">
     <div class="flex items-center justify-between gap-2">
       <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Roles</h2>
-      <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">+ Add role</button>
+      <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">{{template "iconPlus"}}Add role</button>
     </div>
     <div class="list-rounded divide-y divide-line/25">
       {{range .Roles}}
