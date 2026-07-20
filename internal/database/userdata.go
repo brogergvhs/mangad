@@ -50,6 +50,9 @@ func BackupUserData(ctx context.Context, dbPath, outPath string) error {
 	if dbPath == "" {
 		dbPath = DefaultPath()
 	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return err
+	}
 	tmp, err := tempDBPath(outPath)
 	if err != nil {
 		return err

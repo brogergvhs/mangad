@@ -82,6 +82,7 @@ const (
 	SettingServeScanEvery         = "serve.scan_every"
 	SettingServeDownloadEvery     = "serve.download_every"
 	SettingServeSourceVerifyEvery = "sources.verify_every"
+	SettingServeBackupEvery       = "backup.every"
 	SettingServeRunEvery          = "serve.run_every"
 
 	SettingBrowserSolverEnabled            = "browser_solver.enabled"
@@ -128,6 +129,8 @@ func SettingDefault(key string) string {
 		return "10m"
 	case SettingServeSourceVerifyEvery:
 		return "168h"
+	case SettingServeBackupEvery:
+		return ""
 	case SettingServeRunEvery:
 		return "5s"
 	case SettingBrowserSolverEnabled:
@@ -208,6 +211,7 @@ func SettingKeys() []string {
 		SettingServeScanEvery,
 		SettingServeDownloadEvery,
 		SettingServeSourceVerifyEvery,
+		SettingServeBackupEvery,
 		SettingServeRunEvery,
 		SettingBrowserSolverEnabled,
 		SettingBrowserSolverProvider,
@@ -257,7 +261,7 @@ func ValidateSetting(key, value string) error {
 			}
 		}
 		return fmt.Errorf("unknown theme %q", value)
-	case SettingServeAniListSyncEvery, SettingServeCatalogEvery:
+	case SettingServeAniListSyncEvery, SettingServeCatalogEvery, SettingServeBackupEvery:
 		if value == "" {
 			return nil
 		}
@@ -2467,6 +2471,9 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return s.expandAniListSync(ctx, job.ID)
 	case jobs.TypeCatalogRefresh:
 		return s.runCatalogRefresh(ctx, progress)
+	case jobs.TypeBackupUserData:
+		_, err := s.CreateBackup(ctx)
+		return err
 	case jobs.TypeAttachVolumes:
 		title, err := s.lib.GetTitle(ctx, payload.TitleID)
 		if err != nil {
@@ -2560,7 +2567,7 @@ func validateJob(typ string, payload JobPayload) error {
 		if payload.TitleID < 0 {
 			return fmt.Errorf("invalid title id %d", payload.TitleID)
 		}
-	case jobs.TypeSyncAniList, jobs.TypeCatalogRefresh:
+	case jobs.TypeSyncAniList, jobs.TypeCatalogRefresh, jobs.TypeBackupUserData:
 	case jobs.TypeAttachVolumes:
 		if payload.TitleID <= 0 || strings.TrimSpace(payload.Folder) == "" {
 			return fmt.Errorf("title id and folder are required")

@@ -27,7 +27,7 @@ var jobsListCmd = &cobra.Command{Use: "list", Short: "List recent jobs", RunE: r
 var jobsRunCmd = &cobra.Command{Use: "run", Short: "Run due jobs until the queue is empty", RunE: runJobsRun}
 
 var jobsEnqueueCmd = &cobra.Command{
-	Use:   "enqueue <refresh_title|scan_downloads|download_missing|verify_source|match_sources>",
+	Use:   "enqueue <refresh_title|scan_downloads|download_missing|verify_source|match_sources|backup_user_data>",
 	Short: "Enqueue a background job",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runJobsEnqueue,

@@ -15,6 +15,7 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/providers"
 	"github.com/brogergvhs/kaodoku/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 func TestApplyLimitsFromSettings(t *testing.T) {
@@ -310,6 +311,35 @@ func TestEnqueueSourceVerificationQueuesEnabledSources(t *testing.T) {
 	}
 	assertSourceJob(t, ctx, svc, "on")
 	assertNoSourceJob(t, ctx, svc, "off")
+}
+
+func TestBackupUserDataJobCreatesBackup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+	if _, err := svc.Enqueue(ctx, jobs.TypeBackupUserData, 0, time.Now()); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	summary, err := svc.RunDue(ctx, config.DefaultConfig(), ui.NewLogger(false))
+	if err != nil {
+		t.Fatalf("RunDue() error = %v", err)
+	}
+	if summary.Done != 1 || summary.Failed != 0 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	backups, err := svc.ListBackups(ctx)
+	if err != nil {
+		t.Fatalf("ListBackups() error = %v", err)
+	}
+	if len(backups) != 1 || backups[0].Size == 0 {
+		t.Fatalf("backups = %#v", backups)
+	}
 }
 
 func TestAutoRefreshQueuesDownloadWhenMissingThresholdMet(t *testing.T) {

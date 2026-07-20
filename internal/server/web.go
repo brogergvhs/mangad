@@ -205,6 +205,8 @@ func settingMeta(key string) (label, desc string) {
 		return "Download missing chapters", "How often missing chapters of monitored manga are downloaded automatically."
 	case service.SettingServeSourceVerifyEvery:
 		return "Verify sources", "How often enabled source definitions are re-checked against their sites. Use 0 to disable."
+	case service.SettingServeBackupEvery:
+		return "Back up user data", "How often user data is backed up. Empty disables scheduled backups."
 	case service.SettingServeRunEvery:
 		return "Background task interval", "How often the background worker wakes to run queued jobs. Lower is more responsive, higher is less busy."
 	case service.SettingBrowserSolverEnabled:
@@ -291,6 +293,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /reader/{id}", u.readerPage)
 	mux.HandleFunc("GET /import", u.importPage)
 	mux.HandleFunc("GET /sources", u.sourcesPage)
+	mux.HandleFunc("GET /backups", u.backupsPage)
 	mux.HandleFunc("GET /settings", u.settingsPage)
 
 	mux.HandleFunc("POST /ui/search", u.search)
@@ -360,6 +363,12 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
 	mux.HandleFunc("POST /ui/jobs/start", u.jobStart)
 	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
+	mux.HandleFunc("GET /ui/backups", u.backupsFrag)
+	mux.HandleFunc("POST /ui/backups", u.backupCreate)
+	mux.HandleFunc("POST /ui/backups/upload", u.backupUpload)
+	mux.HandleFunc("GET /ui/backups/{name}/download", u.backupDownload)
+	mux.HandleFunc("POST /ui/backups/{name}/restore", u.backupRestore)
+	mux.HandleFunc("POST /ui/backups/{name}/delete", u.backupDelete)
 	mux.HandleFunc("GET /ui/sessions", u.sessionsFrag)
 	mux.HandleFunc("GET /ui/health", u.health)
 	mux.HandleFunc("GET /ui/import/candidates", u.importCandidates)
@@ -1818,6 +1827,7 @@ var globalJobTypes = []string{
 	jobs.TypeDownloadMissing,
 	jobs.TypeCatalogRefresh,
 	jobs.TypeSyncAniList,
+	jobs.TypeBackupUserData,
 }
 
 func (u *webUI) jobStart(w http.ResponseWriter, r *http.Request) {
@@ -2599,6 +2609,82 @@ func (u *webUI) sourcesPage(w http.ResponseWriter, r *http.Request) {
 type sourcesPageView struct {
 	Sources  []sources.Source
 	Scrapers []string
+}
+
+type backupsView struct {
+	Backups        []service.BackupInfo
+	BackupEveryKey string
+	BackupEvery    string
+}
+
+func (u *webUI) backupsPage(w http.ResponseWriter, r *http.Request) {
+	u.page(w, r, "backups", "Backups", u.backupsView(r.Context()))
+}
+
+func (u *webUI) backupsFrag(w http.ResponseWriter, r *http.Request) {
+	u.frag(w, "backupsContent", u.backupsView(r.Context()))
+}
+
+func (u *webUI) backupsView(ctx context.Context) backupsView {
+	backups, _ := u.svc.ListBackups(ctx)
+	return backupsView{
+		Backups:        backups,
+		BackupEveryKey: service.SettingServeBackupEvery,
+		BackupEvery:    u.svc.Setting(ctx, service.SettingServeBackupEvery, service.SettingDefault(service.SettingServeBackupEvery)),
+	}
+}
+
+func (u *webUI) backupCreate(w http.ResponseWriter, r *http.Request) {
+	if _, err := u.svc.CreateBackup(r.Context()); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupUpload(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		u.fail(w, err)
+		return
+	}
+	file, header, err := r.FormFile("backup")
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	defer file.Close()
+	if err := u.svc.UploadBackup(r.Context(), header.Filename, file); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupRestore(w http.ResponseWriter, r *http.Request) {
+	if err := u.svc.RestoreBackup(r.Context(), r.PathValue("name")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupDelete(w http.ResponseWriter, r *http.Request) {
+	if err := u.svc.DeleteBackup(r.Context(), r.PathValue("name")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupDownload(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	p, err := u.svc.BackupPath(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	http.ServeFile(w, r, p)
 }
 
 func (u *webUI) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -3538,7 +3624,7 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 			settingGroup{Title: "Scheduling", Fields: fields(
 				service.SettingServeRefreshEvery, service.SettingServeScanEvery,
 				service.SettingServeDownloadEvery, service.SettingServeSourceVerifyEvery,
-				service.SettingServeRunEvery,
+				service.SettingServeBackupEvery, service.SettingServeRunEvery,
 				service.SettingServeAniListSyncEvery,
 				service.SettingServeCatalogEvery)},
 			settingGroup{Title: "Jobs & downloads", Fields: fields(
@@ -3648,6 +3734,8 @@ func titleVerb(typ string) string {
 		return "refreshing"
 	case jobs.TypeDownloadMissing:
 		return "downloading"
+	case jobs.TypeBackupUserData:
+		return "backing up"
 	case jobs.TypeScanDownloads:
 		return "scanning"
 	case jobs.TypeAttachVolumes:
@@ -3698,6 +3786,8 @@ func navFor(path string) string {
 		return "import"
 	case strings.HasPrefix(path, "/sources"):
 		return "sources"
+	case strings.HasPrefix(path, "/backups"):
+		return "backups"
 	case strings.HasPrefix(path, "/users"):
 		return "users"
 	case strings.HasPrefix(path, "/settings"):
@@ -3913,6 +4003,8 @@ func jobLabel(typ string) string {
 		return "Verify source"
 	case jobs.TypeMatchSources:
 		return "Match sources"
+	case jobs.TypeBackupUserData:
+		return "Back up user data"
 	}
 	return typ
 }

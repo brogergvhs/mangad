@@ -46,6 +46,7 @@ var (
 	flagServeRefreshEvery  time.Duration
 	flagServeScanEvery     time.Duration
 	flagServeDownloadEvery time.Duration
+	flagServeBackupEvery   time.Duration
 	flagServeRunEvery      time.Duration
 )
 
@@ -61,6 +62,7 @@ func init() {
 	serveCmd.Flags().DurationVar(&flagServeRefreshEvery, "refresh-every", 0, "refresh schedule, e.g. 1h; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeScanEvery, "scan-every", 0, "download file scan schedule, e.g. 30m; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeDownloadEvery, "download-every", 0, "missing download schedule, e.g. 10m; 0 disables")
+	serveCmd.Flags().DurationVar(&flagServeBackupEvery, "backup-every", 0, "user data backup schedule, e.g. 24h; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeRunEvery, "run-every", 0, "job runner interval, e.g. 5s")
 	rootCmd.AddCommand(serveCmd)
 }
@@ -90,6 +92,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if err := seedServeSetting(cmd, svc, ctx, "download-every", service.SettingServeDownloadEvery, flagServeDownloadEvery); err != nil {
+		return err
+	}
+	if err := seedServeSetting(cmd, svc, ctx, "backup-every", service.SettingServeBackupEvery, flagServeBackupEvery); err != nil {
 		return err
 	}
 	if err := seedServeSetting(cmd, svc, ctx, "run-every", service.SettingServeRunEvery, flagServeRunEvery); err != nil {
@@ -126,23 +131,25 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	nextScan := time.Now()
 	nextDownload := time.Now()
 	nextSourceVerify := time.Now()
+	nextBackup := time.Now()
 	nextAniList := time.Now()
 	nextCatalog := time.Now()
-	var refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, anilistEvery, catalogEvery, runEvery time.Duration
+	var refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, backupEvery, anilistEvery, catalogEvery, runEvery time.Duration
 
 	for {
-		oldRefresh, oldScan, oldDownload, oldSourceVerify, oldAniList, oldCatalog, oldRun := refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, anilistEvery, catalogEvery, runEvery
+		oldRefresh, oldScan, oldDownload, oldSourceVerify, oldBackup, oldAniList, oldCatalog, oldRun := refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, backupEvery, anilistEvery, catalogEvery, runEvery
 		refreshEvery = serveDuration(svc, ctx, service.SettingServeRefreshEvery)
 		scanEvery = serveDuration(svc, ctx, service.SettingServeScanEvery)
 		downloadEvery = serveDuration(svc, ctx, service.SettingServeDownloadEvery)
 		sourceVerifyEvery = serveDuration(svc, ctx, service.SettingServeSourceVerifyEvery)
+		backupEvery = serveDuration(svc, ctx, service.SettingServeBackupEvery)
 		anilistEvery = serveDuration(svc, ctx, service.SettingServeAniListSyncEvery)
 		catalogEvery = serveDuration(svc, ctx, service.SettingServeCatalogEvery)
 		runEvery = serveDuration(svc, ctx, service.SettingServeRunEvery)
 		if runEvery <= 0 {
 			runEvery = fallbackDuration(service.SettingDefault(service.SettingServeRunEvery))
 		}
-		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldSourceVerify != sourceVerifyEvery || oldAniList != anilistEvery || oldCatalog != catalogEvery || oldRun != runEvery
+		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldSourceVerify != sourceVerifyEvery || oldBackup != backupEvery || oldAniList != anilistEvery || oldCatalog != catalogEvery || oldRun != runEvery
 		if oldRefresh != refreshEvery {
 			nextRefresh = time.Now().Add(refreshEvery)
 		}
@@ -155,6 +162,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		if oldSourceVerify != sourceVerifyEvery {
 			nextSourceVerify = time.Now().Add(sourceVerifyEvery)
 		}
+		if oldBackup != backupEvery {
+			nextBackup = time.Now().Add(backupEvery)
+		}
 		if oldAniList != anilistEvery {
 			nextAniList = time.Now().Add(anilistEvery)
 		}
@@ -162,10 +172,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			nextCatalog = time.Now().Add(catalogEvery)
 		}
 		if changed {
-			fmt.Printf("Serving: refresh=%s scan=%s download=%s source_verify=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, runEvery)
+			fmt.Printf("Serving: refresh=%s scan=%s download=%s source_verify=%s backup=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, backupEvery, runEvery)
 		}
 
-		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery), nextDue(&nextSourceVerify, sourceVerifyEvery), nextDue(&nextAniList, anilistEvery), nextDue(&nextCatalog, catalogEvery)); err != nil && ctx.Err() == nil {
+		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery), nextDue(&nextSourceVerify, sourceVerifyEvery), nextDue(&nextBackup, backupEvery), nextDue(&nextAniList, anilistEvery), nextDue(&nextCatalog, catalogEvery)); err != nil && ctx.Err() == nil {
 			fmt.Fprintf(os.Stderr, "serve tick: %v\n", err)
 		}
 		if _, err := runDue(ctx, svc); err != nil && ctx.Err() == nil {
@@ -185,7 +195,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 }
 
-func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, download, sourceVerify, anilist, catalogRefresh bool) error {
+func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, download, sourceVerify, backup, anilist, catalogRefresh bool) error {
 	now := time.Now()
 	if refresh {
 		if _, err := svc.Enqueue(ctx, jobs.TypeRefreshTitle, 0, now); err != nil {
@@ -204,6 +214,11 @@ func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, down
 	}
 	if sourceVerify {
 		if _, err := svc.EnqueueSourceVerification(ctx, now); err != nil {
+			return err
+		}
+	}
+	if backup {
+		if _, err := svc.Enqueue(ctx, jobs.TypeBackupUserData, 0, now); err != nil {
 			return err
 		}
 	}

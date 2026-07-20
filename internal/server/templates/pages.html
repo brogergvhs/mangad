@@ -853,6 +853,63 @@
 </form>
 {{end}}
 
+{{define "backups"}}
+{{template "backupsContent" .}}
+{{end}}
+
+{{define "backupsContent"}}
+<div id="backups-content" class="grid gap-4">
+  <div class="card bg-base-100 card-body p-4 gap-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Backups</h2>
+        <p class="text-sm text-base-content/60">User data only: progress, settings, users, roles, library metadata, collections and sources.</p>
+      </div>
+      <button class="btn btn-sm btn-primary" hx-post="/ui/backups" hx-target="#backups-content" hx-swap="outerHTML">{{template "iconDownload"}}Create backup</button>
+    </div>
+    <form class="flex flex-wrap items-end gap-2" hx-put="/ui/settings" hx-target="#toast">
+      <label class="fieldset">
+        <span class="fieldset-legend">Schedule interval</span>
+        <input class="input input-sm w-44" name="{{.BackupEveryKey}}" value="{{.BackupEvery}}" placeholder="disabled">
+      </label>
+      <button class="btn btn-sm">Save schedule</button>
+      <span class="text-xs text-base-content/50">Empty disables scheduled backups.</span>
+    </form>
+    <form class="flex flex-wrap items-end gap-2" hx-post="/ui/backups/upload" hx-target="#backups-content" hx-swap="outerHTML" enctype="multipart/form-data">
+      <label class="fieldset">
+        <span class="fieldset-legend">Upload backup</span>
+        <input type="file" class="file-input file-input-sm" name="backup" required>
+      </label>
+      <button class="btn btn-sm">Upload</button>
+    </form>
+  </div>
+
+  <div class="overflow-x-auto rounded-xl bg-base-100">
+    <table class="table table-sm">
+      <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th class="text-right">Actions</th></tr></thead>
+      <tbody>
+      {{range .Backups}}
+      <tr>
+        <td class="font-medium">{{.Name}}</td>
+        <td>{{humanBytes .Size}}</td>
+        <td>{{since .ModTime}}</td>
+        <td>
+          <div class="flex justify-end gap-1">
+            <a class="btn btn-xs btn-outline" href="/ui/backups/{{pathEscape .Name}}/download">{{template "iconDownload"}}Export</a>
+            <button class="btn btn-xs btn-outline" hx-post="/ui/backups/{{pathEscape .Name}}/restore" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Restore this backup? Current user data will be replaced.">Restore</button>
+            <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/backups/{{pathEscape .Name}}/delete" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Delete this backup?">{{template "iconTrash"}}</button>
+          </div>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="4" class="text-base-content/60">No backups yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+
 {{define "users"}}
 {{template "usersContent" .}}
 {{end}}
