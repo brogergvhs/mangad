@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"html/template"
@@ -298,6 +299,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 
 	mux.HandleFunc("POST /ui/search", u.search)
 	mux.HandleFunc("POST /ui/library/add", u.addToLibrary)
+	mux.HandleFunc("POST /ui/library/bulk", u.libraryBulk)
 	mux.HandleFunc("POST /ui/library/{id}/refresh", u.libAction(jobs.TypeRefreshTitle, "refreshing"))
 	mux.HandleFunc("POST /ui/library/{id}/download", u.libAction(jobs.TypeDownloadMissing, "downloading"))
 	mux.HandleFunc("POST /ui/library/{id}/scan", u.libAction(jobs.TypeScanDownloads, "scanning"))
@@ -1583,16 +1585,19 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 	}
 
 	t := libraryResults{Screen: screenID, View: controls.View, CanManage: auth.FromContext(ctx).Can(auth.PermLibraryManage)}
+	columns := []tableColumn{
+		{Label: ""},
+		{Label: "Title"},
+		{Label: "Chapters"},
+	}
+	if t.CanManage {
+		columns = append([]tableColumn{{Label: ""}}, columns...)
+	}
 	t.tableData = tableData{
 		ID: "library-table", BaseURL: "/ui/library/table",
 		Page: page, PerPage: libraryPerPage, Total: total, Sort: controls.Sort, Dir: controls.Dir,
 		Params: libraryTableParams(values),
-		Empty:  empty,
-		Columns: []tableColumn{
-			{Label: ""},
-			{Label: "Title"},
-			{Label: "Chapters"},
-		},
+		Empty:  empty, Columns: columns,
 	}
 	t.Cards = pageTitles
 	catalogIDs := make([]int64, 0, len(pageTitles))
@@ -1622,14 +1627,18 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		if tl.IsAdult {
 			rowClass = "outline outline-1 -outline-offset-1 outline-error"
 		}
+		cells := []template.HTML{
+			u.renderToHTML("cellCover", tl),
+			u.renderToHTML("cellTitle", view),
+			u.renderToHTML("progressBar", tl),
+		}
+		if t.CanManage {
+			cells = append([]template.HTML{u.renderToHTML("bulkTitleCheckbox", tl)}, cells...)
+		}
 		t.Rows = append(t.Rows, tableRow{
-			ID:    strconv.FormatInt(tl.ID, 10),
-			Class: rowClass,
-			Cells: []template.HTML{
-				u.renderToHTML("cellCover", tl),
-				u.renderToHTML("cellTitle", view),
-				u.renderToHTML("progressBar", tl),
-			},
+			ID:     strconv.FormatInt(tl.ID, 10),
+			Class:  rowClass,
+			Cells:  cells,
 			Detail: detail,
 		})
 	}
@@ -2943,6 +2952,73 @@ func (u *webUI) libAction(typ, label string) http.HandlerFunc {
 		}
 		u.frag(w, "titleActivity", view)
 	}
+}
+
+func (u *webUI) libraryBulk(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		u.fail(w, err)
+		return
+	}
+	ids, err := selectedTitleIDs(r.Form["title_id"])
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	action := r.FormValue("action")
+	switch action {
+	case "refresh", "download", "scan", "monitor-on", "monitor-off", "remove":
+	default:
+		u.fail(w, fmt.Errorf("unknown bulk action"))
+		return
+	}
+	var errs []error
+	for _, id := range ids {
+		title, err := u.svc.GetTitle(r.Context(), id)
+		if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
+			errs = append(errs, fmt.Errorf("title %d not found", id))
+			continue
+		}
+		switch action {
+		case "refresh":
+			_, err = u.svc.Enqueue(r.Context(), jobs.TypeRefreshTitle, id, time.Now())
+		case "download":
+			_, err = u.svc.Enqueue(r.Context(), jobs.TypeDownloadMissing, id, time.Now())
+		case "scan":
+			_, err = u.svc.Enqueue(r.Context(), jobs.TypeScanDownloads, id, time.Now())
+		case "monitor-on":
+			err = u.svc.SetMonitored(r.Context(), id, true)
+		case "monitor-off":
+			err = u.svc.SetMonitored(r.Context(), id, false)
+		case "remove":
+			_, err = u.svc.RemoveTitleFiles(r.Context(), id, false, false)
+		}
+		errs = append(errs, err)
+	}
+	if err := errors.Join(errs...); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.kick()
+	u.frag(w, "libraryResults", u.buildLibraryTable(r.Context(), r.Form))
+}
+
+func selectedTitleIDs(values []string) ([]int64, error) {
+	if len(values) == 0 {
+		return nil, fmt.Errorf("select at least one title")
+	}
+	seen := map[int64]bool{}
+	var ids []int64
+	for _, value := range values {
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("invalid title id %q", value)
+		}
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (u *webUI) libActivity(w http.ResponseWriter, r *http.Request) {
