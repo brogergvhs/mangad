@@ -1650,6 +1650,9 @@ func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles
 		}
 	}
 	if filesDir != "" {
+		if _, statErr := os.Stat(filesDir); os.IsNotExist(statErr) {
+			return title, fmt.Errorf("title removed, but no files found at %s — check the download directory setting", filesDir)
+		}
 		if err := os.RemoveAll(filesDir); err != nil {
 			return title, fmt.Errorf("title removed, but deleting %s failed: %w", filesDir, err)
 		}
