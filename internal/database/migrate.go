@@ -316,6 +316,7 @@ CREATE INDEX IF NOT EXISTS idx_titles_monitored ON titles(monitored);
 CREATE INDEX IF NOT EXISTS idx_chapters_title_id ON chapters(title_id);
 CREATE INDEX IF NOT EXISTS idx_downloads_chapter_id ON downloads(chapter_id);
 CREATE INDEX IF NOT EXISTS idx_chapter_read_pages_chapter_id ON chapter_read_pages(chapter_id);
+CREATE INDEX IF NOT EXISTS idx_volume_read_progress_volume ON volume_read_progress(volume_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status_run_after ON jobs(status, run_after);
 CREATE INDEX IF NOT EXISTS idx_browser_cookies_expires_at ON browser_cookies(expires_at);
 

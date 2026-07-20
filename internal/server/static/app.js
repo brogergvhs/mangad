@@ -1,4 +1,4 @@
-// --- dropdowns: close any open <details.dropdown> on outside click or action ---
+// dropdowns: close any open <details.dropdown> on outside click or action
 document.addEventListener("click", function (e) {
   var inDrop = e.target.closest("details.dropdown");
   document.querySelectorAll("details.dropdown[open]").forEach(function (d) {
@@ -8,15 +8,15 @@ document.addEventListener("click", function (e) {
   });
 });
 
-// --- close the mobile drawer after navigating or acting from within it ---
+// close the mobile drawer after navigating or acting from within it
 document.addEventListener("click", function (e) {
   if (!e.target.closest(".drawer-side .menu a")) return;
   var toggle = document.getElementById("app-drawer");
   if (toggle && window.matchMedia("(max-width: 1023px)").matches) toggle.checked = false;
 });
 
-// --- confirm modal: replaces native hx-confirm (browsers can suppress the
-// native dialog); renders an in-app daisyUI modal instead ---
+// confirm modal: replaces native hx-confirm (browsers can suppress the
+// native dialog); renders an in-app daisyUI modal instead
 document.addEventListener("htmx:confirm", function (e) {
   var question = e.detail.question;
   if (!question) return;
@@ -168,7 +168,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   var prev = document.querySelector("[data-reader-prev]");
   var next = document.querySelector("[data-reader-next]");
 
-  // --- controls & keyboard work even on the empty page ---
+  // controls & keyboard work even on the empty page
   document.addEventListener("click", function (e) {
     if (e.target.closest(".reader-controls")) return;
     if (window.matchMedia("(max-width: 1024px)").matches) {
@@ -353,10 +353,10 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
     });
   }
 
-  // --- sequential builder: preload a few ahead, append strictly in order.
+  // sequential builder: preload a few ahead, append strictly in order.
   // Appending is gated on scroll proximity so a long title isn't downloaded
   // in the background, and the strip keeps extending with the next chapter
-  // as the reader approaches the end — no need to reopen the reader. ---
+  // as the reader approaches the end — no need to reopen the reader.
   var LOOKAHEAD = 3;
   var GATE_PX = window.innerHeight * 2.5;
   var loaders = {}; // queue index -> Promise settling when its image is loaded
@@ -459,7 +459,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       el.dataset.total = String(item.total);
       if (item.read) read[item.chapter + ":" + item.page] = true;
       strip.appendChild(el);
-      if (img) pages.push(el);
+      pages.push(el); // failed pages count too, else one broken image blocks completion + resume forever
       delete loaders[idx];
       appended++;
       if (!resumed && String(item.chapter) === resumeChapter && item.page === resumePage) {
