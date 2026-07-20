@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	reExt = regexp.MustCompile(`(?i)\.(jpg|jpeg|png|webp)$`)
+	reExt = regexp.MustCompile(`(?i)\.(jpg|jpeg|png|webp|avif)$`)
 
 	reSizeSuffix = regexp.MustCompile(`[-_]\d{2,5}x\d{2,5}`)
 	reParseSize  = regexp.MustCompile(`[-_](\d{2,5})x(\d{2,5})(?:\.[A-Za-z0-9]+)?$`)
