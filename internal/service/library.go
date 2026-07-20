@@ -727,7 +727,7 @@ func configForTitle(cfg *config.Config, title library.Title) (*config.Config, er
 		if err != nil {
 			return nil, fmt.Errorf("resolve output path: %w", err)
 		}
-		if output != root && !strings.HasPrefix(output, root+string(os.PathSeparator)) {
+		if _, ok := withinRoot(root, output); !ok {
 			return nil, fmt.Errorf("output path %q is outside download root %q", title.OutputPath, next.DownloadDir)
 		}
 		next.Output = output
@@ -749,10 +749,18 @@ func (s *LibraryService) TitleFilesDir(cfg *config.Config, title library.Title) 
 		return "", err
 	}
 	dir := titleCfg.Output
-	if dir == root || !strings.HasPrefix(dir, root+string(os.PathSeparator)) {
+	if rel, ok := withinRoot(root, dir); !ok || rel == "." {
 		return "", fmt.Errorf("refusing to touch %q: not strictly inside the download root", dir)
 	}
 	return dir, nil
+}
+
+func withinRoot(root, dir string) (rel string, ok bool) {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return rel, false
+	}
+	return rel, true
 }
 
 func titleOutputDir(title library.Title) string {

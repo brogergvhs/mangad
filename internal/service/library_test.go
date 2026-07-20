@@ -318,3 +318,28 @@ func writeTestCBZ(t *testing.T, path string) int64 {
 	}
 	return info.Size()
 }
+
+func TestWithinRoot(t *testing.T) {
+	t.Parallel()
+	sep := string(os.PathSeparator)
+	cases := []struct {
+		name, root, dir, wantRel string
+		wantOK                   bool
+	}{
+		{"inside", sep + "downloads", sep + "downloads" + sep + "Title", "Title", true},
+		{"equal to root", sep + "downloads", sep + "downloads", ".", true},
+		{"outside", sep + "downloads", sep + "etc", "", false},
+		{"root is filesystem root", sep, sep + "SO_EUN_for_All", "SO_EUN_for_All", true},
+		{"filesystem root itself", sep, sep, ".", true},
+	}
+	for _, c := range cases {
+		rel, ok := withinRoot(c.root, c.dir)
+		if ok != c.wantOK {
+			t.Errorf("%s: withinRoot(%q,%q) ok=%v, want %v", c.name, c.root, c.dir, ok, c.wantOK)
+			continue
+		}
+		if ok && rel != c.wantRel {
+			t.Errorf("%s: rel=%q, want %q", c.name, rel, c.wantRel)
+		}
+	}
+}
