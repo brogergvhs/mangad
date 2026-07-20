@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -16,6 +17,27 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+// warnDownloadDir surfaces a bad download directory at startup instead of
+// letting every download/import/delete fail silently later.
+func warnDownloadDir(cmd *cobra.Command) {
+	cfg, _, err := runtimeConfig()
+	if err != nil {
+		return
+	}
+	dir, _ := filepath.Abs(cfg.DownloadDir)
+	if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: download directory %q does not exist — downloads and imports will fail until it is created or mounted\n", dir)
+		return
+	}
+	f, werr := os.CreateTemp(dir, ".kaodoku-write-*")
+	if werr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: download directory %q is not writable: %v\n", dir, werr)
+		return
+	}
+	_ = f.Close()
+	_ = os.Remove(f.Name())
+}
 
 var (
 	flagServeDB            string
@@ -52,6 +74,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer closeDB()
 	svc.SetRuntimeConfig(runtimeConfig)
+	warnDownloadDir(cmd)
 
 	// Make built-in sources available immediately (registry sync stays manual).
 	if err := svc.SyncSources(ctx, ""); err != nil {
