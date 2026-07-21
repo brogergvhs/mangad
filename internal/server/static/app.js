@@ -315,7 +315,8 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
         swiped = false;
         return;
       }
-      if (e.clientY < 72) {
+      var ctl = shell.querySelector(".reader-controls");
+      if (ctl && e.clientY < ctl.offsetHeight + 12) {
         toggleControls();
         return;
       }
@@ -609,7 +610,11 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   }
 
   function extend() {
-    if (fetching || noMore || !lastChapterID) return finish();
+    if (fetching) return;
+    if (noMore || !lastChapterID) {
+      finish();
+      return;
+    } // end of title
     fetching = true;
     fetch(
       manifest.extend_base
@@ -761,6 +766,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
 
   function focus(i) {
     if (i < 0 || i >= pages.length) return;
+    pendingTurn = false;
     cur = i;
     curEl = pages[i];
     track.style.transform =
