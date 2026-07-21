@@ -16,17 +16,19 @@ type personalVM struct {
 	WeekdayBars []service.NamedCount
 }
 
-type metricsView struct {
+// metricsBodyView backs the tabbed metrics body (#metrics-body).
+type metricsBodyView struct {
 	User         *auth.User
+	Tab          string // you | overview | users
 	Days         int
-	ShowPersonal bool
-	ShowOverview bool
-	P            personalVM
-}
-
-type overviewView struct {
-	User *auth.User
-	M    service.OverviewMetrics
+	CanPersonal  bool
+	CanOverview  bool
+	CanUsers     bool
+	P            personalVM               // you / users tabs
+	O            service.OverviewMetrics  // overview tab
+	Users        []auth.User              // users tab picker
+	SelectedUser int64                    // users tab
+	SelectedName string                   // users tab
 }
 
 // metricsDays clamps the window selector to the supported values.
@@ -41,9 +43,29 @@ func metricsDays(r *http.Request) int {
 	}
 }
 
-func (u *webUI) buildPersonal(r *http.Request) (personalVM, error) {
-	user := userFrom(r.Context())
-	m, err := u.svc.PersonalMetrics(r.Context(), user.ID, metricsDays(r))
+func metricsTabAllowed(u *auth.User, tab string) bool {
+	switch tab {
+	case "you":
+		return u.Can(auth.PermReaderUse)
+	case "overview":
+		return u.Can(auth.PermStatsView)
+	case "users":
+		return u.Can(auth.PermMetricsUsers)
+	}
+	return false
+}
+
+func defaultMetricsTab(u *auth.User) string {
+	for _, tab := range []string{"you", "overview", "users"} {
+		if metricsTabAllowed(u, tab) {
+			return tab
+		}
+	}
+	return ""
+}
+
+func (u *webUI) buildPersonalFor(r *http.Request, userID int64) (personalVM, error) {
+	m, err := u.svc.PersonalMetrics(r.Context(), userID, metricsDays(r), userFrom(r.Context()).AllowAdult)
 	if err != nil {
 		return personalVM{}, err
 	}
@@ -57,41 +79,87 @@ func (u *webUI) buildPersonal(r *http.Request) (personalVM, error) {
 	return vm, nil
 }
 
-func (u *webUI) metricsPage(w http.ResponseWriter, r *http.Request) {
+// buildMetricsBody assembles the active tab, falling back to the first the user
+// may see. Returns ok=false when the user can see no tab at all.
+func (u *webUI) buildMetricsBody(r *http.Request, tab string) (metricsBodyView, bool, error) {
 	user := userFrom(r.Context())
-	data := metricsView{
-		User:         user,
-		Days:         metricsDays(r),
-		ShowPersonal: user.Can(auth.PermReaderUse),
-		ShowOverview: user.Can(auth.PermStatsView),
+	if tab == "" || !metricsTabAllowed(user, tab) {
+		tab = defaultMetricsTab(user)
 	}
-	if data.ShowPersonal {
-		p, err := u.buildPersonal(r)
+	v := metricsBodyView{
+		User:        user,
+		Tab:         tab,
+		Days:        metricsDays(r),
+		CanPersonal: user.Can(auth.PermReaderUse),
+		CanOverview: user.Can(auth.PermStatsView),
+		CanUsers:    user.Can(auth.PermMetricsUsers),
+	}
+	switch tab {
+	case "you":
+		p, err := u.buildPersonalFor(r, user.ID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return v, true, err
 		}
-		data.P = p
+		v.P = p
+	case "overview":
+		o, err := u.svc.OverviewMetrics(r.Context(), user.AllowAdult)
+		if err != nil {
+			return v, true, err
+		}
+		v.O = o
+	case "users":
+		v.Users, _ = u.svc.Auth().ListUsers(r.Context())
+		v.SelectedUser, _ = strconv.ParseInt(r.URL.Query().Get("user"), 10, 64)
+		if v.SelectedUser > 0 {
+			for _, us := range v.Users {
+				if us.ID == v.SelectedUser {
+					v.SelectedName = us.Username
+				}
+			}
+			if v.SelectedName == "" {
+				v.SelectedUser = 0 // unknown user id
+			} else {
+				p, err := u.buildPersonalFor(r, v.SelectedUser)
+				if err != nil {
+					return v, true, err
+				}
+				v.P = p
+			}
+		}
+	default:
+		return v, false, nil
 	}
-	u.page(w, r, "metrics", "Metrics", data)
+	return v, true, nil
 }
 
-// metricsPersonal re-renders just the personal section (window selector swap).
-func (u *webUI) metricsPersonal(w http.ResponseWriter, r *http.Request) {
-	p, err := u.buildPersonal(r)
+func (u *webUI) metricsPage(w http.ResponseWriter, r *http.Request) {
+	v, ok, err := u.buildMetricsBody(r, r.URL.Query().Get("tab"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	u.frag(w, "metricsPersonal", metricsView{User: userFrom(r.Context()), Days: metricsDays(r), P: p})
+	if !ok {
+		writeError(w, http.StatusForbidden, "no metrics available for your role")
+		return
+	}
+	u.page(w, r, "metrics", "Metrics", v)
 }
 
-func (u *webUI) metricsOverview(w http.ResponseWriter, r *http.Request) {
+func (u *webUI) metricsBody(w http.ResponseWriter, r *http.Request) {
+	tab := r.URL.Query().Get("tab")
 	user := userFrom(r.Context())
-	m, err := u.svc.OverviewMetrics(r.Context(), user.AllowAdult)
+	if tab != "" && !metricsTabAllowed(user, tab) {
+		writeError(w, http.StatusForbidden, "missing permission for this metrics tab")
+		return
+	}
+	v, ok, err := u.buildMetricsBody(r, tab)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	u.frag(w, "metricsOverview", overviewView{User: user, M: m})
+	if !ok {
+		writeError(w, http.StatusForbidden, "no metrics available for your role")
+		return
+	}
+	u.frag(w, "metricsBody", v)
 }

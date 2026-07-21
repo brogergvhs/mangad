@@ -62,12 +62,8 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 func requiredPerm(r *http.Request) string {
 	p := r.URL.Path
 	switch {
-	case p == "/management" || p == "/metrics": 
+	case p == "/management" || p == "/metrics" || p == "/ui/metrics":
 		return ""
-	case p == "/ui/metrics/overview":
-		return auth.PermStatsView
-	case p == "/ui/metrics":
-		return auth.PermReaderUse
 	case p == "/logout" || p == "/" || strings.HasPrefix(p, "/anilist/") || strings.HasPrefix(p, "/ui/anilist/") || strings.HasPrefix(p, "/ui/account"):
 		return "" // any signed-in user (dashboard sections gate individually)
 	case strings.HasPrefix(p, "/reader/") || strings.HasPrefix(p, "/api/reader/"):

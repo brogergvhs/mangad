@@ -26,16 +26,7 @@
 {{end}}
 
 {{define "dashboard"}}
-{{if .User.Can "stats.view"}}
-<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Stats</h2>
-<div class="stats bg-base-100 w-full mb-6">
-  <div class="stat"><div class="stat-title">Tracked titles</div><div class="stat-value text-3xl">{{len .Titles}}</div></div>
-  <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.TotalChaps}}</div><div class="stat-desc">{{missingTotal .Titles}} missing</div></div>
-  <div class="stat"><div class="stat-title">Volumes</div><div class="stat-value text-3xl">{{.TotalVols}}</div></div>
-  <div class="stat"><div class="stat-title">Library size</div><div class="stat-value text-3xl">{{humanBytes .TotalBytes}}</div><div class="stat-desc">{{.TotalPages}} pages</div></div>
-  <div class="stat"><div class="stat-title">Sources healthy</div><div class="stat-value text-3xl">{{healthyCount .Sources}}<span class="text-base-content/40">/{{len .Sources}}</span></div></div>
-</div>
-{{end}}
+{{if .User.Can "stats.view"}}<p class="text-sm text-base-content/60 mb-4">Library and reading statistics have moved to the <a class="link" href="/metrics">Metrics</a> page.</p>{{end}}
 {{if .User.Can "services.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
 <div id="services-health" hx-get="/ui/health" hx-trigger="load" hx-swap="outerHTML">

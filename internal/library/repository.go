@@ -763,13 +763,15 @@ func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, to
 		totalPages = page
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page)
 		VALUES (?, ?, ?)
-	`, auth.UserID(ctx), chapterID, page); err != nil {
+	`, auth.UserID(ctx), chapterID, page)
+	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("mark page read: %w", err)
 	}
-	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, false); err != nil {
+	inserted, _ := res.RowsAffected()
+	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, false, inserted == 0); err != nil {
 		return ChapterReadStatus{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -817,7 +819,7 @@ func (r *Repository) markChapterRead(ctx context.Context, chapterID int64) (Chap
 			return ChapterReadStatus{}, fmt.Errorf("mark chapter page %d read: %w", page, err)
 		}
 	}
-	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, true); err != nil {
+	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, true, true); err != nil {
 		return ChapterReadStatus{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -896,7 +898,7 @@ func (r *Repository) MarkChapterRangeRead(ctx context.Context, titleID int64, fr
 					return 0, fmt.Errorf("mark chapter %d pages read: %w", ch.ID, err)
 				}
 			}
-			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true); err != nil {
+			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true, true); err != nil {
 				return 0, err
 			}
 			count++
@@ -934,7 +936,7 @@ func (r *Repository) MarkChaptersReadThrough(ctx context.Context, titleID int64,
 			if total <= 0 {
 				total = ch.Pages
 			}
-			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true); err != nil {
+			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true, true); err != nil {
 				return 0, err
 			}
 			count++
@@ -1173,7 +1175,7 @@ func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, 
 	return nil
 }
 
-func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapterID int64, totalPages int, forceComplete bool) error {
+func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapterID int64, totalPages int, forceComplete, manual bool) error {
 	var readPages int
 	var lastPage int
 	if err := tx.QueryRowContext(ctx, `
@@ -1192,6 +1194,10 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 			lastPage = totalPages
 		}
 	}
+	manualInt := 0
+	if manual {
+		manualInt = 1
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO chapter_read_progress (
 			user_id,
@@ -1200,20 +1206,23 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 			read_pages,
 			total_pages,
 			completed,
+			manual,
 			last_read_at,
 			completed_at
-		) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END)
 		ON CONFLICT(user_id, chapter_id) DO UPDATE SET
 			last_page = MAX(chapter_read_progress.last_page, excluded.last_page),
 			read_pages = excluded.read_pages,
 			total_pages = MAX(chapter_read_progress.total_pages, excluded.total_pages),
 			completed = CASE WHEN excluded.completed = 1 THEN 1 ELSE chapter_read_progress.completed END,
+			-- genuine page reading (manual=0) always wins over a prior bulk mark
+			manual = MIN(chapter_read_progress.manual, excluded.manual),
 			last_read_at = CURRENT_TIMESTAMP,
 			completed_at = CASE
 				WHEN excluded.completed = 1 THEN COALESCE(chapter_read_progress.completed_at, CURRENT_TIMESTAMP)
 				ELSE chapter_read_progress.completed_at
 			END
-	`, auth.UserID(ctx), chapterID, lastPage, readPages, totalPages, completedInt, completedInt); err != nil {
+	`, auth.UserID(ctx), chapterID, lastPage, readPages, totalPages, completedInt, manualInt, completedInt); err != nil {
 		return fmt.Errorf("update read progress: %w", err)
 	}
 	return nil

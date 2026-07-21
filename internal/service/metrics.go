@@ -30,6 +30,11 @@ const (
 	heatmapDays  = 182
 )
 
+// genuineJoin restricts chapter_read_pages to chapters read
+// in-app page-by-page (manual = 0), excluding bulk/AniList marks that carry no
+// real timing. Every time-based metric joins through it.
+const genuineJoin = `JOIN chapter_read_progress crp ON crp.user_id = cp.user_id AND crp.chapter_id = cp.chapter_id AND crp.manual = 0`
+
 // DayCount is one day's tally for line charts and heatmaps.
 type DayCount struct {
 	Day   string // YYYY-MM-DD
@@ -66,12 +71,13 @@ type TitleProgress struct {
 
 // PersonalMetrics is one user's reading dashboard.
 type PersonalMetrics struct {
-	Days              int
-	ChaptersRead      int64 // window
-	PagesRead         int64 // window
-	ChaptersReadTotal int64
-	PagesReadTotal    int64
-	VolumesReadTotal  int64
+	Days                      int
+	ChaptersRead              int64 // window, genuinely read (page-by-page)
+	PagesRead                 int64 // window, genuine
+	ChaptersActuallyReadTotal int64 // all-time, read in-app page-by-page
+	ChaptersMarkedTotal       int64 // all-time, bulk/AniList-marked (read elsewhere)
+	PagesReadTotal            int64 // all-time, genuine
+	VolumesReadTotal          int64
 	TitlesCompleted   int64
 	TitlesInProgress  int64
 	Backlog           int64
@@ -91,18 +97,25 @@ type PersonalMetrics struct {
 	Recent            []TitleProgress
 }
 
-// PersonalMetrics computes the user's reading dashboard over the last `days`.
-func (s *JobService) PersonalMetrics(ctx context.Context, userID int64, days int) (PersonalMetrics, error) {
+// PersonalMetrics computes a user's reading dashboard over the last `days`.
+// allowAdult is the VIEWER's guard: when false, adult titles are kept out of the
+// taste breakdowns and recent-titles table (matters when an admin views another
+// user's metrics).
+func (s *JobService) PersonalMetrics(ctx context.Context, userID int64, days int, allowAdult bool) (PersonalMetrics, error) {
 	if days <= 0 {
 		days = 30
 	}
 	m := PersonalMetrics{Days: days}
 	since := database.FormatTime(time.Now().AddDate(0, 0, -days))
 
-	m.PagesReadTotal = s.count(ctx, `SELECT COUNT(*) FROM chapter_read_pages WHERE user_id = ?`, userID)
-	m.PagesRead = s.count(ctx, `SELECT COUNT(*) FROM chapter_read_pages WHERE user_id = ? AND read_at >= ?`, userID, since)
-	m.ChaptersReadTotal = s.count(ctx, `SELECT COUNT(*) FROM chapter_read_progress WHERE user_id = ? AND completed = 1`, userID)
-	m.ChaptersRead = s.count(ctx, `SELECT COUNT(DISTINCT chapter_id) FROM chapter_read_pages WHERE user_id = ? AND read_at >= ?`, userID, since)
+	// "Genuine" = pages/chapters read in-app page-by-page (manual = 0). Bulk and
+	// AniList marks (manual = 1) are counted separately and excluded from page
+	// counts and every time-based metric, since they carry no real timing.
+	m.PagesReadTotal = s.count(ctx, `SELECT COUNT(*) FROM chapter_read_pages cp `+genuineJoin+` WHERE cp.user_id = ?`, userID)
+	m.PagesRead = s.count(ctx, `SELECT COUNT(*) FROM chapter_read_pages cp `+genuineJoin+` WHERE cp.user_id = ? AND cp.read_at >= ?`, userID, since)
+	m.ChaptersRead = s.count(ctx, `SELECT COUNT(DISTINCT cp.chapter_id) FROM chapter_read_pages cp `+genuineJoin+` WHERE cp.user_id = ? AND cp.read_at >= ?`, userID, since)
+	m.ChaptersActuallyReadTotal = s.count(ctx, `SELECT COUNT(*) FROM chapter_read_progress WHERE user_id = ? AND completed = 1 AND manual = 0`, userID)
+	m.ChaptersMarkedTotal = s.count(ctx, `SELECT COUNT(*) FROM chapter_read_progress WHERE user_id = ? AND completed = 1 AND manual = 1`, userID)
 	m.VolumesReadTotal = s.count(ctx, `SELECT COUNT(*) FROM volume_read_progress WHERE user_id = ? AND completed = 1`, userID)
 	m.Backlog = s.count(ctx, `
 		SELECT COUNT(*) FROM chapters c
@@ -116,10 +129,10 @@ func (s *JobService) PersonalMetrics(ctx context.Context, userID int64, days int
 	if err := s.readingTime(ctx, userID, since, &m); err != nil {
 		return m, err
 	}
-	if err := s.readingTaste(ctx, userID, &m); err != nil {
+	if err := s.readingTaste(ctx, userID, allowAdult, &m); err != nil {
 		return m, err
 	}
-	if err := s.titleProgress(ctx, userID, &m); err != nil {
+	if err := s.titleProgress(ctx, userID, allowAdult, &m); err != nil {
 		return m, err
 	}
 	return m, nil
@@ -156,8 +169,8 @@ func (s *JobService) readingActivity(ctx context.Context, userID int64, days int
 	}
 	since := database.FormatTime(time.Now().AddDate(0, 0, -span))
 	byDay, err := s.dayCounts(ctx,
-		`SELECT date(read_at, 'localtime') d, COUNT(*) FROM chapter_read_pages
-		 WHERE user_id = ? AND read_at >= ? GROUP BY d`, userID, since)
+		`SELECT date(cp.read_at, 'localtime') d, COUNT(*) FROM chapter_read_pages cp `+genuineJoin+`
+		 WHERE cp.user_id = ? AND cp.read_at >= ? GROUP BY d`, userID, since)
 	if err != nil {
 		return err
 	}
@@ -179,8 +192,8 @@ func (s *JobService) readingActivity(ctx context.Context, userID int64, days int
 	}
 
 	hours, err := s.dayCounts(ctx,
-		`SELECT strftime('%H', read_at, 'localtime') h, COUNT(*) FROM chapter_read_pages
-		 WHERE user_id = ? AND read_at >= ? GROUP BY h`, userID, since)
+		`SELECT strftime('%H', cp.read_at, 'localtime') h, COUNT(*) FROM chapter_read_pages cp `+genuineJoin+`
+		 WHERE cp.user_id = ? AND cp.read_at >= ? GROUP BY h`, userID, since)
 	if err != nil {
 		return err
 	}
@@ -190,8 +203,8 @@ func (s *JobService) readingActivity(ctx context.Context, userID int64, days int
 		}
 	}
 	wdays, err := s.dayCounts(ctx,
-		`SELECT strftime('%w', read_at, 'localtime') w, COUNT(*) FROM chapter_read_pages
-		 WHERE user_id = ? AND read_at >= ? GROUP BY w`, userID, since)
+		`SELECT strftime('%w', cp.read_at, 'localtime') w, COUNT(*) FROM chapter_read_pages cp `+genuineJoin+`
+		 WHERE cp.user_id = ? AND cp.read_at >= ? GROUP BY w`, userID, since)
 	if err != nil {
 		return err
 	}
@@ -209,8 +222,8 @@ func (s *JobService) readingActivity(ctx context.Context, userID int64, days int
 func (s *JobService) streaks(ctx context.Context, userID int64) (current, longest int) {
 	since := database.FormatTime(time.Now().AddDate(0, 0, -400))
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT date(read_at, 'localtime') FROM chapter_read_pages
-		 WHERE user_id = ? AND read_at >= ? ORDER BY 1`, userID, since)
+		`SELECT DISTINCT date(cp.read_at, 'localtime') FROM chapter_read_pages cp `+genuineJoin+`
+		 WHERE cp.user_id = ? AND cp.read_at >= ? ORDER BY 1`, userID, since)
 	if err != nil {
 		return 0, 0
 	}
@@ -258,8 +271,7 @@ func (s *JobService) streaks(ctx context.Context, userID int64) (current, longes
 func (s *JobService) readingTime(ctx context.Context, userID int64, since string, m *PersonalMetrics) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT cp.chapter_id, cp.read_at, COALESCE(crp.total_pages, 0)
-		FROM chapter_read_pages cp
-		LEFT JOIN chapter_read_progress crp ON crp.user_id = cp.user_id AND crp.chapter_id = cp.chapter_id
+		FROM chapter_read_pages cp `+genuineJoin+`
 		WHERE cp.user_id = ? AND cp.read_at >= ?
 		ORDER BY cp.read_at`, userID, since)
 	if err != nil {
@@ -349,7 +361,11 @@ func (s *JobService) readingTime(ctx context.Context, userID int64, since string
 	return nil
 }
 
-func (s *JobService) readingTaste(ctx context.Context, userID int64, m *PersonalMetrics) error {
+func (s *JobService) readingTaste(ctx context.Context, userID int64, allowAdult bool, m *PersonalMetrics) error {
+	adult := ""
+	if !allowAdult {
+		adult = " AND COALESCE(cm.is_adult, 0) = 0"
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT cm.genres_json, cm.tags_json, cm.authors_json, cm.average_score,
 		       COUNT(DISTINCT c.id) AS ch
@@ -357,6 +373,7 @@ func (s *JobService) readingTaste(ctx context.Context, userID int64, m *Personal
 		JOIN chapters c ON c.title_id = t.id
 		JOIN chapter_read_progress p ON p.chapter_id = c.id AND p.user_id = ? AND p.completed = 1
 		JOIN catalog_manga cm ON cm.id = t.catalog_manga_id
+		WHERE 1=1`+adult+`
 		GROUP BY t.id`, userID)
 	if err != nil {
 		return err
@@ -373,7 +390,11 @@ func (s *JobService) readingTaste(ctx context.Context, userID int64, m *Personal
 	return nil
 }
 
-func (s *JobService) titleProgress(ctx context.Context, userID int64, m *PersonalMetrics) error {
+func (s *JobService) titleProgress(ctx context.Context, userID int64, allowAdult bool, m *PersonalMetrics) error {
+	adult := ""
+	if !allowAdult {
+		adult = " AND COALESCE(cm.is_adult, 0) = 0"
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.id, t.display_title,
 		       COUNT(DISTINCT c.id) AS total,
@@ -382,6 +403,8 @@ func (s *JobService) titleProgress(ctx context.Context, userID int64, m *Persona
 		FROM titles t
 		JOIN chapters c ON c.title_id = t.id
 		LEFT JOIN chapter_read_progress p ON p.chapter_id = c.id AND p.user_id = ?
+		LEFT JOIN catalog_manga cm ON cm.id = t.catalog_manga_id
+		WHERE 1=1`+adult+`
 		GROUP BY t.id
 		HAVING rd > 0
 		ORDER BY last DESC`, userID)
@@ -526,6 +549,9 @@ type OverviewMetrics struct {
 	TotalTitles             int64
 	TotalChapters           int64
 	TotalDownloadedChapters int64
+	TotalVolumes            int64
+	TotalSources            int64
+	SourcesHealthy          int64
 	LibraryBytes            int64
 	ActiveUsersDay          int64
 	ActiveUsersWeek         int64
@@ -551,6 +577,9 @@ func (s *JobService) OverviewMetrics(ctx context.Context, allowAdult bool) (Over
 	m.TotalTitles = s.count(ctx, `SELECT COUNT(*) FROM titles`)
 	m.TotalChapters = s.count(ctx, `SELECT COUNT(*) FROM chapters`)
 	m.TotalDownloadedChapters = s.count(ctx, `SELECT COUNT(DISTINCT chapter_id) FROM downloads WHERE status = 'done'`)
+	m.TotalVolumes = s.count(ctx, `SELECT COUNT(*) FROM volumes`)
+	m.TotalSources = s.count(ctx, `SELECT COUNT(*) FROM sources`)
+	m.SourcesHealthy = s.count(ctx, `SELECT COUNT(*) FROM sources WHERE status = 'healthy'`)
 	m.LibraryBytes = s.count(ctx, `SELECT COALESCE(SUM(bytes),0) FROM downloads WHERE status = 'done'`) +
 		s.count(ctx, `SELECT COALESCE(SUM(bytes),0) FROM volumes`)
 

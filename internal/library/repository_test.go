@@ -439,3 +439,64 @@ func TestUnlinkSourcePrunesUndownloadedChapters(t *testing.T) {
 		t.Fatalf("links = %#v", links)
 	}
 }
+
+// A page-by-page read creates a genuine (manual=0) chapter, while re-opening a
+// page of a bulk-marked chapter must leave it classified as marked (manual=1).
+func TestMarkPageReadPreservesBulkMarked(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	repo := NewRepository(db)
+	title, err := repo.AddTitle(ctx, AddTitleParams{SourceURL: "https://x.test/m", DisplayTitle: "M", Monitored: true})
+	if err != nil {
+		t.Fatalf("AddTitle() error = %v", err)
+	}
+	if _, err := repo.UpsertChapters(ctx, title.ID, []chapters.Chapter{
+		{Chapter: providers.Chapter{URL: "https://x.test/c1", Label: "1", NumMain: 1}},
+		{Chapter: providers.Chapter{URL: "https://x.test/c2", Label: "2", NumMain: 2}},
+	}); err != nil {
+		t.Fatalf("UpsertChapters() error = %v", err)
+	}
+	ch1, _ := repo.GetChapterByLabel(ctx, title.ID, "1")
+	ch2, _ := repo.GetChapterByLabel(ctx, title.ID, "2")
+	if err := repo.MarkDownloadCompleted(ctx, ch1.ID, "c1.cbz", 100, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkDownloadCompleted(ctx, ch2.ID, "c2.cbz", 100, 3); err != nil {
+		t.Fatal(err)
+	}
+	manual := func(chID int64) int {
+		var m int
+		_ = db.QueryRowContext(ctx, `SELECT manual FROM chapter_read_progress WHERE chapter_id = ?`, chID).Scan(&m)
+		return m
+	}
+
+	// ch1: genuine page-by-page reading -> manual 0.
+	if _, err := repo.MarkPageRead(ctx, ch1.ID, 1, 3); err != nil {
+		t.Fatal(err)
+	}
+	if manual(ch1.ID) != 0 {
+		t.Errorf("page-by-page read manual = %d, want 0", manual(ch1.ID))
+	}
+
+	// ch2: bulk mark -> manual 1, and re-opening an existing page keeps it 1.
+	if _, err := repo.MarkChapterRead(ctx, ch2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if manual(ch2.ID) != 1 {
+		t.Fatalf("bulk mark manual = %d, want 1", manual(ch2.ID))
+	}
+	if _, err := repo.MarkPageRead(ctx, ch2.ID, 1, 3); err != nil {
+		t.Fatal(err)
+	}
+	if manual(ch2.ID) != 1 {
+		t.Errorf("re-opening a bulk-marked page flipped manual to %d, want 1", manual(ch2.ID))
+	}
+}
