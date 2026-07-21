@@ -35,6 +35,7 @@ var userDataTables = []string{
 
 var restoreClearOnlyTables = []string{
 	"jobs",
+	"notifications",
 	"downloads",
 	"sessions",
 	"browser_cookies",

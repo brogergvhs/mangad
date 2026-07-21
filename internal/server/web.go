@@ -26,6 +26,7 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/auth"
 	"github.com/brogergvhs/kaodoku/internal/catalog"
 	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/providers/registry"
@@ -388,6 +389,11 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/account/sessions/revoke", u.accountRevokeSessions)
 	mux.HandleFunc("POST /ui/account/tokens", u.accountTokenCreate)
 	mux.HandleFunc("POST /ui/account/tokens/{id}/delete", u.accountTokenDelete)
+	mux.HandleFunc("GET /ui/notifications", u.notificationsCard)
+	mux.HandleFunc("GET /ui/notifications/badge", u.notificationsBadge)
+	mux.HandleFunc("POST /ui/notifications/read", u.notificationsRead)
+	mux.HandleFunc("POST /ui/notifications/clear", u.notificationsClear)
+	mux.HandleFunc("POST /ui/notifications/{id}/delete", u.notificationDelete)
 	mux.HandleFunc("GET /users", u.usersPage)
 	mux.HandleFunc("GET /ui/users", u.usersFrag)
 	mux.HandleFunc("POST /ui/users", u.userCreate)
@@ -3874,6 +3880,10 @@ func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
 		"assetVer":  func() string { return u.assetVer },
 		"jobLabel":  jobLabel,
+		"tokenExpired": func(expiresAt string) bool {
+			t, err := database.ParseTime(expiresAt)
+			return err == nil && !t.IsZero() && t.Before(time.Now())
+		},
 		"permLabel": func(p string) string { l, _ := permMeta(p); return l },
 		"cardView": func(t library.Title, canManage bool, screen int64) map[string]any {
 			return map[string]any{"Title": t, "CanManage": canManage, "Screen": screen}

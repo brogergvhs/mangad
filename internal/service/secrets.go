@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -10,6 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 // encPrefix marks encrypted values; stored strings without it are legacy
@@ -28,6 +32,10 @@ func newTokenCipher(dbPath string) (*tokenCipher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encryption key: %w", err)
 	}
+	return cipherFromKey(key)
+}
+
+func cipherFromKey(key []byte) (*tokenCipher, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -39,6 +47,10 @@ func newTokenCipher(dbPath string) (*tokenCipher, error) {
 	return &tokenCipher{aead: aead}, nil
 }
 
+func keyFilePath(dbPath string) string {
+	return filepath.Join(filepath.Dir(dbPath), "kaodoku.key")
+}
+
 func loadOrCreateKey(dbPath string) ([]byte, error) {
 	if env := strings.TrimSpace(os.Getenv("KAODOKU_ENCRYPTION_KEY")); env != "" {
 		key, err := hex.DecodeString(env)
@@ -47,7 +59,7 @@ func loadOrCreateKey(dbPath string) ([]byte, error) {
 		}
 		return key, nil
 	}
-	path := filepath.Join(filepath.Dir(dbPath), "kaodoku.key")
+	path := keyFilePath(dbPath)
 	if data, err := os.ReadFile(path); err == nil {
 		key, err := hex.DecodeString(strings.TrimSpace(string(data)))
 		if err != nil || len(key) != 32 {
@@ -92,4 +104,107 @@ func (c *tokenCipher) Decrypt(stored string) (string, error) {
 		return "", fmt.Errorf("decrypt token (was the key file replaced?): %w", err)
 	}
 	return string(plain), nil
+}
+
+// RotateEncryptionKey mints a fresh key file, re-encrypts stored secrets with
+// it, and returns how many were rewritten. Refused when the key is pinned via
+// KAODOKU_ENCRYPTION_KEY. Run with the server stopped.
+func RotateEncryptionKey(ctx context.Context, dbPath string) (int, error) {
+	if strings.TrimSpace(os.Getenv("KAODOKU_ENCRYPTION_KEY")) != "" {
+		return 0, fmt.Errorf("encryption key is pinned via KAODOKU_ENCRYPTION_KEY; rotate it by setting a new value in that env var")
+	}
+	if dbPath == "" {
+		dbPath = database.DefaultPath()
+	}
+	oldKey, err := loadOrCreateKey(dbPath)
+	if err != nil {
+		return 0, err
+	}
+	oldCipher, err := cipherFromKey(oldKey)
+	if err != nil {
+		return 0, err
+	}
+	newKey := make([]byte, 32)
+	if _, err := rand.Read(newKey); err != nil {
+		return 0, err
+	}
+	newCipher, err := cipherFromKey(newKey)
+	if err != nil {
+		return 0, err
+	}
+
+	db, err := database.Open(ctx, dbPath)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return 0, fmt.Errorf("lock database (is the server running?): %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(ctx, "ROLLBACK")
+		}
+	}()
+
+	rows, err := conn.QueryContext(ctx, `SELECT user_id, access_token FROM user_anilist WHERE access_token LIKE ?`, encPrefix+"%")
+	if err != nil {
+		return 0, err
+	}
+	type item struct {
+		id  int64
+		enc string
+	}
+	var items []item
+	for rows.Next() {
+		var id int64
+		var stored string
+		if err := rows.Scan(&id, &stored); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		plain, err := oldCipher.Decrypt(stored)
+		if err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("decrypt user %d token: %w", id, err)
+		}
+		reenc, err := newCipher.Encrypt(plain)
+		if err != nil {
+			rows.Close()
+			return 0, err
+		}
+		items = append(items, item{id, reenc})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, it := range items {
+		if _, err := conn.ExecContext(ctx, `UPDATE user_anilist SET access_token = ? WHERE user_id = ?`, it.enc, it.id); err != nil {
+			return 0, err
+		}
+	}
+
+	keyPath := keyFilePath(dbPath)
+	bakPath := keyPath + ".bak"
+	if err := util.WriteFileAtomic(bakPath, []byte(hex.EncodeToString(oldKey)+"\n"), 0o600); err != nil {
+		return 0, fmt.Errorf("back up key: %w", err)
+	}
+	if err := util.WriteFileAtomic(keyPath, []byte(hex.EncodeToString(newKey)+"\n"), 0o600); err != nil {
+		return 0, fmt.Errorf("write new key: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		_ = util.WriteFileAtomic(keyPath, []byte(hex.EncodeToString(oldKey)+"\n"), 0o600)
+		return 0, err
+	}
+	committed = true
+	_ = os.Remove(bakPath)
+	return len(items), nil
 }

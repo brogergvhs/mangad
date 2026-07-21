@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -122,5 +124,77 @@ func TestPurgeExpiredSessions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, []string{"fresh"}) {
 		t.Fatalf("sessions = %v, want fresh only", got)
+	}
+}
+
+func TestAPITokenExpiry(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	svc := NewService(db)
+	if err := svc.Bootstrap(ctx, "admin", "secret"); err != nil {
+		t.Fatalf("Bootstrap() error = %v", err)
+	}
+
+	// A never-expiring token resolves.
+	never, err := svc.CreateAPIToken(ctx, EnvAdminID, "forever", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, err := svc.UserByAPIToken(ctx, never); err != nil || u == nil {
+		t.Fatalf("never-expiring token = %v, %v", u, err)
+	}
+
+	// A token with a future TTL resolves; APITokens reports its expiry.
+	live, err := svc.CreateAPIToken(ctx, EnvAdminID, "live", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, err := svc.UserByAPIToken(ctx, live); err != nil || u == nil {
+		t.Fatalf("live token = %v, %v", u, err)
+	}
+	toks, _ := svc.APITokens(ctx, EnvAdminID)
+	var liveExpiry string
+	for _, tk := range toks {
+		if tk.Name == "live" {
+			liveExpiry = tk.ExpiresAt
+		}
+	}
+	if liveExpiry == "" {
+		t.Fatal("live token has no ExpiresAt")
+	}
+
+	// Force an already-expired token and confirm it neither resolves nor survives purge.
+	expired, err := svc.CreateAPIToken(ctx, EnvAdminID, "stale", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(expired))
+	if _, err := db.ExecContext(ctx, `UPDATE api_tokens SET expires_at = ? WHERE token_hash = ?`,
+		database.FormatTime(time.Now().Add(-time.Hour)), hex.EncodeToString(sum[:])); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := svc.UserByAPIToken(ctx, expired); err != nil || u != nil {
+		t.Fatalf("expired token resolved: %v, %v", u, err)
+	}
+	if err := svc.PurgeExpiredAPITokens(ctx); err != nil {
+		t.Fatal(err)
+	}
+	toks, _ = svc.APITokens(ctx, EnvAdminID)
+	for _, tk := range toks {
+		if tk.Name == "stale" {
+			t.Fatal("expired token survived purge")
+		}
+	}
+	if len(toks) != 2 { // forever + live remain
+		t.Fatalf("token count after purge = %d, want 2", len(toks))
 	}
 }

@@ -363,6 +363,10 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 		_ = db.Close()
 		return nil, nil, err
 	}
+	if err := svc.auth.PurgeExpiredAPITokens(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
 	if _, err := svc.lib.ReconcileStartedDownloads(ctx); err != nil {
 		_ = db.Close()
 		return nil, nil, err
@@ -2377,6 +2381,10 @@ func (s *JobService) runClaimedJob(ctx, markCtx context.Context, cfg *config.Con
 		if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {
 			return 0, 1, markErr
 		}
+		if latest, gerr := s.jobs.Get(markCtx, job.ID); gerr == nil && latest.Status == "dead" {
+			msg := fmt.Sprintf("Job #%d (%s) failed after retries: %s", job.ID, job.Type, truncateError(err.Error()))
+			_ = s.AddNotification(markCtx, "error", msg, job.ID)
+		}
 		return 0, 1, nil
 	}
 	if err := s.jobs.MarkDone(markCtx, job.ID); err != nil {
@@ -2410,7 +2418,6 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 	}
 
 	logSvc = logSvc.With("job_id", job.ID, "job_type", job.Type)
-
 	switch job.Type {
 	case jobs.TypeRefreshTitle:
 		if payload.TitleID > 0 {

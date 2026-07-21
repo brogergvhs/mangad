@@ -10,8 +10,7 @@ import (
 	"strings"
 )
 
-// Log is the logging interface the app consumes.
-// carries printf-style methods and slog-style structured methods.
+// Log is the app's logging interface: printf-style and slog-style methods.
 type Log interface {
 	Debugf(format string, args ...any)
 	Infof(format string, args ...any)
@@ -58,8 +57,7 @@ func New(opts Options) *Logger {
 	return &Logger{s: slog.New(h)}
 }
 
-// NewLogger is the original constructor, kept for callers/tests that only toggle
-// debug and want the default format.
+// NewLogger builds a default (text) logger with the given debug level.
 func NewLogger(debug bool) *Logger { return New(Options{Debug: debug}) }
 
 // Discard returns a logger that drops everything (tests, quiet code paths).

@@ -492,10 +492,11 @@ type APIToken struct {
 	ID        int64
 	Name      string
 	CreatedAt string
+	ExpiresAt string // "" = never expires
 }
 
-// CreateAPIToken mints a token for a user; the raw value is shown once.
-func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string) (string, error) {
+// CreateAPIToken mints a token (shown once). ttlDays > 0 sets an expiry; else never.
+func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string, ttlDays int) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "token"
@@ -506,8 +507,12 @@ func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string)
 	}
 	token := "mgd_" + hex.EncodeToString(raw)
 	sum := sha256.Sum256([]byte(token))
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO api_tokens (token_hash, user_id, name) VALUES (?, ?, ?)`,
-		hex.EncodeToString(sum[:]), userID, name); err != nil {
+	expires := ""
+	if ttlDays > 0 {
+		expires = database.FormatTime(time.Now().AddDate(0, 0, ttlDays))
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO api_tokens (token_hash, user_id, name, expires_at) VALUES (?, ?, ?, ?)`,
+		hex.EncodeToString(sum[:]), userID, name, expires); err != nil {
 		return "", err
 	}
 	return token, nil
@@ -515,7 +520,7 @@ func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string)
 
 // APITokens lists a user's tokens (hashes never leave the DB).
 func (s *Service) APITokens(ctx context.Context, userID int64) ([]APIToken, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT rowid, name, created_at FROM api_tokens WHERE user_id = ? ORDER BY rowid`, userID)
+	rows, err := s.db.QueryContext(ctx, `SELECT rowid, name, created_at, expires_at FROM api_tokens WHERE user_id = ? ORDER BY rowid`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +528,7 @@ func (s *Service) APITokens(ctx context.Context, userID int64) ([]APIToken, erro
 	var out []APIToken
 	for rows.Next() {
 		var t APIToken
-		if rows.Scan(&t.ID, &t.Name, &t.CreatedAt) == nil {
+		if rows.Scan(&t.ID, &t.Name, &t.CreatedAt, &t.ExpiresAt) == nil {
 			out = append(out, t)
 		}
 	}
@@ -536,14 +541,22 @@ func (s *Service) DeleteAPIToken(ctx context.Context, userID, tokenID int64) err
 	return err
 }
 
-// UserByAPIToken resolves a header token to its user, or nil.
+// PurgeExpiredAPITokens deletes expired tokens (empty expires_at never expires).
+func (s *Service) PurgeExpiredAPITokens(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE expires_at != '' AND expires_at <= ?`, database.FormatTime(time.Now()))
+	return err
+}
+
+// UserByAPIToken resolves a header token to its user, or nil. Expired tokens do not resolve.
 func (s *Service) UserByAPIToken(ctx context.Context, token string) (*User, error) {
 	if !strings.HasPrefix(token, "mgd_") {
 		return nil, nil
 	}
 	sum := sha256.Sum256([]byte(token))
 	var userID int64
-	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM api_tokens WHERE token_hash = ?`, hex.EncodeToString(sum[:])).Scan(&userID)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT user_id FROM api_tokens WHERE token_hash = ? AND (expires_at = '' OR expires_at > ?)`,
+		hex.EncodeToString(sum[:]), database.FormatTime(time.Now())).Scan(&userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

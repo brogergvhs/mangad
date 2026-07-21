@@ -86,6 +86,10 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermJobsManage
 	case strings.HasPrefix(p, "/ui/jobs/"):
 		return auth.PermJobsView
+	case strings.HasPrefix(p, "/ui/notifications") && r.Method != http.MethodGet:
+		return auth.PermJobsManage
+	case strings.HasPrefix(p, "/ui/notifications"):
+		return auth.PermJobsView
 	case p == "/search" || strings.HasPrefix(p, "/ui/search") || p == "/ui/library/add":
 		return auth.PermLibraryAdd
 	case p == "/import" || strings.HasPrefix(p, "/ui/import"):

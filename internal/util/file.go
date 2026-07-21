@@ -80,16 +80,35 @@ func addFileToZip(z *zip.Writer, file string) error {
 	return nil
 }
 
-// WriteFileAtomic writes data to path via a temp file and rename so readers
-// never observe a partially written file.
+// WriteFileAtomic writes data via a temp file and rename, fsyncing the file and
+// its directory so the result is atomic and durable across a crash.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return err
+	}
+	if dir, derr := os.Open(filepath.Dir(path)); derr == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
 	}
 	return nil
 }

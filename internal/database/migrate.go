@@ -288,6 +288,16 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 	token_hash TEXT PRIMARY KEY,
 	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	name TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	expires_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	level TEXT NOT NULL DEFAULT 'error',
+	message TEXT NOT NULL,
+	job_id INTEGER NOT NULL DEFAULT 0,
+	read_at TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -398,6 +408,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"title_source_matches", "sample_images_found", "INTEGER NOT NULL DEFAULT 0"},
 		{"title_source_matches", "error", "TEXT NOT NULL DEFAULT ''"},
 		{"title_source_matches", "updated_at", "TEXT NOT NULL DEFAULT ''"},
+		{"api_tokens", "expires_at", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)

@@ -274,14 +274,14 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       localStorage.setItem(k, v);
     } catch (e) {}
   }
-  var mode = pref("reader-mode", "strip"); // strip | paged
-  var dir = pref("reader-dir", "ltr"); // ltr | rtl  (paged page order)
-  var fit = pref("reader-fit", "contain"); // contain | width (paged)
+  var mode = pref("reader-mode", "strip");
+  var dir = pref("reader-dir", "ltr");
+  var fit = pref("reader-fit", "contain");
   var zoom = parseFloat(pref("reader-zoom", "1")) || 1;
   var smooth = window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ? "auto"
     : "smooth";
-  var curEl = null; // page element under focus (drives marking, resume, build gate)
+  var curEl = null;
 
   function applyView() {
     strip.dataset.mode = mode;
@@ -370,7 +370,6 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
     }
   });
 
-  // settings popover
   shell.addEventListener("click", function (e) {
     var s = e.target.closest("[data-set]");
     var z = e.target.closest("[data-zoom]");
@@ -531,7 +530,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   var ticking = false;
   function checkVisible() {
     ticking = false;
-    if (mode !== "strip") return; // paged marks/positions in focus() on each turn
+    if (mode !== "strip") return;
     updatePosition();
     var threshold = window.innerHeight * 0.85;
     var doc = document.documentElement;
@@ -570,7 +569,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       return;
     }
     if (mode === "paged") {
-      if (curEl) mark(curEl); // horizontal layout: only the focused page is "seen"
+      if (curEl) mark(curEl);
     } else {
       pages.forEach(function (img) {
         if (img.getBoundingClientRect().top < window.innerHeight) mark(img);
@@ -600,8 +599,8 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   var fetching = false; // a manifest extension request is in flight
   var noMore = false; // the server has no further chapters
   var resumed = !resumeChapter || !resumePage;
-  var cur = 0; // index into pages[] of the focused page (paged mode)
-  var pendingTurn = false; // a page turn waiting on the next page to build
+  var cur = 0;
+  var pendingTurn = false;
 
   function nearEnd() {
     if (mode === "paged") return pages.length - 1 - cur <= LOOKAHEAD + 1;
@@ -614,7 +613,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
     if (noMore || !lastChapterID) {
       finish();
       return;
-    } // end of title
+    }
     fetching = true;
     fetch(
       manifest.extend_base
@@ -806,7 +805,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       var i = curEl ? pages.indexOf(curEl) : cur;
       focus(i < 0 ? 0 : Math.min(i, pages.length - 1));
     } else {
-      track.style.transform = ""; // strip mode scrolls the window, no track offset
+      track.style.transform = "";
       if (curEl) curEl.scrollIntoView({ block: "start" });
       requestCheck();
     }
