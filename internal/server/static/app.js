@@ -245,7 +245,8 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       var kv = b.dataset.set.split("=");
       var on = (kv[0] === "mode" && kv[1] === mode) ||
         (kv[0] === "dir" && kv[1] === dir) || (kv[0] === "fit" && kv[1] === fit);
-      b.classList.toggle("btn-active", on);
+      b.classList.toggle("btn-outline", on);
+      b.classList.toggle("btn-primary", on);
     });
     var zl = shell.querySelector("[data-zoom-label]");
     if (zl) zl.textContent = Math.round(zoom * 100) + "%";
