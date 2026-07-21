@@ -108,7 +108,12 @@ func (u *webUI) buildMetricsBody(r *http.Request, tab string) (metricsBodyView, 
 		}
 		v.O = o
 	case "users":
-		v.Users, _ = u.svc.Auth().ListUsers(r.Context())
+		all, _ := u.svc.Auth().ListUsers(r.Context())
+		for _, us := range all {
+			if us.ID != user.ID {
+				v.Users = append(v.Users, us)
+			}
+		}
 		v.SelectedUser, _ = strconv.ParseInt(r.URL.Query().Get("user"), 10, 64)
 		if v.SelectedUser > 0 {
 			for _, us := range v.Users {
@@ -161,5 +166,5 @@ func (u *webUI) metricsBody(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "no metrics available for your role")
 		return
 	}
-	u.frag(w, "metricsBody", v)
+	u.frag(w, "metrics", v)
 }
