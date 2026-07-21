@@ -3913,6 +3913,15 @@ func (u *webUI) funcs() template.FuncMap {
 			}
 			return m
 		},
+		"peakDay": func(list []service.DayCount) int64 {
+			var m int64
+			for _, c := range list {
+				if c.Count > m {
+					m = c.Count
+				}
+			}
+			return m
+		},
 		"permLabel": func(p string) string { l, _ := permMeta(p); return l },
 		"cardView": func(t library.Title, canManage bool, screen int64) map[string]any {
 			return map[string]any{"Title": t, "CanManage": canManage, "Screen": screen}

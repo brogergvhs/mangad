@@ -119,7 +119,7 @@ func (s *JobService) PersonalMetrics(ctx context.Context, userID int64, days int
 	m.VolumesReadTotal = s.count(ctx, `SELECT COUNT(*) FROM volume_read_progress WHERE user_id = ? AND completed = 1`, userID)
 	m.Backlog = s.count(ctx, `
 		SELECT COUNT(*) FROM chapters c
-		JOIN downloads d ON d.chapter_id = c.id AND d.status = 'done'
+		JOIN downloads d ON d.chapter_id = c.id AND d.status = 'completed'
 		LEFT JOIN chapter_read_progress p ON p.chapter_id = c.id AND p.user_id = ? AND p.completed = 1
 		WHERE p.chapter_id IS NULL`, userID)
 
@@ -526,7 +526,6 @@ func pctList(list []NamedCount) []NamedCount {
 type DownloadStats struct {
 	Done        int64
 	Failed      int64
-	Dead        int64
 	Pending     int64
 	SuccessRate float64
 	AvgSeconds  float64
@@ -576,11 +575,11 @@ func (s *JobService) OverviewMetrics(ctx context.Context, allowAdult bool) (Over
 	m := OverviewMetrics{}
 	m.TotalTitles = s.count(ctx, `SELECT COUNT(*) FROM titles`)
 	m.TotalChapters = s.count(ctx, `SELECT COUNT(*) FROM chapters`)
-	m.TotalDownloadedChapters = s.count(ctx, `SELECT COUNT(DISTINCT chapter_id) FROM downloads WHERE status = 'done'`)
+	m.TotalDownloadedChapters = s.count(ctx, `SELECT COUNT(DISTINCT chapter_id) FROM downloads WHERE status = 'completed'`)
 	m.TotalVolumes = s.count(ctx, `SELECT COUNT(*) FROM volumes`)
 	m.TotalSources = s.count(ctx, `SELECT COUNT(*) FROM sources`)
 	m.SourcesHealthy = s.count(ctx, `SELECT COUNT(*) FROM sources WHERE status = 'healthy'`)
-	m.LibraryBytes = s.count(ctx, `SELECT COALESCE(SUM(bytes),0) FROM downloads WHERE status = 'done'`) +
+	m.LibraryBytes = s.count(ctx, `SELECT COALESCE(SUM(bytes),0) FROM downloads WHERE status = 'completed'`) +
 		s.count(ctx, `SELECT COALESCE(SUM(bytes),0) FROM volumes`)
 
 	day := database.FormatTime(time.Now().AddDate(0, 0, -1))
@@ -618,7 +617,7 @@ func (s *JobService) OverviewMetrics(ctx context.Context, allowAdult bool) (Over
 		JOIN chapters c ON c.id = d.chapter_id
 		JOIN titles t ON t.id = c.title_id
 		LEFT JOIN catalog_manga cm ON cm.id = t.catalog_manga_id
-		WHERE d.status = 'done'`+adultFilter+`
+		WHERE d.status = 'completed'`+adultFilter+`
 		GROUP BY t.id ORDER BY n DESC LIMIT 10`)
 	m.TopFavourited = s.leaderboard(ctx, `
 		SELECT t.display_title, COUNT(*) n
@@ -668,24 +667,23 @@ func (s *JobService) leaderboard(ctx context.Context, q string, args ...any) []N
 
 func (s *JobService) downloadStats(ctx context.Context) DownloadStats {
 	d := DownloadStats{
-		Done:    s.count(ctx, `SELECT COUNT(*) FROM downloads WHERE status = 'done'`),
+		Done:    s.count(ctx, `SELECT COUNT(*) FROM downloads WHERE status = 'completed'`),
 		Failed:  s.count(ctx, `SELECT COUNT(*) FROM downloads WHERE status = 'failed'`),
-		Dead:    s.count(ctx, `SELECT COUNT(*) FROM downloads WHERE status = 'dead'`),
-		Pending: s.count(ctx, `SELECT COUNT(*) FROM downloads WHERE status IN ('queued','running','started')`),
+		Pending: s.count(ctx, `SELECT COUNT(*) FROM downloads WHERE status = 'started'`),
 	}
-	if fin := d.Done + d.Dead; fin > 0 {
+	if fin := d.Done + d.Failed; fin > 0 {
 		d.SuccessRate = float64(d.Done) * 100 / float64(fin)
 	}
 	var avg sql.NullFloat64
 	_ = s.db.QueryRowContext(ctx, `
 		SELECT AVG((julianday(completed_at) - julianday(started_at)) * 86400)
-		FROM downloads WHERE status = 'done' AND started_at != '' AND completed_at IS NOT NULL`).Scan(&avg)
+		FROM downloads WHERE status = 'completed' AND started_at != '' AND completed_at IS NOT NULL`).Scan(&avg)
 	if avg.Valid {
 		d.AvgSeconds = avg.Float64
 	}
 	d.TopErrors = s.leaderboard(ctx, `
 		SELECT error, COUNT(*) n FROM downloads
-		WHERE status IN ('dead','failed') AND error != ''
+		WHERE status = 'failed' AND error != ''
 		GROUP BY error ORDER BY n DESC LIMIT 8`)
 	return d
 }

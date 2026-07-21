@@ -32,7 +32,7 @@ func TestPersonalMetricsReadingTimeCohorts(t *testing.T) {
 	// chapter 5 = bulk-marked (manual=1) — excluded from every genuine/time metric.
 	exec(`INSERT INTO chapter_read_progress (user_id, chapter_id, total_pages, completed, manual) VALUES (1,1,20,1,0), (1,2,5,1,0), (1,4,0,1,0), (1,5,10,1,1)`)
 	// chapter 3 downloaded but unread -> backlog.
-	exec(`INSERT INTO downloads (chapter_id, status) VALUES (3,'done')`)
+	exec(`INSERT INTO downloads (chapter_id, status) VALUES (3,'completed')`)
 
 	ft := func(d time.Duration) string { return database.FormatTime(time.Now().Add(d)) }
 	// Session A (paged): gaps 30s then 3m30s (capped to 3m).

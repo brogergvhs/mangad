@@ -53,9 +53,9 @@
   <div class="mb-3 flex items-center justify-between gap-2">
     <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Reading · last {{.Days}} days</h2>
     <div class="join">
-      <a class="btn btn-xs join-item {{if eq .Days 30}}btn-primary btn-outline{{end}}" href="/metrics?{{$base}}&days=30" hx-get="/ui/metrics?{{$base}}&days=30" hx-target="#metrics-body" hx-swap="outerHTML">30d</a>
-      <a class="btn btn-xs join-item {{if eq .Days 90}}btn-primary btn-outline{{end}}" href="/metrics?{{$base}}&days=90" hx-get="/ui/metrics?{{$base}}&days=90" hx-target="#metrics-body" hx-swap="outerHTML">90d</a>
-      <a class="btn btn-xs join-item {{if eq .Days 365}}btn-primary btn-outline{{end}}" href="/metrics?{{$base}}&days=365" hx-get="/ui/metrics?{{$base}}&days=365" hx-target="#metrics-body" hx-swap="outerHTML">1y</a>
+      <a class="btn btn-sm join-item {{if eq .Days 30}}btn-primary btn-outline{{end}}" href="/metrics?{{$base}}&days=30" hx-get="/ui/metrics?{{$base}}&days=30" hx-target="#metrics-body" hx-swap="outerHTML">30d</a>
+      <a class="btn btn-sm join-item {{if eq .Days 90}}btn-primary btn-outline{{end}}" href="/metrics?{{$base}}&days=90" hx-get="/ui/metrics?{{$base}}&days=90" hx-target="#metrics-body" hx-swap="outerHTML">90d</a>
+      <a class="btn btn-sm join-item {{if eq .Days 365}}btn-primary btn-outline{{end}}" href="/metrics?{{$base}}&days=365" hx-get="/ui/metrics?{{$base}}&days=365" hx-target="#metrics-body" hx-swap="outerHTML">1y</a>
     </div>
   </div>
 
@@ -69,11 +69,11 @@
 
   <div class="grid gap-4 lg:grid-cols-2 mb-4">
     <div class="rounded-xl bg-base-100 p-4">
-      <h3 class="text-sm font-semibold text-base-content/70 mb-2">Pages per day</h3>
+      <h3 class="text-sm font-semibold text-base-content/70 mb-2 flex justify-between"><span>Pages per day</span><span class="font-normal text-base-content/40">peak {{peakDay .P.M.PerDay}}/day</span></h3>
       {{lineChart .P.M.PerDay}}
     </div>
     <div class="rounded-xl bg-base-100 p-4">
-      <h3 class="text-sm font-semibold text-base-content/70 mb-2">Activity · last 26 weeks</h3>
+      <h3 class="text-sm font-semibold text-base-content/70 mb-2 flex justify-between"><span>Activity · last 26 weeks</span><span class="font-normal text-base-content/40">peak {{peakDay .P.M.Heatmap}}/day</span></h3>
       {{heatmap .P.M.Heatmap}}
     </div>
   </div>
@@ -104,14 +104,14 @@
 
   <div class="grid gap-4 lg:grid-cols-2 mb-4">
     <div class="rounded-xl bg-base-100 p-4">
-      <h3 class="text-sm font-semibold text-base-content/70 mb-3">When you read</h3>
+      <h3 class="text-sm font-semibold text-base-content/70 mb-3 flex justify-between"><span>When you read</span><span class="font-normal text-base-content/40">peak {{maxCount .P.HourBars}} pages/h</span></h3>
       {{template "hourBars" .P.HourBars}}
       <div class="mt-4">{{template "barList" .P.WeekdayBars}}</div>
     </div>
     <div class="rounded-xl bg-base-100 p-4">
       <h3 class="text-sm font-semibold text-base-content/70 mb-3">Top authors</h3>
       {{template "barList" .P.M.TopAuthors}}
-      <h3 class="text-sm font-semibold text-base-content/70 mt-4 mb-2">Score of what's read</h3>
+      <h3 class="text-sm font-semibold text-base-content/70 mt-4 mb-2">Scores</h3>
       {{template "barList" .P.M.ScoreBuckets}}
     </div>
   </div>
@@ -163,11 +163,11 @@
 
 <div class="grid gap-4 lg:grid-cols-2 mb-4">
   <div class="rounded-xl bg-base-100 p-4">
-    <h3 class="text-sm font-semibold text-base-content/70 mb-2">Chapters discovered per day</h3>
+    <h3 class="text-sm font-semibold text-base-content/70 mb-2 flex justify-between"><span>Chapters discovered per day</span><span class="font-normal text-base-content/40">peak {{peakDay .O.ChaptersPerDay}}/day</span></h3>
     {{lineChart .O.ChaptersPerDay}}
   </div>
   <div class="rounded-xl bg-base-100 p-4">
-    <h3 class="text-sm font-semibold text-base-content/70 mb-2">Titles added per day</h3>
+    <h3 class="text-sm font-semibold text-base-content/70 mb-2 flex justify-between"><span>Titles added per day</span><span class="font-normal text-base-content/40">peak {{peakDay .O.TitlesPerDay}}/day</span></h3>
     {{lineChart .O.TitlesPerDay}}
   </div>
 </div>
@@ -195,16 +195,16 @@
     <div class="stats bg-base-200 w-full mb-3">
       <div class="stat p-3"><div class="stat-title text-xs">Success</div><div class="stat-value text-xl">{{printf "%.0f" .O.Downloads.SuccessRate}}%</div></div>
       <div class="stat p-3"><div class="stat-title text-xs">Avg time</div><div class="stat-value text-xl">{{f1 .O.Downloads.AvgSeconds}}s</div></div>
-      <div class="stat p-3"><div class="stat-title text-xs">Failed/dead</div><div class="stat-value text-xl">{{.O.Downloads.Dead}}</div></div>
+      <div class="stat p-3"><div class="stat-title text-xs">Failed</div><div class="stat-value text-xl">{{.O.Downloads.Failed}}</div></div>
     </div>
-    <div class="text-xs text-base-content/60 mb-2">{{.O.Downloads.Done}} done · {{.O.Downloads.Pending}} pending · {{.O.Downloads.Failed}} retrying</div>
+    <div class="text-xs text-base-content/60 mb-2">{{.O.Downloads.Done}} done · {{.O.Downloads.Pending}} in progress · {{.O.Downloads.Failed}} failed</div>
     {{if .O.Downloads.TopErrors}}<div class="text-sm font-medium mb-1">Top errors</div>{{template "barList" .O.Downloads.TopErrors}}{{end}}
   </div>
   <div class="rounded-xl bg-base-100 p-4">
     <h3 class="text-sm font-semibold text-base-content/70 mb-3">Sources &amp; jobs</h3>
-    <div class="text-sm font-medium mb-1">Sources by status</div>
+    <div class="text-sm font-medium mb-1 text-base-content/70">Sources by status</div>
     {{template "barList" .O.Sources}}
-    <div class="text-sm font-medium mt-3 mb-1">Jobs by status</div>
+    <div class="text-sm font-medium mt-3 mb-1 text-base-content/70">Jobs by status</div>
     {{template "barList" .O.Jobs}}
   </div>
 </div>
