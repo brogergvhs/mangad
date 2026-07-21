@@ -896,11 +896,13 @@
   min-width: 0;
 }
 .reader-strip {
+  padding-top: 58px;
+  --reader-zoom: 1;
+}
+.reader-track {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 58px;
-  --reader-zoom: 1;
 }
 .reader-page {
   display: flex;
@@ -921,49 +923,42 @@
   border: 1px dashed var(--color-line);
 }
 
-/* ---- paged mode: horizontal snap track, one page per screen ---- */
 .reader-body.reader-paged {
   overflow: hidden;
 }
 .reader-strip[data-mode="paged"] {
-  flex-direction: row;
-  align-items: stretch;
   height: 100dvh;
   padding-top: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
+  overflow: hidden;
 }
-.reader-strip[data-mode="paged"]::-webkit-scrollbar {
-  display: none;
+.reader-strip[data-mode="paged"] .reader-track {
+  flex-direction: row;
+  align-items: stretch;
+  height: 100%;
+  transition: transform 0.2s ease;
+  will-change: transform;
 }
-.reader-strip[data-mode="paged"][data-dir="rtl"] {
-  direction: rtl; /* flips page order + snap natively; no scroll-offset math */
+.reader-strip[data-mode="paged"][data-dir="rtl"] .reader-track {
+  direction: rtl; /* page 1 on the right; the JS translate sign matches */
 }
 .reader-strip[data-mode="paged"] .reader-page {
   flex: 0 0 100%;
   width: 100%;
   max-width: none;
-  height: 100dvh;
+  height: 100%;
   margin: 0;
   justify-content: safe center; /* safe: leading overflow stays scrollable when zoomed */
   align-items: safe center;
   overflow: auto; /* pan when zoomed past the viewport */
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
 }
 .reader-strip[data-mode="paged"] .reader-separator {
   display: none; /* chapter dividers are a strip affordance; paged flows page-to-page */
 }
-/* desktop keeps the controls bar visible, so inset paged pages below it */
+/* desktop keeps the controls bar visible, so inset the paged track below it */
 @media (min-width: 1025px) {
   .reader-strip[data-mode="paged"] {
     height: calc(100dvh - 56px);
     margin-top: 56px;
-  }
-  .reader-strip[data-mode="paged"] .reader-page {
-    height: calc(100dvh - 56px);
   }
 }
 .reader-strip[data-mode="paged"][data-fit="contain"] .reader-img {
@@ -977,9 +972,9 @@
   max-width: none;
   height: auto;
 }
-@media (prefers-reduced-motion: no-preference) {
-  .reader-strip[data-mode="paged"] {
-    scroll-behavior: smooth;
+@media (prefers-reduced-motion: reduce) {
+  .reader-strip[data-mode="paged"] .reader-track {
+    transition: none;
   }
 }
 
