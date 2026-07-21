@@ -226,24 +226,85 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   var prev = document.querySelector("[data-reader-prev]");
   var next = document.querySelector("[data-reader-next]");
 
+  function pref(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  function setPref(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var mode = pref("reader-mode", "strip");  // strip | paged
+  var dir = pref("reader-dir", "ltr");      // ltr | rtl  (paged page order)
+  var fit = pref("reader-fit", "contain");  // contain | width (paged)
+  var zoom = parseFloat(pref("reader-zoom", "1")) || 1;
+  var smooth = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  var curEl = null; // page element under focus (drives marking, resume, build gate)
+
+  function applyView() {
+    strip.dataset.mode = mode;
+    strip.dataset.dir = dir;
+    strip.dataset.fit = fit;
+    strip.style.setProperty("--reader-zoom", zoom);
+    document.body.classList.toggle("reader-paged", mode === "paged");
+    shell.querySelectorAll("[data-set]").forEach(function (b) {
+      var kv = b.dataset.set.split("=");
+      var on = (kv[0] === "mode" && kv[1] === mode) ||
+        (kv[0] === "dir" && kv[1] === dir) || (kv[0] === "fit" && kv[1] === fit);
+      b.classList.toggle("btn-active", on);
+    });
+    var zl = shell.querySelector("[data-zoom-label]");
+    if (zl) zl.textContent = Math.round(zoom * 100) + "%";
+  }
+
+  function toggleControls() {
+    if (window.matchMedia("(max-width: 1024px)").matches) document.body.classList.toggle("controls-on");
+  }
+
   // controls & keyboard work even on the empty page
   document.addEventListener("click", function (e) {
     if (e.target.closest(".reader-controls")) return;
-    if (window.matchMedia("(max-width: 1024px)").matches) {
-      document.body.classList.toggle("controls-on");
+    if (mode === "paged" && pages && pages.length) {
+      var x = e.clientX / window.innerWidth;
+      if (x < 0.33) turn(dir === "rtl" ? 1 : -1);
+      else if (x > 0.67) turn(dir === "rtl" ? -1 : 1);
+      else toggleControls();
+      return;
     }
+    toggleControls();
   });
   document.addEventListener("keydown", function (e) {
     if (e.target.closest("input, textarea, select")) return;
+    if (mode === "paged" && pages && pages.length) {
+      if (e.key === "ArrowRight") turn(dir === "rtl" ? -1 : 1);
+      else if (e.key === "ArrowLeft") turn(dir === "rtl" ? 1 : -1);
+      else if (e.key === " ") { e.preventDefault(); turn(1); }
+      else if (e.key === "[" && prev) location.href = prev.href;
+      else if (e.key === "]" && next) goNext();
+      return;
+    }
     if ((e.key === "ArrowLeft" || e.key === "[") && prev) {
       location.href = prev.href;
     } else if ((e.key === "ArrowRight" || e.key === "]") && next) {
       goNext();
     } else if (e.key === "j") {
-      window.scrollBy({ top: window.innerHeight * 0.9, behavior: "smooth" });
+      window.scrollBy({ top: window.innerHeight * 0.9, behavior: smooth });
     } else if (e.key === "k") {
-      window.scrollBy({ top: -window.innerHeight * 0.9, behavior: "smooth" });
+      window.scrollBy({ top: -window.innerHeight * 0.9, behavior: smooth });
     }
+  });
+
+  // settings popover
+  shell.addEventListener("click", function (e) {
+    var s = e.target.closest("[data-set]");
+    var z = e.target.closest("[data-zoom]");
+    if (!s && !z) return;
+    e.stopPropagation();
+    if (s) {
+      var kv = s.dataset.set.split("=");
+      if (kv[0] === "mode") { mode = kv[1]; setPref("reader-mode", mode); }
+      else if (kv[0] === "dir") { dir = kv[1]; setPref("reader-dir", dir); }
+      else if (kv[0] === "fit") { fit = kv[1]; setPref("reader-fit", fit); }
+    } else {
+      zoom = Math.min(3, Math.max(1, Math.round((zoom + parseInt(z.dataset.zoom, 10) * 0.25) * 100) / 100));
+      setPref("reader-zoom", String(zoom));
+    }
+    applyView();
+    refreshView();
   });
 
   function buildFailed(msg) {
@@ -360,6 +421,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       }
     }
     if (best) {
+      curEl = best;
       position.textContent = best.dataset.page + "/" + best.dataset.total;
     }
   }
@@ -367,6 +429,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   var ticking = false;
   function checkVisible() {
     ticking = false;
+    if (mode !== "strip") return; // paged marks/positions via IntersectionObserver
     updatePosition();
     var threshold = window.innerHeight * 0.85;
     var doc = document.documentElement;
@@ -399,9 +462,13 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       location.href = next.href;
       return;
     }
-    pages.forEach(function (img) {
-      if (img.getBoundingClientRect().top < window.innerHeight) mark(img);
-    });
+    if (mode === "paged") {
+      if (curEl) mark(curEl); // horizontal layout: only the focused page is "seen"
+    } else {
+      pages.forEach(function (img) {
+        if (img.getBoundingClientRect().top < window.innerHeight) mark(img);
+      });
+    }
     queueWrite(function () { location.href = next.href; });
   }
   if (next) {
@@ -424,8 +491,11 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
   var fetching = false;  // a manifest extension request is in flight
   var noMore = false;    // the server has no further chapters
   var resumed = !resumeChapter || !resumePage;
+  var cur = 0;           // index into pages[] of the focused page (paged mode)
+  var pendingTurn = false; // a page turn waiting on the next page to build
 
   function nearEnd() {
+    if (mode === "paged") return pages.length - 1 - cur <= LOOKAHEAD + 1;
     var doc = document.documentElement;
     return doc.scrollHeight - (window.scrollY + window.innerHeight) < GATE_PX;
   }
@@ -449,6 +519,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
 
   function finish() {
     built = true;
+    if (pendingTurn) { pendingTurn = false; goNext(); }
     if (loadingEl) loadingEl.remove();
     requestCheck();
   }
@@ -478,8 +549,7 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       extend();
       return;
     }
-    // Past the resume point, only build while the reader is near the end of
-    // the strip; the scroll handler resumes the pipeline.
+    // Past the resume point, only build while the reader is near the end.
     if (resumed && !nearEnd()) {
       waiting = true;
       return;
@@ -500,30 +570,32 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
       return;
     }
     loaderFor(idx).then(function (img) {
-      var el;
+      var el = document.createElement("div");
+      el.className = "reader-page" + (item.read ? " is-read" : "");
       if (img) {
-        el = img;
-        el.className = "reader-page" + (item.read ? " is-read" : "");
+        img.className = "reader-img";
+        img.setAttribute("alt", "Chapter " + item.label + " page " + item.page);
+        el.appendChild(img);
       } else {
-        el = document.createElement("div");
-        el.className = "reader-page reader-page-failed";
+        el.classList.add("reader-page-failed");
         el.textContent = "Page " + item.page + " failed to load";
       }
       el.id = "chapter-" + item.chapter + "-page-" + item.page;
-      el.setAttribute("alt", "Chapter " + item.label + " page " + item.page);
       el.dataset.chapter = item.chapter;
       el.dataset.chapterLabel = item.label;
       el.dataset.page = String(item.page);
       el.dataset.total = String(item.total);
       if (item.read) read[item.chapter + ":" + item.page] = true;
       strip.appendChild(el);
-      pages.push(el); // failed pages count too, else one broken image blocks completion + resume forever
+        pages.push(el); // failed pages count too
+      pageObserver.observe(el);
       delete loaders[idx];
       appended++;
       if (!resumed && String(item.chapter) === resumeChapter && item.page === resumePage) {
-        el.scrollIntoView({ block: "start" });
+        el.scrollIntoView({ block: "start", inline: "center" });
         resumed = true;
       }
+      if (pendingTurn && cur >= pages.length - 2) { pendingTurn = false; turn(1); }
       requestCheck();
       appendNext();
     });
@@ -536,5 +608,40 @@ document.body.addEventListener("htmx:afterRequest", function (e) {
     }
   }, { passive: true });
 
+  var pageObserver = new IntersectionObserver(function (entries) {
+    if (mode !== "paged") return;
+    var best = null, ratio = 0.6;
+    entries.forEach(function (en) {
+      if (en.isIntersecting && en.intersectionRatio >= ratio) { best = en.target; ratio = en.intersectionRatio; }
+    });
+    if (!best) return;
+    curEl = best;
+    cur = pages.indexOf(best);
+    if (pendingTurn && cur < pages.length - 2) pendingTurn = false; // moved off the tail
+    if (best.dataset.page) { mark(best); if (position) position.textContent = best.dataset.page + "/" + best.dataset.total; }
+    if (waiting && nearEnd()) { waiting = false; appendNext(); }
+  }, { root: strip, threshold: [0.6] });
+
+  function turn(delta) {
+    var t = cur + delta;
+    if (t < 0) { if (prev) location.href = prev.href; return; }
+    if (t >= pages.length) {
+      if (!noMore && lastChapterID) { pendingTurn = true; waiting = false; appendNext(); return; }
+      goNext();
+      return;
+    }
+    cur = t;
+    curEl = pages[t];
+    pages[t].scrollIntoView({ inline: "center", block: "nearest", behavior: smooth });
+  }
+
+  function refreshView() {
+    if (!curEl) { requestCheck(); return; }
+    curEl.scrollIntoView({ inline: "center", block: mode === "paged" ? "nearest" : "start" });
+    if (mode === "paged" && waiting && nearEnd()) { waiting = false; appendNext(); }
+    requestCheck();
+  }
+
+  applyView();
   appendNext();
 })();
