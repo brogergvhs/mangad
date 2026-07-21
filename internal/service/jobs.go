@@ -2409,6 +2409,8 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return fmt.Errorf("decode job payload: %w", err)
 	}
 
+	logSvc = logSvc.With("job_id", job.ID, "job_type", job.Type)
+
 	switch job.Type {
 	case jobs.TypeRefreshTitle:
 		if payload.TitleID > 0 {

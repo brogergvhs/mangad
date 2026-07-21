@@ -87,7 +87,7 @@ func NewDownloadService(
 	progress ProgressManager,
 ) *DownloadService {
 	if log == nil {
-		log = noopLogger{}
+		log = ui.Discard()
 	}
 
 	return &DownloadService{
@@ -535,11 +535,3 @@ func (noopProgressHandle) SetTotal(_ int) {}
 func (noopProgressHandle) Update(_, _ int, _ int64) {}
 
 func (noopProgressHandle) MarkDone() {}
-
-type noopLogger struct{}
-
-func (noopLogger) Debugf(_ string, _ ...any) {}
-
-func (noopLogger) Infof(_ string, _ ...any) {}
-
-func (noopLogger) Errorf(_ string, _ ...any) {}

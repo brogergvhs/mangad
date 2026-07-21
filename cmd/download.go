@@ -188,7 +188,8 @@ func prepareConfigAndLogger(cmd *cobra.Command) (*config.Config, ui.Log, string,
 		cfg.AllowExt = splitExt(flagAllowExt)
 	}
 
-	logSvc := ui.NewLogger(cfg.Debug)
+	logSvc := ui.New(ui.Options{Debug: cfg.Debug, Format: cfg.LogFormat})
+	ui.RedirectStdLog(logSvc)
 
 	if cfg.Output == "" {
 		cfg.Output = "."

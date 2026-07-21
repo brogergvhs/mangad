@@ -311,6 +311,7 @@ func (s *LibraryService) RefreshTitle(
 	logSvc ui.Log,
 	title library.Title,
 ) (RefreshResult, error) {
+	logSvc = logSvc.With("title_id", title.ID, "title", title.DisplayTitle)
 	if !strings.HasPrefix(title.SourceURL, "http") {
 		return RefreshResult{}, fmt.Errorf("title %q has no linked source to refresh from", title.DisplayTitle)
 	}

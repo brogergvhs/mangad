@@ -10,5 +10,7 @@ func runtimeConfig() (*config.Config, ui.Log, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return cfg, ui.NewLogger(cfg.Debug), nil
+	logSvc := ui.New(ui.Options{Debug: cfg.Debug, Format: cfg.LogFormat})
+	ui.RedirectStdLog(logSvc)
+	return cfg, logSvc, nil
 }

@@ -77,7 +77,7 @@ func TestDownloadSummaryIncludesChapterErrors(t *testing.T) {
 		&config.Config{Output: t.TempDir(), ImageWorkers: 1, ChapterWorkers: 1},
 		client,
 		fakeScraper{images: []string{"https://cdn.test/1.jpg", "https://cdn.test/2.jpg"}},
-		noopLogger{},
+		ui.Discard(),
 		nil,
 	)
 
@@ -121,7 +121,7 @@ func TestDownloadUsesBrowserDownloaderFallback(t *testing.T) {
 			return &http.Response{StatusCode: http.StatusForbidden, Status: "403 Forbidden", Body: http.NoBody}, nil
 		})},
 		fakeScraper{images: []string{"https://cdn.test/1.webp"}},
-		noopLogger{},
+		ui.Discard(),
 		nil,
 	)
 
@@ -159,7 +159,7 @@ func TestDownloadCleansTempFolderOnCBZFailure(t *testing.T) {
 			}, nil
 		})},
 		fakeScraper{images: []string{"https://cdn.test/1.jpg"}},
-		noopLogger{},
+		ui.Discard(),
 		nil,
 	)
 
