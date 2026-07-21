@@ -59,6 +59,7 @@
         {{if .User.Can "users.manage"}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users</a></li>{{end}}
       </ul>
       <ul class="menu w-full px-4 pb-4">
+        {{if or (.User.Can "reader.use") (.User.Can "stats.view")}}<li><a href="/metrics" class="{{if eq .Nav "metrics"}}menu-active{{end}}">{{template "iconChart"}}Metrics</a></li>{{end}}
         {{if or (or (.User.Can "stats.view") (.User.Can "services.view")) (or (.User.Can "sessions.view") (.User.Can "jobs.view"))}}<li><a href="/management" class="{{if eq .Nav "management"}}menu-active{{end}}">{{template "iconGauge"}}Management{{if .User.Can "jobs.view"}}<span hx-get="/ui/notifications/badge" hx-trigger="load, every 30s" hx-swap="outerHTML" hx-sync="this:drop" class="ml-auto"></span>{{end}}</a></li>{{end}}
         {{if .User.Can "settings.manage"}}<li><a href="/backups" class="{{if eq .Nav "backups"}}menu-active{{end}}">{{template "iconDatabase"}}Backups</a></li>{{end}}
         {{if or (.User.Can "settings.appearance") (.User.Can "settings.manage")}}<li><a href="/settings" class="{{if eq .Nav "settings"}}menu-active{{end}}">{{template "iconSettings"}}Settings</a></li>{{end}}

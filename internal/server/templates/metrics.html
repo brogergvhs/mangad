@@ -1,0 +1,215 @@
+{{define "metrics"}}
+<div class="p-4 lg:p-8 max-w-6xl mx-auto">
+  <h1 class="text-2xl font-bold mb-4">Metrics</h1>
+  {{if .ShowPersonal}}{{template "metricsPersonal" .}}{{end}}
+  {{if .ShowOverview}}
+  <div class="mt-10" hx-get="/ui/metrics/overview" hx-trigger="load" hx-swap="innerHTML">
+    <div class="flex items-center gap-2 py-6 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading overview…</div>
+  </div>
+  {{end}}
+  {{if and (not .ShowPersonal) (not .ShowOverview)}}
+  <p class="text-base-content/60">You don't have access to any metrics.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "metricCard"}}
+<div class="rounded-xl bg-base-100 p-4">
+  <h3 class="text-sm font-semibold text-base-content/70 mb-3">{{.Title}}</h3>
+  {{.Body}}
+</div>
+{{end}}
+
+{{define "barList"}}
+{{$max := maxCount .}}
+<div class="grid gap-1.5">
+  {{range .}}
+  <div class="flex items-center gap-2 text-sm">
+    <span class="w-32 shrink-0 truncate" title="{{.Name}}">{{.Name}}</span>
+    <div class="flex-1 h-2 rounded-full bg-base-300 overflow-hidden"><div class="h-full rounded-full bg-primary" style="width:{{pct .Count $max}}%"></div></div>
+    <span class="w-10 text-right text-base-content/60">{{.Count}}</span>
+  </div>
+  {{else}}<p class="text-sm text-base-content/50">No data yet.</p>{{end}}
+</div>
+{{end}}
+
+{{define "donutLegend"}}
+<div class="grid gap-1 text-sm">
+  {{range $i, $s := .}}
+  <div class="flex items-center gap-2">
+    <span class="inline-block size-3 rounded-sm shrink-0" style="background:{{donutColor $i}}"></span>
+    <span class="flex-1 truncate" title="{{$s.Name}}">{{$s.Name}}</span>
+    <span class="text-base-content/60">{{printf "%.0f" $s.Pct}}%</span>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "metricsPersonal"}}
+<div id="metrics-personal">
+  <div class="mb-3 flex items-center justify-between gap-2">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Your reading · last {{.Days}} days</h2>
+    <div class="join">
+      <a class="btn btn-xs join-item {{if eq .Days 30}}btn-primary btn-outline{{end}}" href="/metrics?days=30" hx-get="/ui/metrics?days=30" hx-target="#metrics-personal" hx-swap="outerHTML">30d</a>
+      <a class="btn btn-xs join-item {{if eq .Days 90}}btn-primary btn-outline{{end}}" href="/metrics?days=90" hx-get="/ui/metrics?days=90" hx-target="#metrics-personal" hx-swap="outerHTML">90d</a>
+      <a class="btn btn-xs join-item {{if eq .Days 365}}btn-primary btn-outline{{end}}" href="/metrics?days=365" hx-get="/ui/metrics?days=365" hx-target="#metrics-personal" hx-swap="outerHTML">1y</a>
+    </div>
+  </div>
+
+  <div class="stats bg-base-100 w-full mb-4">
+    <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.P.M.ChaptersRead}}</div><div class="stat-desc">{{.P.M.ChaptersReadTotal}} all-time</div></div>
+    <div class="stat"><div class="stat-title">Pages</div><div class="stat-value text-3xl">{{.P.M.PagesRead}}</div><div class="stat-desc">{{.P.M.PagesReadTotal}} all-time</div></div>
+    <div class="stat"><div class="stat-title">Streak</div><div class="stat-value text-3xl">{{.P.M.StreakDays}}<span class="text-base-content/40 text-lg">d</span></div><div class="stat-desc">best {{.P.M.LongestStreak}}d · {{.P.M.ActiveDays}} active</div></div>
+    <div class="stat"><div class="stat-title">Reading time</div><div class="stat-value text-3xl">{{hdur (mul60 .P.M.ReadingTime.ActiveMinutes)}}</div><div class="stat-desc">≈{{f1 .P.M.ReadingTime.MinutesPerChapter}} min/chapter</div></div>
+    <div class="stat"><div class="stat-title">Backlog</div><div class="stat-value text-3xl">{{.P.M.Backlog}}</div><div class="stat-desc">unread downloaded</div></div>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-2 mb-4">
+    <div class="rounded-xl bg-base-100 p-4">
+      <h3 class="text-sm font-semibold text-base-content/70 mb-2">Pages per day</h3>
+      {{lineChart .P.M.PerDay}}
+    </div>
+    <div class="rounded-xl bg-base-100 p-4">
+      <h3 class="text-sm font-semibold text-base-content/70 mb-2">Activity · last 26 weeks</h3>
+      {{heatmap .P.M.Heatmap}}
+    </div>
+  </div>
+
+  <div class="rounded-xl bg-base-100 p-4 mb-4">
+    <h3 class="text-sm font-semibold text-base-content/70 mb-1">Reading time</h3>
+    <p class="text-xs text-base-content/50 mb-3">Time per page differs wildly between book-paged manga and long-strip webtoons, so dwell is reported per cohort and the headline is per chapter.</p>
+    <div class="grid gap-4 sm:grid-cols-3 text-sm">
+      <div><div class="text-2xl font-bold">≈{{f1 .P.M.ReadingTime.MinutesPerChapter}}<span class="text-base-content/40 text-base"> min</span></div><div class="text-base-content/60">per chapter (all formats)</div></div>
+      <div><div class="text-2xl font-bold">≈{{f1 .P.M.ReadingTime.PagedSecPerPage}}<span class="text-base-content/40 text-base"> s</span></div><div class="text-base-content/60">per book page · {{.P.M.ReadingTime.PagedChapters}} chapters</div></div>
+      <div><div class="text-2xl font-bold">≈{{f1 .P.M.ReadingTime.StripSecPerImage}}<span class="text-base-content/40 text-base"> s</span></div><div class="text-base-content/60">per long-strip image · {{.P.M.ReadingTime.StripChapters}} chapters</div></div>
+    </div>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-2 mb-4">
+    <div class="rounded-xl bg-base-100 p-4">
+      <h3 class="text-sm font-semibold text-base-content/70 mb-3">Top genres</h3>
+      <div class="flex items-center gap-4">
+        <div class="shrink-0">{{donut .P.M.TopGenres}}</div>
+        <div class="flex-1 min-w-0">{{template "donutLegend" .P.M.TopGenres}}</div>
+      </div>
+    </div>
+    <div class="rounded-xl bg-base-100 p-4">
+      <h3 class="text-sm font-semibold text-base-content/70 mb-3">Top tags</h3>
+      {{template "barList" .P.M.TopTags}}
+    </div>
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-2 mb-4">
+    <div class="rounded-xl bg-base-100 p-4">
+      <h3 class="text-sm font-semibold text-base-content/70 mb-3">When you read</h3>
+      {{template "hourBars" .P.HourBars}}
+      <div class="mt-4">{{template "barList" .P.WeekdayBars}}</div>
+    </div>
+    <div class="rounded-xl bg-base-100 p-4">
+      <h3 class="text-sm font-semibold text-base-content/70 mb-3">Top authors</h3>
+      {{template "barList" .P.M.TopAuthors}}
+      <h3 class="text-sm font-semibold text-base-content/70 mt-4 mb-2">Score of what you read</h3>
+      {{template "barList" .P.M.ScoreBuckets}}
+    </div>
+  </div>
+
+  <div class="rounded-xl bg-base-100 p-4">
+    <h3 class="text-sm font-semibold text-base-content/70 mb-2">Recent titles</h3>
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead><tr><th>Title</th><th>Progress</th><th>Last read</th></tr></thead>
+        <tbody>
+          {{range .P.M.Recent}}
+          <tr>
+            <td class="max-w-xs truncate"><a class="link link-hover" href="/library/{{.TitleID}}">{{.Title}}</a></td>
+            <td class="whitespace-nowrap">{{.ReadChapters}}/{{.Total}} {{if .Completed}}<span class="badge badge-success badge-soft badge-sm">done</span>{{end}}</td>
+            <td class="whitespace-nowrap text-base-content/60">{{.LastReadAt}}</td>
+          </tr>
+          {{else}}<tr><td colspan="3" class="text-base-content/50">No reading recorded yet.</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "hourBars"}}
+{{$max := maxCount .}}
+<div class="flex items-end gap-0.5 h-20">
+  {{range .}}
+  <div class="flex-1 bg-primary rounded-t" style="height:{{pct .Count $max}}%" title="{{.Name}}:00 · {{.Count}}"></div>
+  {{end}}
+</div>
+<div class="flex justify-between text-[10px] text-base-content/40 mt-1"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span></div>
+{{end}}
+
+{{define "metricsOverview"}}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-3">Library &amp; system overview</h2>
+
+<div class="stats bg-base-100 w-full mb-4">
+  <div class="stat"><div class="stat-title">Titles</div><div class="stat-value text-3xl">{{.M.TotalTitles}}</div></div>
+  <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.M.TotalChapters}}</div><div class="stat-desc">{{.M.TotalDownloadedChapters}} downloaded</div></div>
+  <div class="stat"><div class="stat-title">Library size</div><div class="stat-value text-3xl">{{humanBytes .M.LibraryBytes}}</div></div>
+  <div class="stat"><div class="stat-title">Active users</div><div class="stat-value text-3xl">{{.M.ActiveUsersWeek}}<span class="text-base-content/40 text-lg">/wk</span></div><div class="stat-desc">{{.M.ActiveUsersDay}} today · {{.M.ActiveUsersMonth}} /mo</div></div>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-2 mb-4">
+  <div class="rounded-xl bg-base-100 p-4">
+    <h3 class="text-sm font-semibold text-base-content/70 mb-2">Chapters discovered per day</h3>
+    {{lineChart .M.ChaptersPerDay}}
+  </div>
+  <div class="rounded-xl bg-base-100 p-4">
+    <h3 class="text-sm font-semibold text-base-content/70 mb-2">Titles added per day</h3>
+    {{lineChart .M.TitlesPerDay}}
+  </div>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-3 mb-4">
+  <div class="rounded-xl bg-base-100 p-4"><h3 class="text-sm font-semibold text-base-content/70 mb-3">Most read</h3>{{template "barList" .M.TopRead}}</div>
+  <div class="rounded-xl bg-base-100 p-4"><h3 class="text-sm font-semibold text-base-content/70 mb-3">Most downloaded</h3>{{template "barList" .M.TopDownloaded}}</div>
+  <div class="rounded-xl bg-base-100 p-4"><h3 class="text-sm font-semibold text-base-content/70 mb-3">Most favourited</h3>{{template "barList" .M.TopFavourited}}</div>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-2 mb-4">
+  <div class="rounded-xl bg-base-100 p-4">
+    <h3 class="text-sm font-semibold text-base-content/70 mb-3">Trending genres</h3>
+    <div class="flex items-center gap-4">
+      <div class="shrink-0">{{donut .M.TrendingGenres}}</div>
+      <div class="flex-1 min-w-0">{{template "donutLegend" .M.TrendingGenres}}</div>
+    </div>
+  </div>
+  <div class="rounded-xl bg-base-100 p-4"><h3 class="text-sm font-semibold text-base-content/70 mb-3">Trending tags</h3>{{template "barList" .M.TrendingTags}}</div>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-2 mb-4">
+  <div class="rounded-xl bg-base-100 p-4">
+    <h3 class="text-sm font-semibold text-base-content/70 mb-3">Downloads</h3>
+    <div class="stats bg-base-200 w-full mb-3">
+      <div class="stat p-3"><div class="stat-title text-xs">Success</div><div class="stat-value text-xl">{{printf "%.0f" .M.Downloads.SuccessRate}}%</div></div>
+      <div class="stat p-3"><div class="stat-title text-xs">Avg time</div><div class="stat-value text-xl">{{f1 .M.Downloads.AvgSeconds}}s</div></div>
+      <div class="stat p-3"><div class="stat-title text-xs">Failed/dead</div><div class="stat-value text-xl">{{.M.Downloads.Dead}}</div></div>
+    </div>
+    <div class="text-xs text-base-content/60 mb-2">{{.M.Downloads.Done}} done · {{.M.Downloads.Pending}} pending · {{.M.Downloads.Failed}} retrying</div>
+    {{if .M.Downloads.TopErrors}}<div class="text-sm font-medium mb-1">Top errors</div>{{template "barList" .M.Downloads.TopErrors}}{{end}}
+  </div>
+  <div class="rounded-xl bg-base-100 p-4">
+    <h3 class="text-sm font-semibold text-base-content/70 mb-3">Sources &amp; jobs</h3>
+    <div class="text-sm font-medium mb-1">Sources by status</div>
+    {{template "barList" .M.Sources}}
+    <div class="text-sm font-medium mt-3 mb-1">Jobs by status</div>
+    {{template "barList" .M.Jobs}}
+  </div>
+</div>
+
+<div class="rounded-xl bg-base-100 p-4">
+  <h3 class="text-sm font-semibold text-base-content/70 mb-3">System</h3>
+  <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-6 text-sm">
+    <div><div class="text-base-content/50">Version</div><div class="font-medium truncate">{{.M.System.Version}}</div></div>
+    <div><div class="text-base-content/50">Uptime</div><div class="font-medium">{{hdur .M.System.UptimeSeconds}}</div></div>
+    <div><div class="text-base-content/50">Goroutines</div><div class="font-medium">{{.M.System.Goroutines}}</div></div>
+    <div><div class="text-base-content/50">Heap</div><div class="font-medium">{{f1 .M.System.HeapMB}} MB</div></div>
+    <div><div class="text-base-content/50">GC runs</div><div class="font-medium">{{.M.System.NumGC}}</div></div>
+    <div><div class="text-base-content/50">DB size</div><div class="font-medium">{{humanBytes .M.System.DBSizeBytes}}</div></div>
+  </div>
+</div>
+{{end}}

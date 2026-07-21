@@ -62,8 +62,12 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 func requiredPerm(r *http.Request) string {
 	p := r.URL.Path
 	switch {
-	case p == "/management": // any-of check happens in the handler
+	case p == "/management" || p == "/metrics": 
 		return ""
+	case p == "/ui/metrics/overview":
+		return auth.PermStatsView
+	case p == "/ui/metrics":
+		return auth.PermReaderUse
 	case p == "/logout" || p == "/" || strings.HasPrefix(p, "/anilist/") || strings.HasPrefix(p, "/ui/anilist/") || strings.HasPrefix(p, "/ui/account"):
 		return "" // any signed-in user (dashboard sections gate individually)
 	case strings.HasPrefix(p, "/reader/") || strings.HasPrefix(p, "/api/reader/"):
@@ -73,7 +77,7 @@ func requiredPerm(r *http.Request) string {
 	case p == "/api/settings":
 		return auth.PermSettingsManage // the JSON API has no per-section split
 	case p == "/settings" || p == "/ui/settings":
-		return "" // section-level checks in the handlers (appearance vs global)
+		return ""
 	case p == "/sources" || strings.HasPrefix(p, "/ui/sources"):
 		return auth.PermSourcesManage
 	case p == "/ui/health":
