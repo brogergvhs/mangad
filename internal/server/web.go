@@ -2026,6 +2026,9 @@ func (u *webUI) buildTitleContent(r *http.Request, title library.Title, tab stri
 	vols, _ := u.svc.Volumes(ctx, title.ID)
 	running, _, queued, _, _ := titleActivityFrom(u.jobs(ctx), title)
 	attaching := running[jobs.TypeAttachVolumes] || slices.Contains(queued, "attaching volumes")
+	if tab == "" && title.DiscoveredCount == 0 && (len(vols) > 0 || attaching) {
+		tab = "volumes"
+	}
 	if tab != "volumes" || (len(vols) == 0 && !attaching) {
 		tab = "chapters"
 	}

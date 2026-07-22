@@ -27,7 +27,8 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 			_, _ = w.Write([]byte("ok"))
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" {
+		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" ||
+			r.URL.Path == "/api/v1/meta" || r.URL.Path == "/api/v1/auth/login" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -64,6 +65,8 @@ func requiredPerm(r *http.Request) string {
 	switch {
 	case p == "/management" || p == "/metrics" || p == "/ui/metrics":
 		return ""
+	case p == "/api/v1/meta" || p == "/api/v1/auth/login" || p == "/api/v1/me" || p == "/api/v1/auth/token":
+		return "" // public or any-signed-in
 	case p == "/logout" || p == "/" || strings.HasPrefix(p, "/anilist/") || strings.HasPrefix(p, "/ui/anilist/") || strings.HasPrefix(p, "/ui/account"):
 		return "" // any signed-in user (dashboard sections gate individually)
 	case strings.HasPrefix(p, "/reader/") || strings.HasPrefix(p, "/api/reader/"):

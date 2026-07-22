@@ -121,26 +121,36 @@ func (s *Service) Bootstrap(ctx context.Context, adminUser, adminPassword string
 }
 
 // Login verifies credentials and returns a new session token.
-func (s *Service) Login(ctx context.Context, username, password, userAgent, ip string) (string, error) {
+// Authenticate verifies credentials (with lockout) and returns the user id,
+// without creating a session — used by session login and API-token minting.
+func (s *Service) Authenticate(ctx context.Context, username, password string) (int64, error) {
 	username = strings.TrimSpace(username)
 	if err := s.loginAllowed(username); err != nil {
-		return "", err
+		return 0, err
 	}
 	var id int64
 	var hash string
 	err := s.db.QueryRowContext(ctx, `SELECT id, password_hash FROM users WHERE username = ?`, username).Scan(&id, &hash)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && hash == "") {
 		s.loginFailed(username)
-		return "", fmt.Errorf("invalid credentials")
+		return 0, fmt.Errorf("invalid credentials")
 	}
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		s.loginFailed(username)
-		return "", fmt.Errorf("invalid credentials")
+		return 0, fmt.Errorf("invalid credentials")
 	}
 	s.loginReset(username)
+	return id, nil
+}
+
+func (s *Service) Login(ctx context.Context, username, password, userAgent, ip string) (string, error) {
+	id, err := s.Authenticate(ctx, username, password)
+	if err != nil {
+		return "", err
+	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -544,6 +554,13 @@ func (s *Service) DeleteAPIToken(ctx context.Context, userID, tokenID int64) err
 // PurgeExpiredAPITokens deletes expired tokens (empty expires_at never expires).
 func (s *Service) PurgeExpiredAPITokens(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE expires_at != '' AND expires_at <= ?`, database.FormatTime(time.Now()))
+	return err
+}
+
+// RevokeAPIToken deletes the token matching the given raw value (device sign-out).
+func (s *Service) RevokeAPIToken(ctx context.Context, token string) error {
+	sum := sha256.Sum256([]byte(token))
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE token_hash = ?`, hex.EncodeToString(sum[:]))
 	return err
 }
 

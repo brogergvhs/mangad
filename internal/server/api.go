@@ -34,6 +34,7 @@ func New(
 ) http.Handler {
 	mux := http.NewServeMux()
 	registerUI(mux, svc, runJobs)
+	registerAPIV1(mux, svc)
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
