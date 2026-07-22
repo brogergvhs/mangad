@@ -9,10 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -159,30 +157,7 @@ func New(
 	})
 
 	mux.HandleFunc("GET /api/reader/volumes/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) {
-		id, err := parseInt64Path(r, "id")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid volume id")
-			return
-		}
-		page, err := strconv.Atoi(r.PathValue("page"))
-		if err != nil || page <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid page")
-			return
-		}
-		vol, err := svc.GetVolume(r.Context(), id)
-		if err != nil || !titleAllowed(r.Context(), svc, vol.TitleID) {
-			writeError(w, http.StatusNotFound, "volume not found")
-			return
-		}
-		entry, rc, err := cbzPage(vol.File, page)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "page not found")
-			return
-		}
-		defer rc.Close()
-		w.Header().Set("Content-Type", imageMime(entry.Name))
-		w.Header().Set("Cache-Control", "private, max-age=86400")
-		_, _ = io.Copy(w, rc)
+		serveVolumePage(w, r, svc)
 	})
 
 	mux.HandleFunc("POST /api/reader/chapters/{id}/pages", func(w http.ResponseWriter, r *http.Request) {
@@ -214,44 +189,7 @@ func New(
 	})
 
 	mux.HandleFunc("GET /api/reader/chapters/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) {
-		id, err := parseInt64Path(r, "id")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid chapter id")
-			return
-		}
-		page, err := parseIntPath(r, "page")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid page")
-			return
-		}
-		status, err := svc.ChapterReadStatus(r.Context(), id)
-		if err != nil || !titleAllowed(r.Context(), svc, status.TitleID) {
-			writeError(w, http.StatusNotFound, "chapter not found")
-			return
-		}
-		if !status.Downloaded || status.OutputFile == "" {
-			writeError(w, http.StatusNotFound, "chapter is not downloaded")
-			return
-		}
-		file, rc, err := cbzPage(status.OutputFile, page)
-		if err != nil {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		defer rc.Close()
-		etag := strconv.Quote(strconv.FormatUint(uint64(file.CRC32), 16))
-		w.Header().Set("Cache-Control", "private, max-age=86400")
-		w.Header().Set("ETag", etag)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		if ct := mime.TypeByExtension(filepath.Ext(file.Name)); ct != "" {
-			w.Header().Set("Content-Type", ct)
-		}
-		w.Header().Set("Content-Length", strconv.FormatUint(file.UncompressedSize64, 10))
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.Copy(w, rc)
+		serveChapterPage(w, r, svc)
 	})
 
 	mux.HandleFunc("POST /api/reader/chapters/{id}/complete", func(w http.ResponseWriter, r *http.Request) {
