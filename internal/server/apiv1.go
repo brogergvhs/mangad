@@ -1,13 +1,23 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"mime"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 const maxPageBytes = 64 << 20 // per-image download cap
@@ -21,6 +31,21 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("GET /api/v1/me", a.me)
 	mux.HandleFunc("DELETE /api/v1/auth/token", a.revokeToken)
+
+	mux.HandleFunc("GET /api/v1/library", a.libraryList)
+	mux.HandleFunc("GET /api/v1/library/{id}", a.libraryGet)
+	mux.HandleFunc("GET /api/v1/covers/{id}", a.titleCover)
+	mux.HandleFunc("GET /api/v1/volumes/{id}/cover", func(w http.ResponseWriter, r *http.Request) { serveVolumeCover(w, r, svc) })
+
+	mux.HandleFunc("GET /api/v1/reader/titles/{id}", a.readerTitle)
+	mux.HandleFunc("GET /api/v1/reader/titles/{id}/manifest", a.manifest)
+	mux.HandleFunc("GET /api/v1/reader/chapters/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) { serveChapterPage(w, r, svc) })
+	mux.HandleFunc("GET /api/v1/reader/volumes/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) { serveVolumePage(w, r, svc) })
+	mux.HandleFunc("POST /api/v1/reader/chapters/{id}/pages", a.markPage)
+	mux.HandleFunc("POST /api/v1/reader/chapters/{id}/complete", a.markComplete)
+	mux.HandleFunc("POST /api/v1/reader/chapters/{id}/unread", a.markUnread)
+	mux.HandleFunc("POST /api/v1/reader/titles/{id}/read-range", a.readRange)
+	mux.HandleFunc("POST /api/v1/reader/volumes/{id}/pages", a.markVolumePage)
 }
 
 // v1err writes the {error, code} envelope shared by every v1 endpoint.
@@ -139,4 +164,402 @@ func (a *apiV1) revokeToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// coverClient fetches remote covers with the private-network guard so the proxy
+// can't be aimed at internal services.
+var coverClient, _ = util.NewHTTPClient(util.HTTPClientOptions{Timeout: 20 * time.Second, BlockPrivateNetworks: true})
+
+// serveChapterPage streams one page image from a downloaded chapter's CBZ.
+func serveChapterPage(w http.ResponseWriter, r *http.Request, svc *service.JobService) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid chapter id")
+		return
+	}
+	page, err := parseIntPath(r, "page")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid page")
+		return
+	}
+	status, err := svc.ChapterReadStatus(r.Context(), id)
+	if err != nil || !titleAllowed(r.Context(), svc, status.TitleID) {
+		writeError(w, http.StatusNotFound, "chapter not found")
+		return
+	}
+	if !status.Downloaded || status.OutputFile == "" {
+		writeError(w, http.StatusNotFound, "chapter is not downloaded")
+		return
+	}
+	file, rc, err := cbzPage(status.OutputFile, page)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	defer rc.Close()
+	etag := strconv.Quote(strconv.FormatUint(uint64(file.CRC32), 16))
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	if ct := mime.TypeByExtension(filepath.Ext(file.Name)); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Content-Length", strconv.FormatUint(file.UncompressedSize64, 10))
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, rc)
+}
+
+// serveVolumePage streams one page image from a volume CBZ.
+func serveVolumePage(w http.ResponseWriter, r *http.Request, svc *service.JobService) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid volume id")
+		return
+	}
+	page, err := strconv.Atoi(r.PathValue("page"))
+	if err != nil || page <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid page")
+		return
+	}
+	vol, err := svc.GetVolume(r.Context(), id)
+	if err != nil || !titleAllowed(r.Context(), svc, vol.TitleID) {
+		writeError(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	entry, rc, err := cbzPage(vol.File, page)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "page not found")
+		return
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", imageMime(entry.Name))
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	_, _ = io.Copy(w, rc)
+}
+
+// serveVolumeCover serves a volume's custom cover, thumbnail, or first page.
+func serveVolumeCover(w http.ResponseWriter, r *http.Request, svc *service.JobService) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	vol, err := svc.GetVolume(r.Context(), id)
+	if err != nil || !titleAllowed(r.Context(), svc, vol.TitleID) {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=604800")
+	if blob, m, err := svc.VolumeCover(r.Context(), id); err == nil && len(blob) > 0 {
+		w.Header().Set("Content-Type", m)
+		_, _ = w.Write(blob)
+		return
+	}
+	if blob, m, err := svc.VolumeThumb(r.Context(), id); err == nil && len(blob) > 0 {
+		w.Header().Set("Content-Type", m)
+		_, _ = w.Write(blob)
+		return
+	}
+	entry, rc, err := cbzPage(vol.File, 1)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", imageMime(entry.Name))
+	_, _ = io.Copy(w, rc)
+}
+
+// titleCover proxies a title's remote cover so the app only ever talks to this
+// server. ponytail: no persistent cache; relies on the client + Cache-Control.
+func (a *apiV1) titleCover(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	t, err := a.svc.GetTitle(r.Context(), id)
+	if err != nil || !contentAllowed(r.Context(), t.IsAdult, t.ContentTags) {
+		http.NotFound(w, r)
+		return
+	}
+	if !strings.HasPrefix(t.CoverImage, "https://") {
+		http.NotFound(w, r)
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, t.CoverImage, nil)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	resp, err := coverClient.Do(req)
+	if err != nil {
+		http.Error(w, "cover fetch failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "cover unavailable", http.StatusBadGateway)
+		return
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Cache-Control", "private, max-age=604800")
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (a *apiV1) libraryList(w http.ResponseWriter, r *http.Request) {
+	titles, err := a.svc.ListTitles(r.Context())
+	if err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	titles = filterRestrictedTitles(r.Context(), titles)
+	q := r.URL.Query()
+	titles = filterTitles(titles, libraryControlsFromQuery(q))
+	sortTitles(titles, v1SortKey(q.Get("sort")), q.Get("dir"))
+	total := len(titles)
+	limit := clampLimit(q.Get("limit"))
+	off, _ := strconv.Atoi(q.Get("cursor"))
+	if off < 0 {
+		off = 0
+	}
+	next := ""
+	if off < total {
+		end := off + limit
+		if end >= total {
+			end = total
+		} else {
+			next = strconv.Itoa(end)
+		}
+		titles = titles[off:end]
+	} else {
+		titles = nil
+	}
+	items := make([]titleDTO, 0, len(titles))
+	for _, t := range titles {
+		items = append(items, toTitleDTO(t))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "next_cursor": next, "total": total})
+}
+
+func (a *apiV1) libraryGet(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	t, err := a.svc.GetTitle(r.Context(), id)
+	if err != nil || !contentAllowed(r.Context(), t.IsAdult, t.ContentTags) {
+		v1err(w, http.StatusNotFound, "not_found", "title not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, toTitleDTO(t))
+}
+
+func (a *apiV1) readerProgress(r *http.Request, id int64) (library.TitleReadProgress, error) {
+	if r.URL.Query().Get("mode") == "volumes" {
+		return a.svc.VolumesReaderProgress(r.Context(), id)
+	}
+	return a.svc.ReaderProgress(r.Context(), id)
+}
+
+func (a *apiV1) readerTitle(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if !titleAllowed(r.Context(), a.svc, id) {
+		v1err(w, http.StatusNotFound, "not_found", "title not found")
+		return
+	}
+	p, err := a.readerProgress(r, id)
+	if err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, toTitleReadProgressDTO(p))
+}
+
+func (a *apiV1) manifest(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if !titleAllowed(r.Context(), a.svc, id) {
+		v1err(w, http.StatusNotFound, "not_found", "title not found")
+		return
+	}
+	volumes := r.URL.Query().Get("mode") == "volumes"
+	p, err := a.readerProgress(r, id)
+	if err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	var m readerManifestResponse
+	if c, _ := strconv.ParseInt(r.URL.Query().Get("chapter"), 10, 64); c > 0 {
+		m, _, _ = readerManifestWindowMode(p, c, volumes)
+	} else {
+		m = readerManifest(p)
+	}
+	rebaseManifest(&m)
+	writeJSON(w, http.StatusOK, m)
+}
+
+// rebaseManifest rewrites the manifest's /api/reader URLs to their /api/v1 forms.
+func rebaseManifest(m *readerManifestResponse) {
+	const old, new = "/api/reader/", "/api/v1/reader/"
+	m.MarkBase = strings.Replace(m.MarkBase, old, new, 1)
+	m.ExtendBase = strings.Replace(m.ExtendBase, old, new, 1)
+	for i := range m.Chapters {
+		for j := range m.Chapters[i].Pages {
+			m.Chapters[i].Pages[j].URL = strings.Replace(m.Chapters[i].Pages[j].URL, old, new, 1)
+		}
+	}
+}
+
+func (a *apiV1) markPage(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid chapter id")
+		return
+	}
+	var body struct {
+		Page       int `json:"page"`
+		TotalPages int `json:"total_pages"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	cs, err := a.svc.MarkPageRead(r.Context(), id, body.Page, body.TotalPages)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, toChapterProgressDTO(cs))
+}
+
+func (a *apiV1) markComplete(w http.ResponseWriter, r *http.Request) {
+	a.chapterMark(w, r, a.svc.MarkChapterRead)
+}
+
+func (a *apiV1) markUnread(w http.ResponseWriter, r *http.Request) {
+	a.chapterMark(w, r, a.svc.MarkChapterUnread)
+}
+
+func (a *apiV1) chapterMark(w http.ResponseWriter, r *http.Request, fn func(context.Context, int64) (library.ChapterReadStatus, error)) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid chapter id")
+		return
+	}
+	cs, err := fn(r.Context(), id)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, toChapterProgressDTO(cs))
+}
+
+func (a *apiV1) readRange(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid title id")
+		return
+	}
+	var body struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+		Read bool   `json:"read"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	if !titleAllowed(r.Context(), a.svc, id) {
+		v1err(w, http.StatusNotFound, "not_found", "title not found")
+		return
+	}
+	var count int
+	if body.Read {
+		count, err = a.svc.MarkChapterRangeRead(r.Context(), id, body.From, body.To)
+	} else {
+		count, err = a.svc.MarkChapterRangeUnread(r.Context(), id, body.From, body.To)
+	}
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"chapters": count})
+}
+
+func (a *apiV1) markVolumePage(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid volume id")
+		return
+	}
+	var body struct {
+		Page       int `json:"page"`
+		TotalPages int `json:"total_pages"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	if vol, err := a.svc.GetVolume(r.Context(), id); err != nil || !titleAllowed(r.Context(), a.svc, vol.TitleID) {
+		v1err(w, http.StatusNotFound, "not_found", "volume not found")
+		return
+	}
+	vol, err := a.svc.MarkVolumePageRead(r.Context(), id, body.Page, body.TotalPages)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, toVolumeDTO(vol))
+}
+
+func clampLimit(s string) int {
+	n, _ := strconv.Atoi(s)
+	switch {
+	case n <= 0:
+		return 50
+	case n > 200:
+		return 200
+	default:
+		return n
+	}
+}
+
+// libraryControlsFromQuery maps the v1 query params onto the shared web filter.
+func libraryControlsFromQuery(q url.Values) libraryControls {
+	c := libraryControls{Q: q.Get("q"), Source: q.Get("source"), Progress: q.Get("progress"), Content: q.Get("content")}
+	if q.Get("monitored") == "1" {
+		c.Monitor = "on"
+	}
+	if q.Get("favourite") == "1" {
+		c.Fav = "only"
+	}
+	if v := q.Get("include_tags"); v != "" {
+		c.IncludeTags = strings.Split(v, ",")
+	}
+	if v := q.Get("exclude_tags"); v != "" {
+		c.ExcludeTags = strings.Split(v, ",")
+	}
+	return c
+}
+
+// v1SortKey maps the v1 "score" sort alias onto the web "rating" key.
+func v1SortKey(k string) string {
+	if k == "score" {
+		return "rating"
+	}
+	return k
 }

@@ -1,0 +1,129 @@
+package server
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/brogergvhs/kaodoku/internal/library"
+)
+
+type titleDTO struct {
+	ID              int64      `json:"id"`
+	SourceID        string     `json:"source_id"`
+	CatalogMangaID  *int64     `json:"catalog_manga_id,omitempty"`
+	SourceURL       string     `json:"source_url"`
+	DisplayTitle    string     `json:"display_title"`
+	CoverImage      string     `json:"cover_image"`
+	Monitored       bool       `json:"monitored"`
+	RefreshInterval string     `json:"refresh_interval"`
+	ReleaseStatus   string     `json:"release_status"`
+	IsAdult         bool       `json:"is_adult"`
+	AverageScore    int64      `json:"average_score"`
+	ContentTags     []string   `json:"content_tags"`
+	Favourite       bool       `json:"favourite"`
+	LanguageMode    string     `json:"language_mode"`
+	LanguageGap     int64      `json:"language_gap"`
+	DiscoveredCount int64      `json:"discovered_count"`
+	MissingCount    int64      `json:"missing_count"`
+	FailedCount     int64      `json:"failed_count"`
+	ReadCount       int64      `json:"read_count"`
+	CompletedCount  int64      `json:"completed_count"`
+	SizeBytes       int64      `json:"size_bytes"`
+	Pages           int64      `json:"pages"`
+	VolumeCount     int64      `json:"volume_count"`
+	VolumeReadCount int64      `json:"volume_read_count"`
+	VolumeBytes     int64      `json:"volume_bytes"`
+	VolumePages     int64      `json:"volume_pages"`
+	LastRefreshedAt *time.Time `json:"last_refreshed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+func toTitleDTO(t library.Title) titleDTO {
+	tags := t.ContentTags
+	if tags == nil {
+		tags = []string{}
+	}
+	return titleDTO{
+		ID: t.ID, SourceID: t.SourceID, CatalogMangaID: t.CatalogMangaID, SourceURL: t.SourceURL,
+		DisplayTitle: t.DisplayTitle, CoverImage: fmt.Sprintf("/api/v1/covers/%d", t.ID),
+		Monitored: t.Monitored, RefreshInterval: t.RefreshInterval, ReleaseStatus: t.ReleaseStatus,
+		IsAdult: t.IsAdult, AverageScore: t.AverageScore, ContentTags: tags, Favourite: t.Favourite,
+		LanguageMode: t.LanguageMode, LanguageGap: t.LanguageGap, DiscoveredCount: t.DiscoveredCount,
+		MissingCount: t.MissingCount, FailedCount: t.FailedCount, ReadCount: t.ReadCount,
+		CompletedCount: t.CompletedCount, SizeBytes: t.SizeBytes, Pages: t.Pages,
+		VolumeCount: t.VolumeCount, VolumeReadCount: t.VolumeReadCount, VolumeBytes: t.VolumeBytes,
+		VolumePages: t.VolumePages, LastRefreshedAt: t.LastRefreshedAt, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
+	}
+}
+
+type chapterProgressDTO struct {
+	ID              int64      `json:"id"`
+	TitleID         int64      `json:"title_id"`
+	Label           string     `json:"label"`
+	Title           string     `json:"title"`
+	NumberMain      int        `json:"number_main"`
+	Downloaded      bool       `json:"downloaded"`
+	Bytes           int64      `json:"bytes"`
+	Pages           int        `json:"pages"`
+	TotalPages      int        `json:"total_pages"`
+	ReadPages       int        `json:"read_pages"`
+	LastPage        int        `json:"last_page"`
+	Completed       bool       `json:"completed"`
+	FirstUnreadPage int        `json:"first_unread_page"`
+	LastReadAt      *time.Time `json:"last_read_at,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+}
+
+func toChapterProgressDTO(c library.ChapterReadStatus) chapterProgressDTO {
+	return chapterProgressDTO{
+		ID: c.ID, TitleID: c.TitleID, Label: c.Label, Title: c.Title, NumberMain: c.NumberMain,
+		Downloaded: c.Downloaded, Bytes: c.Bytes, Pages: c.Pages, TotalPages: c.TotalPages,
+		ReadPages: c.ReadPages, LastPage: c.LastPage, Completed: c.Completed,
+		FirstUnreadPage: c.FirstUnreadPage, LastReadAt: c.LastReadAt, CompletedAt: c.CompletedAt,
+	}
+}
+
+type titleReadProgressDTO struct {
+	Title         titleDTO             `json:"title"`
+	Chapters      []chapterProgressDTO `json:"chapters"`
+	ReadChapters  int                  `json:"read_chapters"`
+	TotalChapters int                  `json:"total_chapters"`
+	ReadPages     int64                `json:"read_pages"`
+	TotalPages    int64                `json:"total_pages"`
+	NextChapterID int64                `json:"next_chapter_id"`
+	NextPage      int                  `json:"next_page"`
+}
+
+func toTitleReadProgressDTO(p library.TitleReadProgress) titleReadProgressDTO {
+	chs := make([]chapterProgressDTO, len(p.Chapters))
+	for i, c := range p.Chapters {
+		chs[i] = toChapterProgressDTO(c)
+	}
+	return titleReadProgressDTO{
+		Title: toTitleDTO(p.Title), Chapters: chs, ReadChapters: p.ReadChapters, TotalChapters: p.TotalChapters,
+		ReadPages: p.ReadPages, TotalPages: p.TotalPages, NextChapterID: p.NextChapterID, NextPage: p.NextPage,
+	}
+}
+
+type volumeDTO struct {
+	ID          int64   `json:"id"`
+	TitleID     int64   `json:"title_id"`
+	Number      float64 `json:"number"`
+	Name        string  `json:"name"`
+	Pages       int     `json:"pages"`
+	Bytes       int64   `json:"bytes"`
+	CustomCover bool    `json:"custom_cover"`
+	Read        bool    `json:"read"`
+	ReadPages   int     `json:"read_pages"`
+	LastPage    int     `json:"last_page"`
+	CoverURL    string  `json:"cover_url"`
+}
+
+func toVolumeDTO(v library.Volume) volumeDTO {
+	return volumeDTO{
+		ID: v.ID, TitleID: v.TitleID, Number: v.Number, Name: v.Name, Pages: v.Pages, Bytes: v.Bytes,
+		CustomCover: v.CustomCover, Read: v.Read, ReadPages: v.ReadPages, LastPage: v.LastPage,
+		CoverURL: fmt.Sprintf("/api/v1/volumes/%d/cover", v.ID),
+	}
+}
