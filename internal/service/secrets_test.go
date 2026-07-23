@@ -143,26 +143,40 @@ func TestNotifications(t *testing.T) {
 	}
 	defer closeDB()
 
-	if err := svc.AddNotification(ctx, "error", "boom", 42); err != nil {
+	server := NotificationScope{UserID: 1, Server: true}
+	own := NotificationScope{UserID: 2}
+	if err := svc.AddNotification(ctx, 0, "error", "boom", 42); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := svc.UnreadNotificationCount(ctx); c != 1 {
-		t.Fatalf("unread = %d, want 1", c)
-	}
-	if err := svc.MarkNotificationsRead(ctx); err != nil {
+	if err := svc.AddNotification(ctx, 2, "info", "yours", 0); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := svc.UnreadNotificationCount(ctx); c != 0 {
-		t.Fatalf("unread after mark = %d, want 0", c)
+	if c, _ := svc.UnreadNotificationCount(ctx, server); c != 1 {
+		t.Fatalf("server unread = %d, want 1", c)
+	}
+	if c, _ := svc.UnreadNotificationCount(ctx, own); c != 1 {
+		t.Fatalf("own unread = %d, want 1", c)
+	}
+	if c, _ := svc.UnreadNotificationCount(ctx, NotificationScope{All: true}); c != 2 {
+		t.Fatalf("all unread = %d, want 2", c)
+	}
+	if err := svc.MarkNotificationsRead(ctx, server); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := svc.UnreadNotificationCount(ctx, server); c != 0 {
+		t.Fatalf("server unread after mark = %d, want 0", c)
+	}
+	if c, _ := svc.UnreadNotificationCount(ctx, own); c != 1 {
+		t.Fatalf("own unread after server mark = %d, want 1", c)
 	}
 
 	// Insert past the cap; only the most recent maxNotifications survive.
 	for i := 0; i < maxNotifications+5; i++ {
-		if err := svc.AddNotification(ctx, "error", "n", 0); err != nil {
+		if err := svc.AddNotification(ctx, 0, "error", "n", 0); err != nil {
 			t.Fatal(err)
 		}
 	}
-	items, err := svc.Notifications(ctx, maxNotifications+50)
+	items, err := svc.Notifications(ctx, NotificationScope{All: true}, maxNotifications+50)
 	if err != nil {
 		t.Fatal(err)
 	}

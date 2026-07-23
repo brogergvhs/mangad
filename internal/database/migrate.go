@@ -294,6 +294,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 
 CREATE TABLE IF NOT EXISTS notifications (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL DEFAULT 0,
 	level TEXT NOT NULL DEFAULT 'error',
 	message TEXT NOT NULL,
 	job_id INTEGER NOT NULL DEFAULT 0,
@@ -378,6 +379,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err = migrateReadTablesPerUser(ctx, tx); err != nil {
 		return err
 	}
+	hadManual, _, err := txHasColumn(ctx, tx, "chapter_read_progress", "manual")
+	if err != nil {
+		return err
+	}
 	for _, col := range []struct{ table, name, def string }{
 		{"jobs", "parent_id", "INTEGER"},
 		{"catalog_manga", "is_adult", "INTEGER NOT NULL DEFAULT 0"},
@@ -414,19 +419,24 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"title_source_matches", "updated_at", "TEXT NOT NULL DEFAULT ''"},
 		{"api_tokens", "expires_at", "TEXT NOT NULL DEFAULT ''"},
 		{"chapter_read_progress", "manual", "INTEGER NOT NULL DEFAULT 0"}, // 1 = bulk/AniList mark, not page-by-page reading
+		{"notifications", "user_id", "INTEGER NOT NULL DEFAULT 0"}, // 0 = server-wide
 	} {
 		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
 		}
 	}
 
-	if _, err = tx.ExecContext(ctx, `
-		UPDATE chapter_read_progress SET manual = 1
-		WHERE completed = 1 AND (user_id, chapter_id) NOT IN (
-			SELECT user_id, chapter_id FROM chapter_read_pages
-			GROUP BY user_id, chapter_id HAVING COUNT(DISTINCT read_at) >= 2
-		)`); err != nil {
-		return fmt.Errorf("backfill read/marked flag: %w", err)
+	// One-shot backfill when the manual column is first added; rerunning would
+	// clobber genuinely-read chapters whose pages share one timestamp.
+	if !hadManual {
+		if _, err = tx.ExecContext(ctx, `
+			UPDATE chapter_read_progress SET manual = 1
+			WHERE completed = 1 AND (user_id, chapter_id) NOT IN (
+				SELECT user_id, chapter_id FROM chapter_read_pages
+				GROUP BY user_id, chapter_id HAVING COUNT(DISTINCT read_at) >= 2
+			)`); err != nil {
+			return fmt.Errorf("backfill read/marked flag: %w", err)
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration: %w", err)

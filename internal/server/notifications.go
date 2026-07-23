@@ -12,19 +12,28 @@ type notificationsView struct {
 	CanManage bool
 }
 
+// notificationScope bounds visibility to the acting user's permissions.
+func notificationScope(user *auth.User) service.NotificationScope {
+	return service.NotificationScope{
+		UserID: user.ID,
+		Server: user.Can(auth.PermJobsView),
+		All:    user.Can(auth.PermUsersManage),
+	}
+}
+
 func (u *webUI) notificationsCard(w http.ResponseWriter, r *http.Request) {
-	items, _ := u.svc.Notifications(r.Context(), 50)
-	canManage := userFrom(r.Context()).Can(auth.PermJobsManage)
-	u.frag(w, "notificationsCard", notificationsView{Items: items, CanManage: canManage})
+	user := userFrom(r.Context())
+	items, _ := u.svc.Notifications(r.Context(), notificationScope(user), 50)
+	u.frag(w, "notificationsCard", notificationsView{Items: items, CanManage: user.Can(auth.PermJobsManage)})
 }
 
 func (u *webUI) notificationsBadge(w http.ResponseWriter, r *http.Request) {
-	n, _ := u.svc.UnreadNotificationCount(r.Context())
+	n, _ := u.svc.UnreadNotificationCount(r.Context(), notificationScope(userFrom(r.Context())))
 	u.frag(w, "notificationsBadge", n)
 }
 
 func (u *webUI) notificationsRead(w http.ResponseWriter, r *http.Request) {
-	if err := u.svc.MarkNotificationsRead(r.Context()); err != nil {
+	if err := u.svc.MarkNotificationsRead(r.Context(), notificationScope(userFrom(r.Context()))); err != nil {
 		u.fail(w, err)
 		return
 	}
