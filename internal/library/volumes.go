@@ -101,13 +101,21 @@ func (r *Repository) SyncVolumeFiles(ctx context.Context, titleID int64, dir str
 
 // Volumes lists a title's volumes with the acting user's read marks.
 func (r *Repository) Volumes(ctx context.Context, titleID int64) ([]Volume, error) {
+	return r.listVolumes(ctx, `LEFT JOIN volume_read_progress vr ON vr.volume_id = v.id AND vr.user_id = ? WHERE v.title_id = ?`, auth.UserID(ctx), titleID)
+}
+
+// VolumesReadSince returns the user's volume progress rows touched after since.
+func (r *Repository) VolumesReadSince(ctx context.Context, since string) ([]Volume, error) {
+	return r.listVolumes(ctx, `JOIN volume_read_progress vr ON vr.volume_id = v.id AND vr.user_id = ? WHERE vr.last_read_at >= ?`, auth.UserID(ctx), since)
+}
+
+func (r *Repository) listVolumes(ctx context.Context, joinWhere string, args ...any) ([]Volume, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT v.id, v.title_id, v.number, v.name, v.file, v.bytes, v.pages, v.cover IS NOT NULL,
 			COALESCE(vr.completed, 0), COALESCE(vr.read_pages, 0), COALESCE(vr.last_page, 0)
 		FROM volumes v
-		LEFT JOIN volume_read_progress vr ON vr.volume_id = v.id AND vr.user_id = ?
-		WHERE v.title_id = ?
-		ORDER BY v.number, v.name`, auth.UserID(ctx), titleID)
+		`+joinWhere+`
+		ORDER BY v.number, v.name`, args...)
 	if err != nil {
 		return nil, err
 	}

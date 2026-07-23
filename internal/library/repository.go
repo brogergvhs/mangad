@@ -724,15 +724,21 @@ func (r *Repository) ReaderProgress(ctx context.Context, titleID int64) (TitleRe
 
 // MarkPageRead records one completed page and updates the chapter read summary.
 func (r *Repository) MarkPageRead(ctx context.Context, chapterID int64, page, totalPages int) (ChapterReadStatus, error) {
+	return r.MarkPageReadAt(ctx, chapterID, page, totalPages, "")
+}
+
+// MarkPageReadAt marks a page read with an explicit read_at ("" = now) so
+// offline reads replay with their original timestamps.
+func (r *Repository) MarkPageReadAt(ctx context.Context, chapterID int64, page, totalPages int, readAt string) (ChapterReadStatus, error) {
 	if page <= 0 {
 		return ChapterReadStatus{}, fmt.Errorf("page must be positive")
 	}
 	return retryBusy(ctx, func() (ChapterReadStatus, error) {
-		return r.markPageRead(ctx, chapterID, page, totalPages)
+		return r.markPageRead(ctx, chapterID, page, totalPages, readAt)
 	})
 }
 
-func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, totalPages int) (ChapterReadStatus, error) {
+func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, totalPages int, readAt string) (ChapterReadStatus, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("begin read progress: %w", err)
@@ -764,9 +770,9 @@ func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, to
 	}
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page)
-		VALUES (?, ?, ?)
-	`, auth.UserID(ctx), chapterID, page)
+		INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page, read_at)
+		VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), CURRENT_TIMESTAMP))
+	`, auth.UserID(ctx), chapterID, page, readAt)
 	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("mark page read: %w", err)
 	}
@@ -1226,6 +1232,36 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 		return fmt.Errorf("update read progress: %w", err)
 	}
 	return nil
+}
+
+// ReadProgressIDs returns every chapter and volume id the user has progress
+// rows for, so delta clients can prune local state deleted by unread marks.
+func (r *Repository) ReadProgressIDs(ctx context.Context) (chapters, volumes []int64, err error) {
+	scan := func(q string) ([]int64, error) {
+		rows, err := r.db.QueryContext(ctx, q, auth.UserID(ctx))
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := []int64{}
+		for rows.Next() {
+			var id int64
+			if rows.Scan(&id) == nil {
+				out = append(out, id)
+			}
+		}
+		return out, rows.Err()
+	}
+	if chapters, err = scan(`SELECT chapter_id FROM chapter_read_progress WHERE user_id = ?`); err != nil {
+		return nil, nil, err
+	}
+	volumes, err = scan(`SELECT volume_id FROM volume_read_progress WHERE user_id = ?`)
+	return chapters, volumes, err
+}
+
+// ChaptersReadSince returns the user's chapter progress rows touched after since.
+func (r *Repository) ChaptersReadSince(ctx context.Context, since string) ([]ChapterReadStatus, error) {
+	return r.listReadChapters(ctx, `WHERE rp.last_read_at >= ?`, since)
 }
 
 func (r *Repository) listReadChapters(ctx context.Context, where string, args ...any) ([]ChapterReadStatus, error) {

@@ -1771,6 +1771,26 @@ func (s *JobService) GetVolume(ctx context.Context, id int64) (library.Volume, e
 	return s.lib.GetVolume(ctx, id)
 }
 
+// MarkPageReadAt marks a page read at an explicit time (offline replay).
+func (s *JobService) MarkPageReadAt(ctx context.Context, chapterID int64, page, totalPages int, readAt string) (library.ChapterReadStatus, error) {
+	return s.lib.MarkPageReadAt(ctx, chapterID, page, totalPages, readAt)
+}
+
+// ProgressSince returns chapter and volume progress touched after since.
+func (s *JobService) ProgressSince(ctx context.Context, since string) ([]library.ChapterReadStatus, []library.Volume, error) {
+	chs, err := s.lib.ChaptersReadSince(ctx, since)
+	if err != nil {
+		return nil, nil, err
+	}
+	vols, err := s.lib.VolumesReadSince(ctx, since)
+	return chs, vols, err
+}
+
+// ReadProgressIDs returns all chapter/volume ids with progress rows.
+func (s *JobService) ReadProgressIDs(ctx context.Context) ([]int64, []int64, error) {
+	return s.lib.ReadProgressIDs(ctx)
+}
+
 // TitleOwners maps title id to the user that added it (0 = env admin).
 func (s *JobService) TitleOwners(ctx context.Context) (map[int64]int64, error) {
 	return s.lib.TitleOwners(ctx)

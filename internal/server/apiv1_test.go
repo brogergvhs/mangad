@@ -190,6 +190,64 @@ func TestAPIV1ReaderAndLibrary(t *testing.T) {
 	if rec := do(t, api, http.MethodGet, "/api/v1/library/999999", "", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("missing title status = %d", rec.Code)
 	}
+
+	rec = do(t, api, http.MethodGet, "/api/v1/reader/chapters/"+cid+"/archive", "", nil)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/vnd.comicbook+zip" || rec.Body.Len() == 0 {
+		t.Fatalf("archive = %d %q len=%d", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
+	}
+	if rec := do(t, api, http.MethodGet, "/api/v1/reader/chapters/999999/archive", "", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing archive = %d", rec.Code)
+	}
+
+	past := "2026-01-02T10:00:00Z"
+	rec = do(t, api, http.MethodPost, "/api/v1/reader/progress/batch", "", map[string]any{
+		"entries": []map[string]any{
+			{"chapter_id": chapter.ID, "page": 2, "total_pages": 3, "read_at": past},
+			{"chapter_id": 999999, "page": 1, "total_pages": 3},
+		},
+	})
+	var batch struct {
+		Applied int `json:"applied"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&batch)
+	if rec.Code != http.StatusOK || batch.Applied != 1 {
+		t.Fatalf("batch = %d applied=%d", rec.Code, batch.Applied)
+	}
+
+	var delta struct {
+		Chapters   []chapterProgressDTO `json:"chapters"`
+		ChapterIDs []int64              `json:"chapter_ids"`
+		ServerTime string               `json:"server_time"`
+	}
+	rec = do(t, api, http.MethodGet, "/api/v1/reader/progress?since=2020-01-01T00:00:00Z", "", nil)
+	_ = json.NewDecoder(rec.Body).Decode(&delta)
+	if rec.Code != http.StatusOK || len(delta.Chapters) != 1 || delta.Chapters[0].ReadPages != 2 || delta.ServerTime == "" {
+		t.Fatalf("progress delta = %d %+v", rec.Code, delta)
+	}
+	if len(delta.ChapterIDs) != 1 || delta.ChapterIDs[0] != chapter.ID {
+		t.Fatalf("chapter_ids = %v", delta.ChapterIDs)
+	}
+	rec = do(t, api, http.MethodGet, "/api/v1/reader/progress?since=2999-01-01T00:00:00Z", "", nil)
+	_ = json.NewDecoder(rec.Body).Decode(&delta)
+	if len(delta.Chapters) != 0 {
+		t.Fatalf("future-since delta = %+v", delta.Chapters)
+	}
+
+	var lib struct {
+		Items []titleDTO `json:"items"`
+		IDs   []int64    `json:"ids"`
+	}
+	rec = do(t, api, http.MethodGet, "/api/v1/library?since=2020-01-01T00:00:00Z", "", nil)
+	_ = json.NewDecoder(rec.Body).Decode(&lib)
+	if len(lib.Items) != 1 || len(lib.IDs) != 1 || lib.IDs[0] != title.ID {
+		t.Fatalf("library delta = %+v ids=%v", lib.Items, lib.IDs)
+	}
+	rec = do(t, api, http.MethodGet, "/api/v1/library?since=2999-01-01T00:00:00Z", "", nil)
+	lib.Items, lib.IDs = nil, nil
+	_ = json.NewDecoder(rec.Body).Decode(&lib)
+	if len(lib.Items) != 0 || len(lib.IDs) != 1 {
+		t.Fatalf("future-since library = items %d ids %d", len(lib.Items), len(lib.IDs))
+	}
 }
 
 func seedTitle(t *testing.T, dbPath, url, name string, ownerID int64) int64 {

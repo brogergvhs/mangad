@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
+	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/service"
 	"github.com/brogergvhs/kaodoku/internal/util"
@@ -46,6 +47,10 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(con
 	mux.HandleFunc("POST /api/v1/reader/chapters/{id}/unread", a.markUnread)
 	mux.HandleFunc("POST /api/v1/reader/titles/{id}/read-range", a.readRange)
 	mux.HandleFunc("POST /api/v1/reader/volumes/{id}/pages", a.markVolumePage)
+	mux.HandleFunc("GET /api/v1/reader/chapters/{id}/archive", a.chapterArchive)
+	mux.HandleFunc("GET /api/v1/reader/volumes/{id}/archive", a.volumeArchive)
+	mux.HandleFunc("GET /api/v1/reader/progress", a.progressSince)
+	mux.HandleFunc("POST /api/v1/reader/progress/batch", a.progressBatch)
 	mux.HandleFunc("POST /api/v1/reader/volumes/{id}/read", a.volumeSetRead(true))
 	mux.HandleFunc("POST /api/v1/reader/volumes/{id}/unread", a.volumeSetRead(false))
 	mux.HandleFunc("POST /api/v1/reader/titles/{id}/volumes/read-range", a.volumesReadRange)
@@ -360,6 +365,7 @@ func (a *apiV1) titleCover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *apiV1) libraryList(w http.ResponseWriter, r *http.Request) {
+	now := serverTime()
 	titles, err := a.svc.ListTitles(r.Context())
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
@@ -367,6 +373,23 @@ func (a *apiV1) libraryList(w http.ResponseWriter, r *http.Request) {
 	}
 	titles = filterRestrictedTitles(r.Context(), titles)
 	q := r.URL.Query()
+	since, ok := parseSince(r)
+	if !ok {
+		v1err(w, http.StatusBadRequest, "bad_request", "since must be RFC3339")
+		return
+	}
+	var ids []int64
+	if since != "" {
+		ids = make([]int64, 0, len(titles))
+		kept := titles[:0]
+		for _, t := range titles {
+			ids = append(ids, t.ID)
+			if database.FormatTime(t.UpdatedAt) >= since {
+				kept = append(kept, t)
+			}
+		}
+		titles = kept
+	}
 	titles = filterTitles(titles, libraryControlsFromQuery(q))
 	sortTitles(titles, v1SortKey(q.Get("sort")), q.Get("dir"))
 	total := len(titles)
@@ -391,7 +414,11 @@ func (a *apiV1) libraryList(w http.ResponseWriter, r *http.Request) {
 	for _, t := range titles {
 		items = append(items, toTitleDTO(t))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "next_cursor": next, "total": total})
+	resp := map[string]any{"items": items, "next_cursor": next, "total": total, "server_time": now}
+	if ids != nil {
+		resp["ids"] = ids
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (a *apiV1) libraryGet(w http.ResponseWriter, r *http.Request) {
