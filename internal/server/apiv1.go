@@ -25,7 +25,7 @@ const maxPageBytes = 64 << 20 // per-image download cap
 type apiV1 struct{ svc *service.JobService }
 
 // registerAPIV1 mounts the /api/v1 surface consumed by the native app.
-func registerAPIV1(mux *http.ServeMux, svc *service.JobService) {
+func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(context.Context) (service.RunSummary, error)) {
 	a := &apiV1{svc: svc}
 	mux.HandleFunc("GET /api/v1/meta", a.meta)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
@@ -46,6 +46,53 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("POST /api/v1/reader/chapters/{id}/unread", a.markUnread)
 	mux.HandleFunc("POST /api/v1/reader/titles/{id}/read-range", a.readRange)
 	mux.HandleFunc("POST /api/v1/reader/volumes/{id}/pages", a.markVolumePage)
+	mux.HandleFunc("POST /api/v1/reader/volumes/{id}/read", a.volumeSetRead(true))
+	mux.HandleFunc("POST /api/v1/reader/volumes/{id}/unread", a.volumeSetRead(false))
+	mux.HandleFunc("POST /api/v1/reader/titles/{id}/volumes/read-range", a.volumesReadRange)
+
+	mux.HandleFunc("PUT /api/v1/library/{id}/favourite", a.setFavourite(true))
+	mux.HandleFunc("DELETE /api/v1/library/{id}/favourite", a.setFavourite(false))
+	mux.HandleFunc("PATCH /api/v1/library/{id}", a.patchTitle)
+	mux.HandleFunc("DELETE /api/v1/library/{id}", a.deleteTitle)
+
+	mux.HandleFunc("GET /api/v1/collections", a.collectionsList)
+	mux.HandleFunc("POST /api/v1/collections", a.collectionCreate)
+	mux.HandleFunc("GET /api/v1/collections/{id}", a.collectionGet)
+	mux.HandleFunc("PATCH /api/v1/collections/{id}", a.collectionPatch)
+	mux.HandleFunc("DELETE /api/v1/collections/{id}", a.collectionDelete)
+	mux.HandleFunc("PUT /api/v1/collections/{id}/titles/{titleId}", a.collectionMember(true))
+	mux.HandleFunc("DELETE /api/v1/collections/{id}/titles/{titleId}", a.collectionMember(false))
+	mux.HandleFunc("PUT /api/v1/collections/smart/{key}/pins/{titleId}", a.smartPin(true))
+	mux.HandleFunc("DELETE /api/v1/collections/smart/{key}/pins/{titleId}", a.smartPin(false))
+
+	mux.HandleFunc("GET /api/v1/screens", a.screensList)
+	mux.HandleFunc("POST /api/v1/screens", a.screenSave)
+	mux.HandleFunc("PATCH /api/v1/screens/{id}", a.screenSave)
+	mux.HandleFunc("DELETE /api/v1/screens/{id}", a.screenDelete)
+	mux.HandleFunc("POST /api/v1/screens/reorder", a.screensReorder)
+
+	mux.HandleFunc("GET /api/v1/me/settings", a.meSettingsGet)
+	mux.HandleFunc("PUT /api/v1/me/settings", a.meSettingsPut)
+	mux.HandleFunc("GET /api/v1/anilist", a.anilistStatus)
+	mux.HandleFunc("POST /api/v1/anilist/sync", a.anilistSync)
+	mux.HandleFunc("DELETE /api/v1/anilist", a.anilistDisconnect)
+
+	mux.HandleFunc("GET /api/v1/wanted/search", a.wantedSearch)
+	mux.HandleFunc("GET /api/v1/wanted/trending", a.wantedTrending)
+	mux.HandleFunc("GET /api/v1/wanted", a.wantedList)
+	mux.HandleFunc("POST /api/v1/wanted", a.wantedAdd)
+	mux.HandleFunc("GET /api/v1/wanted/matches", a.matchesList)
+	mux.HandleFunc("POST /api/v1/wanted/matches", a.matchesFind)
+	mux.HandleFunc("POST /api/v1/wanted/track", a.track)
+
+	mux.HandleFunc("GET /api/v1/jobs", a.jobsList)
+	mux.HandleFunc("GET /api/v1/jobs/{id}", a.jobGet)
+	mux.HandleFunc("POST /api/v1/jobs/enqueue", a.jobEnqueue)
+	mux.HandleFunc("POST /api/v1/jobs/run", jobsRunV1(runJobs))
+	mux.HandleFunc("GET /api/v1/notifications", a.notificationsList)
+	mux.HandleFunc("POST /api/v1/notifications/read", a.notificationsRead)
+	mux.HandleFunc("DELETE /api/v1/notifications/{id}", a.notificationDelete)
+	mux.HandleFunc("GET /api/v1/sources", a.sourcesPick)
 }
 
 // v1err writes the {error, code} envelope shared by every v1 endpoint.

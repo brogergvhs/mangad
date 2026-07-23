@@ -1721,9 +1721,15 @@ func (s *JobService) SearchAniList(ctx context.Context, query string, limit int,
 	return s.want.SearchAniList(ctx, query, limit, filter)
 }
 
-// AddAniListWanted adds an AniList title to wanted.
-func (s *JobService) AddAniListWanted(ctx context.Context, anilistID int) (catalog.Manga, error) {
-	return s.want.AddAniListWanted(ctx, anilistID)
+// AddAniListWanted adds an AniList title to wanted; a non-nil allowed guard is
+// checked before anything is persisted.
+func (s *JobService) AddAniListWanted(ctx context.Context, anilistID int, allowed func(catalog.Manga) bool) (catalog.Manga, error) {
+	return s.want.AddAniListWanted(ctx, anilistID, allowed)
+}
+
+// GetMatch returns one source match.
+func (s *JobService) GetMatch(ctx context.Context, id int64) (catalog.Match, error) {
+	return s.want.catalog.GetMatch(ctx, id)
 }
 
 // ListWanted returns wanted canonical titles.
@@ -1763,6 +1769,11 @@ func (s *JobService) Volumes(ctx context.Context, titleID int64) ([]library.Volu
 
 func (s *JobService) GetVolume(ctx context.Context, id int64) (library.Volume, error) {
 	return s.lib.GetVolume(ctx, id)
+}
+
+// TitleOwners maps title id to the user that added it (0 = env admin).
+func (s *JobService) TitleOwners(ctx context.Context) (map[int64]int64, error) {
+	return s.lib.TitleOwners(ctx)
 }
 
 func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) error {
@@ -2383,7 +2394,7 @@ func (s *JobService) runClaimedJob(ctx, markCtx context.Context, cfg *config.Con
 		}
 		if latest, gerr := s.jobs.Get(markCtx, job.ID); gerr == nil && latest.Status == "dead" {
 			msg := fmt.Sprintf("Job #%d (%s) failed after retries: %s", job.ID, job.Type, truncateError(err.Error()))
-			_ = s.AddNotification(markCtx, "error", msg, job.ID)
+			_ = s.AddNotification(markCtx, 0, "error", msg, job.ID)
 		}
 		return 0, 1, nil
 	}

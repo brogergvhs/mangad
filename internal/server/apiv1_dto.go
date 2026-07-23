@@ -1,10 +1,15 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/brogergvhs/kaodoku/internal/database"
+	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/library"
+	"github.com/brogergvhs/kaodoku/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/sources"
 )
 
 type titleDTO struct {
@@ -70,6 +75,7 @@ type chapterProgressDTO struct {
 	ReadPages       int        `json:"read_pages"`
 	LastPage        int        `json:"last_page"`
 	Completed       bool       `json:"completed"`
+	Manual          bool       `json:"manual"`
 	FirstUnreadPage int        `json:"first_unread_page"`
 	LastReadAt      *time.Time `json:"last_read_at,omitempty"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
@@ -79,7 +85,7 @@ func toChapterProgressDTO(c library.ChapterReadStatus) chapterProgressDTO {
 	return chapterProgressDTO{
 		ID: c.ID, TitleID: c.TitleID, Label: c.Label, Title: c.Title, NumberMain: c.NumberMain,
 		Downloaded: c.Downloaded, Bytes: c.Bytes, Pages: c.Pages, TotalPages: c.TotalPages,
-		ReadPages: c.ReadPages, LastPage: c.LastPage, Completed: c.Completed,
+		ReadPages: c.ReadPages, LastPage: c.LastPage, Completed: c.Completed, Manual: c.Manual,
 		FirstUnreadPage: c.FirstUnreadPage, LastReadAt: c.LastReadAt, CompletedAt: c.CompletedAt,
 	}
 }
@@ -126,4 +132,84 @@ func toVolumeDTO(v library.Volume) volumeDTO {
 		CustomCover: v.CustomCover, Read: v.Read, ReadPages: v.ReadPages, LastPage: v.LastPage,
 		CoverURL: fmt.Sprintf("/api/v1/volumes/%d/cover", v.ID),
 	}
+}
+
+type jobDTO struct {
+	ID        int64     `json:"id"`
+	Type      string    `json:"type"`
+	Status    string    `json:"status"`
+	Attempts  int       `json:"attempts"`
+	LastError string    `json:"last_error"`
+	ParentID  int64     `json:"parent_id"`
+	RunAfter  time.Time `json:"run_after"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	TitleID   int64     `json:"title_id,omitempty"`
+	SourceID  string    `json:"source_id,omitempty"`
+	CatalogID int64     `json:"catalog_id,omitempty"`
+}
+
+func toJobDTO(j jobs.Job) jobDTO {
+	var p service.JobPayload
+	_ = json.Unmarshal([]byte(j.Payload), &p)
+	return jobDTO{
+		ID: j.ID, Type: j.Type, Status: j.Status, Attempts: j.Attempts, LastError: j.LastError,
+		ParentID: j.ParentID, RunAfter: j.RunAfter, CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt,
+		TitleID: p.TitleID, SourceID: p.SourceID, CatalogID: p.CatalogID,
+	}
+}
+
+type notificationDTO struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	Level     string `json:"level"`
+	Message   string `json:"message"`
+	JobID     int64  `json:"job_id"`
+	Read      bool   `json:"read"`
+	CreatedAt string `json:"created_at"`
+}
+
+func toNotificationDTO(n service.Notification) notificationDTO {
+	created := n.CreatedAt
+	if t, err := database.ParseTime(n.CreatedAt); err == nil && !t.IsZero() {
+		created = t.UTC().Format(time.RFC3339)
+	}
+	return notificationDTO{ID: n.ID, UserID: n.UserID, Level: n.Level, Message: n.Message,
+		JobID: n.JobID, Read: n.ReadAt != "", CreatedAt: created}
+}
+
+type collectionDTO struct {
+	ID       int64   `json:"id"`
+	Name     string  `json:"name"`
+	Kind     string  `json:"kind"`
+	TitleIDs []int64 `json:"title_ids,omitempty"`
+}
+
+type screenDTO struct {
+	ID     int64                `json:"id"`
+	Name   string               `json:"name"`
+	Config library.ScreenConfig `json:"config"`
+}
+
+func toScreenDTO(s library.Screen) screenDTO {
+	return screenDTO{ID: s.ID, Name: s.Name, Config: s.Config}
+}
+
+// sourcePickDTO is the minimal source view for users without sources.manage.
+type sourcePickDTO struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
+func toSourcePickDTO(s sources.Source) sourcePickDTO {
+	return sourcePickDTO{ID: s.ID, Name: s.Name, Enabled: s.Enabled}
+}
+
+type userSettingsDTO struct {
+	ReaderMode string `json:"reader_mode,omitempty"`
+	ReaderDir  string `json:"reader_dir,omitempty"`
+	ReaderFit  string `json:"reader_fit,omitempty"`
+	ReaderZoom *float64 `json:"reader_zoom,omitempty"`
+	Theme      string `json:"theme,omitempty"`
 }

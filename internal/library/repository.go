@@ -1234,7 +1234,7 @@ func (r *Repository) listReadChapters(ctx context.Context, where string, args ..
 			c.discovered_at, c.updated_at,
 			COALESCE(d.status, ''), COALESCE(d.output_file, ''), COALESCE(d.bytes, 0), COALESCE(d.pages, 0),
 			COALESCE(rp.last_page, 0), COALESCE(rp.read_pages, 0), COALESCE(NULLIF(rp.total_pages, 0), d.pages, 0),
-			COALESCE(rp.completed, 0), rp.last_read_at, rp.completed_at
+			COALESCE(rp.completed, 0), COALESCE(rp.manual, 0), rp.last_read_at, rp.completed_at
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
 		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
@@ -1250,16 +1250,17 @@ func (r *Repository) listReadChapters(ctx context.Context, where string, args ..
 	for rows.Next() {
 		var cs ChapterReadStatus
 		var discoveredAt, updatedAt, status string
-		var completed int
+		var completed, manual int
 		var lastReadAt, completedAt sql.NullString
 		if err := rows.Scan(&cs.ID, &cs.TitleID, &cs.Label, &cs.Title, &cs.URL, &cs.NumberMain,
 			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt,
 			&status, &cs.OutputFile, &cs.Bytes, &cs.Pages,
-			&cs.LastPage, &cs.ReadPages, &cs.TotalPages, &completed, &lastReadAt, &completedAt); err != nil {
+			&cs.LastPage, &cs.ReadPages, &cs.TotalPages, &completed, &manual, &lastReadAt, &completedAt); err != nil {
 			return nil, fmt.Errorf("scan read chapter: %w", err)
 		}
 		cs.Downloaded = status == "completed"
 		cs.Completed = completed != 0
+		cs.Manual = manual != 0
 		cs.DiscoveredAt, _ = database.ParseTime(discoveredAt)
 		cs.UpdatedAt, _ = database.ParseTime(updatedAt)
 		cs.LastReadAt = parseOptionalTime(lastReadAt)

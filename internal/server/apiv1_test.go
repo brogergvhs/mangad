@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brogergvhs/kaodoku/internal/auth"
 	chaptersPkg "github.com/brogergvhs/kaodoku/internal/chapters"
 	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/library"
@@ -188,5 +189,174 @@ func TestAPIV1ReaderAndLibrary(t *testing.T) {
 	}
 	if rec := do(t, api, http.MethodGet, "/api/v1/library/999999", "", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("missing title status = %d", rec.Code)
+	}
+}
+
+func seedTitle(t *testing.T, dbPath, url, name string, ownerID int64) int64 {
+	t.Helper()
+	ctx := auth.WithUser(context.Background(), &auth.User{ID: ownerID})
+	db, err := database.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	title, err := library.NewRepository(db).AddTitle(ctx, library.AddTitleParams{SourceURL: url, DisplayTitle: name, Monitored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return title.ID
+}
+
+func TestAPIV1Actions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "kaodoku.db")
+	titleID := seedTitle(t, dbPath, "https://example.test/m", "Example", 1)
+	svc, closeDB, err := service.OpenJobs(context.Background(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeDB()
+	api := New(svc,
+		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+	)
+	tid := strconv.FormatInt(titleID, 10)
+
+	if rec := do(t, api, http.MethodPut, "/api/v1/library/"+tid+"/favourite", "", nil); rec.Code != http.StatusOK {
+		t.Fatalf("favourite status = %d; %s", rec.Code, rec.Body.String())
+	}
+	var tdto titleDTO
+	rec := do(t, api, http.MethodGet, "/api/v1/library/"+tid, "", nil)
+	_ = json.NewDecoder(rec.Body).Decode(&tdto)
+	if !tdto.Favourite {
+		t.Fatal("favourite not set")
+	}
+	rec = do(t, api, http.MethodPatch, "/api/v1/library/"+tid, "", map[string]any{"monitored": false})
+	_ = json.NewDecoder(rec.Body).Decode(&tdto)
+	if rec.Code != http.StatusOK || tdto.Monitored {
+		t.Fatalf("patch monitored = %d %+v", rec.Code, tdto.Monitored)
+	}
+
+	var col collectionDTO
+	rec = do(t, api, http.MethodPost, "/api/v1/collections", "", map[string]string{"name": "Faves"})
+	_ = json.NewDecoder(rec.Body).Decode(&col)
+	if rec.Code != http.StatusCreated || col.ID == 0 {
+		t.Fatalf("collection create = %d %+v", rec.Code, col)
+	}
+	cid := strconv.FormatInt(col.ID, 10)
+	if rec := do(t, api, http.MethodPut, "/api/v1/collections/"+cid+"/titles/"+tid, "", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("add member = %d", rec.Code)
+	}
+	rec = do(t, api, http.MethodGet, "/api/v1/collections/"+cid, "", nil)
+	_ = json.NewDecoder(rec.Body).Decode(&col)
+	if len(col.TitleIDs) != 1 || col.TitleIDs[0] != titleID {
+		t.Fatalf("members = %+v", col.TitleIDs)
+	}
+
+	var scr screenDTO
+	rec = do(t, api, http.MethodPost, "/api/v1/screens", "", map[string]any{"name": "S1", "config": map[string]any{"sort": "title"}})
+	_ = json.NewDecoder(rec.Body).Decode(&scr)
+	if rec.Code != http.StatusOK || scr.ID == 0 || scr.Config.Sort != "title" {
+		t.Fatalf("screen save = %d %+v", rec.Code, scr)
+	}
+
+	var us userSettingsDTO
+	rec = do(t, api, http.MethodPut, "/api/v1/me/settings", "", map[string]any{"reader_mode": "paged", "theme": "nord", "reader_zoom": 1.5})
+	_ = json.NewDecoder(rec.Body).Decode(&us)
+	if rec.Code != http.StatusOK || us.ReaderMode != "paged" || us.Theme != "nord" || us.ReaderZoom == nil || *us.ReaderZoom != 1.5 {
+		t.Fatalf("settings = %d %+v", rec.Code, us)
+	}
+	if rec := do(t, api, http.MethodPut, "/api/v1/me/settings", "", map[string]string{"theme": "bogus"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bogus theme status = %d", rec.Code)
+	}
+
+	rec = do(t, api, http.MethodGet, "/api/v1/sources", "", nil)
+	var srcs struct {
+		Items []map[string]any `json:"items"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&srcs)
+	if rec.Code != http.StatusOK || len(srcs.Items) == 0 {
+		t.Fatalf("sources = %d %+v", rec.Code, srcs)
+	}
+	if _, leaked := srcs.Items[0]["base_url"]; leaked || len(srcs.Items[0]) != 3 {
+		t.Fatalf("source picker leaks fields: %+v", srcs.Items[0])
+	}
+
+	rec = do(t, api, http.MethodGet, "/api/v1/notifications", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("notifications = %d", rec.Code)
+	}
+}
+
+func TestAPIV1EnqueueOwnership(t *testing.T) {
+	t.Setenv("KAODOKU_ADMIN_USER", "boss")
+	t.Setenv("KAODOKU_ADMIN_PASSWORD", "secret123")
+	dbPath := filepath.Join(t.TempDir(), "kaodoku.db")
+	svc, closeDB, err := service.OpenJobs(context.Background(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeDB()
+	ctx := context.Background()
+	roles, err := svc.Auth().ListRoles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var memberRole int64
+	for _, ro := range roles {
+		if ro.Name == "member" {
+			memberRole = ro.ID
+		}
+	}
+	if err := svc.Auth().CreateUser(ctx, "reader", "pass12345", memberRole, auth.ContentGuards{}); err != nil {
+		t.Fatal(err)
+	}
+	users, _ := svc.Auth().ListUsers(ctx)
+	var memberID int64
+	for _, u := range users {
+		if u.Username == "reader" {
+			memberID = u.ID
+		}
+	}
+	adminTitle := seedTitle(t, dbPath, "https://x.test/a", "AdminTitle", 1)
+	memberTitle := seedTitle(t, dbPath, "https://x.test/b", "MemberTitle", memberID)
+
+	api := New(svc,
+		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+	)
+	login := func(user, pass string) string {
+		rec := do(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": user, "password": pass})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("login %s = %d", user, rec.Code)
+		}
+		var out struct {
+			Token string `json:"token"`
+		}
+		_ = json.NewDecoder(rec.Body).Decode(&out)
+		return out.Token
+	}
+	adminTok, memberTok := login("boss", "secret123"), login("reader", "pass12345")
+
+	enqueue := func(token string, titleID int64, typ string) int {
+		rec := do(t, api, http.MethodPost, "/api/v1/jobs/enqueue", token, map[string]any{"type": typ, "title_id": titleID})
+		return rec.Code
+	}
+	if code := enqueue(memberTok, memberTitle, "refresh_title"); code != http.StatusCreated {
+		t.Fatalf("member own title enqueue = %d, want 201", code)
+	}
+	if code := enqueue(memberTok, adminTitle, "refresh_title"); code != http.StatusForbidden {
+		t.Fatalf("member foreign title enqueue = %d, want 403", code)
+	}
+	if code := enqueue(memberTok, 0, "scan_downloads"); code != http.StatusForbidden {
+		t.Fatalf("member global enqueue = %d, want 403", code)
+	}
+	if code := enqueue(adminTok, adminTitle, "refresh_title"); code != http.StatusCreated {
+		t.Fatalf("admin enqueue = %d, want 201", code)
+	}
+	if rec := do(t, api, http.MethodPost, "/api/v1/jobs/run", memberTok, nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("member jobs/run = %d, want 403", rec.Code)
 	}
 }

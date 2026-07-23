@@ -32,7 +32,7 @@ func New(
 ) http.Handler {
 	mux := http.NewServeMux()
 	registerUI(mux, svc, runJobs)
-	registerAPIV1(mux, svc)
+	registerAPIV1(mux, svc, runJobs)
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -284,7 +284,9 @@ func New(
 				writeError(w, http.StatusBadRequest, "invalid json")
 				return
 			}
-			item, err := svc.AddAniListWanted(r.Context(), req.AniListID)
+			item, err := svc.AddAniListWanted(r.Context(), req.AniListID, func(m catalog.Manga) bool {
+				return contentAllowed(r.Context(), m.IsAdult, mangaContentTags(m))
+			})
 			if err != nil {
 				writeError(w, http.StatusBadGateway, err.Error())
 				return

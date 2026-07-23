@@ -77,6 +77,7 @@ type ChapterReadStatus struct {
 	TotalPages      int
 	LastPage        int
 	Completed       bool
+	Manual          bool // completed via bulk/AniList mark, not page-by-page reading
 	FirstUnreadPage int
 	LastReadAt      *time.Time
 	CompletedAt     *time.Time

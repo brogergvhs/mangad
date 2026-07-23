@@ -65,11 +65,31 @@ func requiredPerm(r *http.Request) string {
 	switch {
 	case p == "/management" || p == "/metrics" || p == "/ui/metrics":
 		return ""
-	case p == "/api/v1/meta" || p == "/api/v1/auth/login" || p == "/api/v1/me" || p == "/api/v1/auth/token":
+	case p == "/api/v1/meta" || p == "/api/v1/auth/login" || p == "/api/v1/me" || p == "/api/v1/auth/token" || p == "/api/v1/me/settings":
 		return "" // public or any-signed-in
+	case p == "/api/v1/jobs/run":
+		return auth.PermJobsManage
+	case p == "/api/v1/jobs/enqueue" || strings.HasPrefix(p, "/api/v1/notifications") && r.Method == http.MethodGet:
+		return "" // ownership / visibility scoping in the handler
+	case strings.HasPrefix(p, "/api/v1/notifications"):
+		return auth.PermJobsManage
+	case strings.HasPrefix(p, "/api/v1/jobs"):
+		return auth.PermJobsView
+	case p == "/api/v1/wanted/track":
+		return auth.PermLibraryManage
+	case strings.HasPrefix(p, "/api/v1/wanted"):
+		return auth.PermLibraryAdd
+	case strings.HasPrefix(p, "/api/v1/anilist"):
+		return auth.PermReaderUse
 	case strings.HasPrefix(p, "/api/v1/reader/"):
 		return auth.PermReaderUse
-	case strings.HasPrefix(p, "/api/v1/library") || strings.HasPrefix(p, "/api/v1/covers/") || strings.HasPrefix(p, "/api/v1/volumes/"):
+	case strings.HasPrefix(p, "/api/v1/library") && strings.HasSuffix(p, "/favourite"):
+		return auth.PermLibraryView
+	case strings.HasPrefix(p, "/api/v1/library") && r.Method != http.MethodGet:
+		return auth.PermLibraryManage
+	case strings.HasPrefix(p, "/api/v1/library") || strings.HasPrefix(p, "/api/v1/covers/") ||
+		strings.HasPrefix(p, "/api/v1/volumes/") || strings.HasPrefix(p, "/api/v1/collections") ||
+		strings.HasPrefix(p, "/api/v1/screens") || p == "/api/v1/sources":
 		return auth.PermLibraryView
 	case p == "/logout" || p == "/" || strings.HasPrefix(p, "/anilist/") || strings.HasPrefix(p, "/ui/anilist/") || strings.HasPrefix(p, "/ui/account"):
 		return "" // any signed-in user (dashboard sections gate individually)
