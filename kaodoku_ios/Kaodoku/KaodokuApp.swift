@@ -6,18 +6,21 @@ struct KaodokuApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if app.connected {
-                TabView {
-                    LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }
-                    SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }
-                    DownloadsView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+            Group {
+                if app.connected {
+                    TabView {
+                        LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }
+                        SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }
+                        DownloadsView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+                    }
+                    .task { await app.loadMe() }
+                } else {
+                    ConnectView()
                 }
-                .environment(app)
-                .task { await app.loadMe() }
-            } else {
-                ConnectView()
-                    .environment(app)
             }
+            .environment(app)
+            .tint(Theme.primary)
+            .preferredColorScheme(.dark)
         }
     }
 }

@@ -1,7 +1,8 @@
 import SwiftUI
 
 // DownloadsView mirrors the Library grid over local content: cover cards with
-// chapter counts, sizes, and progress, then an offline title page and reader.
+// read progress of the downloaded chapters, sizes, then a title page identical
+// to the online one and the offline reader.
 struct DownloadsView: View {
     @Environment(AppState.self) private var app
 
@@ -25,6 +26,7 @@ struct DownloadsView: View {
                 }
                 .padding(.horizontal)
             }
+            .nordScreen()
             .navigationTitle("Downloads")
             .navigationDestination(for: Int64.self) { LocalTitleView(titleId: $0) }
             .onAppear { app.store.prune() }
@@ -32,8 +34,8 @@ struct DownloadsView: View {
     }
 }
 
-// LocalTitleCard matches TitleCard's web-card layout with local data:
-// downloaded-chapter count and on-device size in the stats line.
+// LocalTitleCard matches TitleCard's web-card layout. The bar covers only the
+// downloaded chapters: green = read share of what's on the device.
 struct LocalTitleCard: View {
     let title: LocalStore.LocalTitle
 
@@ -45,20 +47,23 @@ struct LocalTitleCard: View {
                 .lineLimit(2, reservesSpace: true)
                 .foregroundStyle(.primary)
             HStack(alignment: .firstTextBaseline) {
-                Text("\(title.entries.count) ch").lineLimit(1)
+                Text("\(title.readCount)/\(title.entries.count) read").lineLimit(1)
                 Spacer(minLength: 8)
                 Text(humanBytes(title.size))
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
-            BarView(read: pct(title.info.readCount, title.info.discoveredCount),
-                    full: pct(title.info.completedCount, title.info.discoveredCount))
+            BarView(read: pct(Int64(title.readCount), Int64(title.entries.count)), full: 1)
         }
     }
 }
 
-// LocalTitleView is the offline title page: web-style header from the stored
-// snapshot, then chapter rows with pages and file sizes.
+extension LocalStore.LocalTitle {
+    var readCount: Int { entries.count { $0.isRead } }
+}
+
+// LocalTitleView is the offline title page, identical in layout to
+// TitleDetailView: header, content header with the Read button, chapter rows.
 struct LocalTitleView: View {
     @Environment(AppState.self) private var app
     let titleId: Int64
@@ -69,47 +74,26 @@ struct LocalTitleView: View {
     var body: some View {
         List {
             if let title {
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Cover(path: "", adult: title.info.isAdult, local: title.coverURL)
-                                .frame(width: 110)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(title.info.name).font(.title3.bold())
-                                Text("\(title.entries.count) chapters · \(humanBytes(title.size)) on device")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                if title.info.discoveredCount > 0 {
-                                    BarView(read: pct(title.info.readCount, title.info.discoveredCount),
-                                            full: pct(title.info.completedCount, title.info.discoveredCount))
-                                    Text(progressLine(title.info)).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        if let detail = title.info.detail {
-                            MangaDetailBlock(manga: detail)
-                        }
-                    }
-                }
+                Section { header(title) }
+                    .nordRows()
+                Section { contentHeader(title) }
+                    .listRowBackground(Color.clear)
                 Section("Chapters") {
                     ForEach(title.entries) { entry in
                         Button {
                             reading = entry
                         } label: {
-                            HStack {
-                                Text("Chapter \(entry.label)")
-                                Spacer()
-                                Text("\(entry.pages) pages · \(humanBytes(entry.size))")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                            ChapterRow(chapter: chapterProgress(entry), local: true)
                         }
-                        .foregroundStyle(.primary)
                     }
                     .onDelete { offsets in
                         for i in offsets { app.store.delete(title.entries[i].id) }
                     }
                 }
+                .nordRows()
             }
         }
+        .nordScreen()
         .navigationTitle(title?.info.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -127,9 +111,44 @@ struct LocalTitleView: View {
         }
     }
 
-    private func progressLine(_ info: LocalStore.TitleInfo) -> String {
-        var parts = ["\(info.readCount)/\(info.discoveredCount) read"]
-        if info.missingCount > 0 { parts.append("\(info.missingCount) missing") }
-        return parts.joined(separator: " · ") + " · last sync"
+    private func header(_ title: LocalStore.LocalTitle) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Spacer()
+                Cover(path: "", adult: title.info.isAdult, local: title.coverURL).frame(width: 170)
+                Spacer()
+            }
+            Text(title.info.name).font(.title2.bold())
+            VStack(alignment: .leading, spacing: 4) {
+                BarView(read: pct(Int64(title.readCount), Int64(title.entries.count)), full: 1)
+                Text("\(title.readCount)/\(title.entries.count) read · \(humanBytes(title.size)) on device")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let detail = title.info.detail {
+                MangaDetailBlock(manga: detail)
+            }
+        }
+    }
+
+    private func contentHeader(_ title: LocalStore.LocalTitle) -> some View {
+        VStack(spacing: 10) {
+            if let next = title.entries.first(where: { !$0.isRead }) ?? title.entries.first {
+                Button {
+                    reading = next
+                } label: {
+                    Text(title.entries.contains { ($0.readPages ?? 0) > 0 || $0.isRead } ? "Continue reading" : "Read")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    // chapterProgress adapts a local entry to the shared ChapterRow.
+    private func chapterProgress(_ e: LocalStore.Entry) -> ChapterProgress {
+        ChapterProgress(id: e.id, titleId: e.titleId, label: e.label, title: "", numberMain: 0,
+                        downloaded: true, bytes: e.size, pages: e.pages, totalPages: e.pages,
+                        readPages: e.readPages ?? 0, completed: e.isRead, manual: false,
+                        firstUnreadPage: 0, lastReadAt: nil)
     }
 }

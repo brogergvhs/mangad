@@ -52,7 +52,7 @@ struct ReaderView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(pages.indices, id: \.self) { i in
-                            ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 6)
+                            ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
                                 .onAppear { onSettle(i) }
                         }
                     }
@@ -156,6 +156,7 @@ struct ReaderView: View {
     }
 
     private func mark(_ p: PageRef) {
+        if !volumes { app.store.markLocal(chapterID: p.chapterID, page: p.page, total: p.total) }
         Task {
             do {
                 guard let api = app.api else { throw APIError.badURL }

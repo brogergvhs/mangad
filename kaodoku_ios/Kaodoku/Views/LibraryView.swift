@@ -41,7 +41,7 @@ struct Cover: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.red, lineWidth: adult ? 2 : 0))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.error, lineWidth: adult ? 2 : 0))
     }
 }
 
@@ -74,13 +74,13 @@ struct BarView: View {
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
-                Rectangle().fill(.green).frame(width: geo.size.width * min(read, 1))
-                Rectangle().fill(.blue).frame(width: geo.size.width * max(min(full, 1) - min(read, 1), 0))
+                Rectangle().fill(Theme.success).frame(width: geo.size.width * min(read, 1))
+                Rectangle().fill(Theme.primary).frame(width: geo.size.width * max(min(full, 1) - min(read, 1), 0))
                 Color.clear
             }
         }
         .frame(height: 6)
-        .background(Color(.systemFill))
+        .background(Theme.neutral)
         .clipShape(Capsule())
     }
 }
@@ -98,13 +98,13 @@ struct Badge: View {
             .padding(.vertical, 3)
             .background {
                 switch style {
-                case .soft: Capsule().fill(.blue.opacity(0.15))
-                case .ghost: Capsule().fill(Color(.systemFill))
-                case .warning: Capsule().fill(.yellow.opacity(0.2))
-                case .outline: Capsule().strokeBorder(Color(.separator))
+                case .soft: Capsule().fill(Theme.primary.opacity(0.18))
+                case .ghost: Capsule().fill(Theme.neutral)
+                case .warning: Capsule().fill(Theme.yellow.opacity(0.2))
+                case .outline: Capsule().strokeBorder(Theme.line)
                 }
             }
-            .foregroundStyle(style == .soft ? .blue : style == .warning ? .orange : .primary)
+            .foregroundStyle(style == .soft ? Theme.primary : style == .warning ? Theme.warning : .primary)
     }
 }
 
@@ -174,14 +174,29 @@ struct TitleStats: View {
 
 func pct(_ a: Int64, _ b: Int64) -> Double { b > 0 ? Double(a) / Double(b) : 0 }
 
+// LibraryView mirrors the web library: server-side search, the web's filter
+// panel (favourites/monitored/progress/content/tags), the web's sort options,
+// and the web default order (last added, newest first).
 struct LibraryView: View {
     @Environment(AppState.self) private var app
     @State private var titles: [Title] = []
     @State private var query = ""
     @State private var loading = true
+    @State private var nextCursor = ""
+    @State private var sort = "added"
+    @State private var dir = "desc"
+    @State private var fav = false
+    @State private var monitored = ""
+    @State private var progress = "all"
+    @State private var content = "all"
+    @State private var includeTags: Set<String> = []
+    @State private var excludeTags: Set<String> = []
+    @State private var showFilters = false
+    @State private var searchTask: Task<Void, Never>?
 
-    private var shown: [Title] {
-        query.isEmpty ? titles : titles.filter { $0.displayTitle.localizedCaseInsensitiveContains(query) }
+    private var filtersActive: Bool {
+        fav || !monitored.isEmpty || progress != "all" || content != "all"
+            || !includeTags.isEmpty || !excludeTags.isEmpty || sort != "added" || dir != "desc"
     }
 
     var body: some View {
@@ -189,13 +204,13 @@ struct LibraryView: View {
             ScrollView {
                 if loading {
                     ProgressView().padding(.top, 80)
-                } else if shown.isEmpty {
-                    Text(titles.isEmpty ? "No titles in the library yet." : "No matches.")
+                } else if titles.isEmpty {
+                    Text(query.isEmpty && !filtersActive ? "No titles in the library yet." : "No matches.")
                         .foregroundStyle(.secondary)
                         .padding(.top, 80)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
-                    ForEach(shown) { title in
+                    ForEach(titles) { title in
                         NavigationLink(value: title) {
                             TitleCard(title: title)
                         }
@@ -203,13 +218,26 @@ struct LibraryView: View {
                     }
                 }
                 .padding(.horizontal)
+                if !nextCursor.isEmpty && !loading {
+                    Button("Load more") { Task { await load(more: true) } }
+                        .buttonStyle(.bordered)
+                        .padding()
+                }
             }
+            .nordScreen()
             .navigationTitle("Library")
             .navigationDestination(for: Title.self) { TitleDetailView(titleID: $0.id) }
             .searchable(text: $query)
+            .onChange(of: query) { debounceReload() }
             .refreshable { await load() }
             .task { await load() }
             .toolbar {
+                Button {
+                    showFilters = true
+                } label: {
+                    Image(systemName: filtersActive
+                        ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }
                 Menu {
                     if let me = app.me {
                         Text(me.user.username)
@@ -219,20 +247,151 @@ struct LibraryView: View {
                     Image(systemName: "person.circle")
                 }
             }
+            .sheet(isPresented: $showFilters, onDismiss: { Task { await load() } }) {
+                LibraryFiltersSheet(sort: $sort, dir: $dir, fav: $fav, monitored: $monitored,
+                                    progress: $progress, content: $content,
+                                    includeTags: $includeTags, excludeTags: $excludeTags)
+            }
         }
     }
 
-    private func load() async {
+    private func debounceReload() {
+        searchTask?.cancel()
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await load()
+        }
+    }
+
+    private func load(more: Bool = false) async {
         guard let api = app.api else { return }
+        var params = ["limit=100", "sort=\(sort)", "dir=\(dir)"]
+        if more, !nextCursor.isEmpty { params.append("cursor=\(nextCursor)") }
+        if let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), !query.isEmpty {
+            params.append("q=\(q)")
+        }
+        if fav { params.append("favourite=1") }
+        if !monitored.isEmpty { params.append("monitored=\(monitored)") }
+        if progress != "all" { params.append("progress=\(progress)") }
+        if content != "all" { params.append("content=\(content)") }
+        if !includeTags.isEmpty { params.append("include_tags=\(csvTags(includeTags))") }
+        if !excludeTags.isEmpty { params.append("exclude_tags=\(csvTags(excludeTags))") }
         do {
-            let page: TitlePage = try await api.get("/api/v1/library?limit=200&sort=title")
-            titles = page.items
+            let page: TitlePage = try await api.get("/api/v1/library?" + params.joined(separator: "&"))
+            titles = more ? titles + page.items : page.items
+            nextCursor = page.nextCursor
         } catch APIError.unauthorized {
             app.signOut()
         } catch {
             app.errorMessage = error.localizedDescription
         }
         loading = false
+    }
+}
+
+func csvTags(_ set: Set<String>) -> String {
+    set.sorted().joined(separator: ",").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+}
+
+// LibraryFiltersSheet is the web library filter panel.
+struct LibraryFiltersSheet: View {
+    @Environment(AppState.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @Binding var sort: String
+    @Binding var dir: String
+    @Binding var fav: Bool
+    @Binding var monitored: String
+    @Binding var progress: String
+    @Binding var content: String
+    @Binding var includeTags: Set<String>
+    @Binding var excludeTags: Set<String>
+    @State private var options: [TagOption] = []
+    @State private var filter = ""
+
+    private var shown: [TagOption] {
+        filter.isEmpty ? options : options.filter { $0.name.localizedCaseInsensitiveContains(filter) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Group {
+                    Section("Sort") {
+                        Picker("Sort by", selection: $sort) {
+                            Text("Last added").tag("added")
+                            Text("Title").tag("title")
+                            Text("Missing chapters").tag("missing")
+                            Text("Failed chapters").tag("failed")
+                            Text("Total chapters").tag("chapters")
+                            Text("Total volumes").tag("volumes")
+                            Text("Size (total)").tag("size")
+                            Text("Size (chapters)").tag("size-chapters")
+                            Text("Size (volumes)").tag("size-volumes")
+                            Text("Rating").tag("rating")
+                            Text("Updated").tag("updated")
+                        }
+                        Picker("Direction", selection: $dir) {
+                            Text("Descending").tag("desc")
+                            Text("Ascending").tag("asc")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    Section("Filters") {
+                        Toggle("Favourites only", isOn: $fav)
+                        Picker("Monitored", selection: $monitored) {
+                            Text("All").tag("")
+                            Text("Monitored").tag("1")
+                            Text("Not monitored").tag("0")
+                        }
+                        Picker("Progress", selection: $progress) {
+                            Text("All").tag("all")
+                            Text("Missing").tag("missing")
+                            Text("Complete").tag("complete")
+                            Text("No chapters").tag("empty")
+                        }
+                        Picker("Content", selection: $content) {
+                            Text("All").tag("all")
+                            Text("With chapters").tag("chapters")
+                            Text("Without chapters").tag("no-chapters")
+                            Text("With volumes").tag("volumes")
+                            Text("Without volumes").tag("no-volumes")
+                        }
+                    }
+                    Section("Genres & tags") {
+                        TextField("Filter…", text: $filter)
+                        ForEach(shown) { option in
+                            HStack {
+                                Text(option.name)
+                                if option.kind == "genre" {
+                                    Text("genre").font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                TagCycle(name: option.name, include: $includeTags, exclude: $excludeTags)
+                            }
+                        }
+                    }
+                }
+                .nordRows()
+            }
+            .nordScreen()
+            .navigationTitle("Library filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        sort = "added"; dir = "desc"; fav = false; monitored = ""
+                        progress = "all"; content = "all"; includeTags = []; excludeTags = []
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .task {
+                guard options.isEmpty, let api = app.api else { return }
+                struct TagList: Decodable { var items: [TagOption] }
+                options = ((try? await api.get("/api/v1/tags") as TagList) ?? TagList(items: [])).items
+            }
+        }
     }
 }
 

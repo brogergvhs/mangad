@@ -10,6 +10,7 @@ struct ConnectView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Group {
                 Section("Server") {
                     TextField("http://192.168.1.10:8080", text: $server)
                         .keyboardType(.URL)
@@ -23,7 +24,7 @@ struct ConnectView: View {
                     SecureField("Password", text: $password)
                 }
                 if let msg = app.errorMessage {
-                    Text(msg).foregroundStyle(.red)
+                    Text(msg).foregroundStyle(Theme.error)
                 }
                 Button {
                     busy = true
@@ -39,7 +40,10 @@ struct ConnectView: View {
                     }
                 }
                 .disabled(server.isEmpty || busy)
+                }
+                .nordRows()
             }
+            .nordScreen()
             .navigationTitle("Kaodoku")
         }
     }

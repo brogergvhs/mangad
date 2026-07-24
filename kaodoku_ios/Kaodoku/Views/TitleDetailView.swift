@@ -2,29 +2,28 @@ import SwiftUI
 
 struct TitleDetailView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.dismiss) private var dismiss
     let titleID: Int64
     @State private var progress: TitleReadProgress?
     @State private var volumes = false
     @State private var readerChapter: ChapterProgress?
     @State private var note: String?
     @State private var downloading = false
+    @State private var anilistConnected = false
+    @State private var showRange = false
+    @State private var showSettings = false
+    @State private var showCollections = false
+    @State private var showRemove = false
 
     private var canManage: Bool { app.me?.can("library.manage") == true }
 
     var body: some View {
         List {
             if let p = progress {
-                Section {
-                    header(p)
-                }
-                if p.title.volumeCount > 0 {
-                    Picker("Content", selection: $volumes) {
-                        Text("Chapters").tag(false)
-                        Text("Volumes").tag(true)
-                    }
-                    .pickerStyle(.segmented)
+                Section { header(p) }
+                    .nordRows()
+                Section { contentHeader(p) }
                     .listRowBackground(Color.clear)
-                }
                 Section(volumes ? "Volumes" : "Chapters") {
                     ForEach(p.chapters) { ch in
                         Button {
@@ -36,10 +35,12 @@ struct TitleDetailView: View {
                         .disabled(!volumes && !ch.downloaded && !app.store.isDownloaded(ch.id))
                     }
                 }
+                .nordRows()
             } else {
                 ProgressView()
             }
         }
+        .nordScreen()
         .navigationTitle(progress?.title.displayTitle ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: volumes) { await load() }
@@ -56,6 +57,28 @@ struct TitleDetailView: View {
                 actionsMenu(p)
             }
         }
+        .sheet(isPresented: $showRange) {
+            RangeDownloadSheet { from, to in
+                if let p = progress { downloadToDevice(p) { $0.numberMain >= from && $0.numberMain <= to } }
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            if let p = progress {
+                TitleSettingsSheet(interval: p.title.refreshInterval) { value in
+                    patch(["refresh_interval": value], done: "Settings saved")
+                }
+            }
+        }
+        .sheet(isPresented: $showCollections) {
+            CollectionsSheet(titleID: titleID) { note = $0 }
+        }
+        .sheet(isPresented: $showRemove) {
+            if let p = progress {
+                RemoveTitleSheet(name: p.title.displayTitle, anilistConnected: anilistConnected) { files, anilist in
+                    removeTitle(deleteFiles: files, deleteAniList: anilist)
+                }
+            }
+        }
         .overlay(alignment: .bottom) {
             if let note {
                 Text(note)
@@ -68,38 +91,68 @@ struct TitleDetailView: View {
         }
     }
 
-    // header mirrors the web title page: cover, name, progress bar block,
-    // then the mangaDetail badges/description/genres.
+    // header mirrors the web title page on mobile: centered cover on top, then
+    // title, progress block, and the mangaDetail badges/description/genres.
     private func header(_ p: TitleReadProgress) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Cover(path: p.title.coverImage, adult: p.title.isAdult)
-                    .frame(width: 110)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(p.title.displayTitle).font(.title3.bold())
-                    if !p.title.monitored {
-                        Label("Not monitored", systemImage: "bell.slash").font(.caption).foregroundStyle(.secondary)
-                    }
-                    TitleProgressBlock(title: p.title)
-                    if let next = p.chapters.first(where: { $0.id == p.nextChapterId }) {
-                        Button(p.readChapters > 0 ? "Continue reading" : "Start reading") {
-                            readerChapter = next
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                }
+            HStack {
+                Spacer()
+                Cover(path: p.title.coverImage, adult: p.title.isAdult).frame(width: 170)
+                Spacer()
             }
+            Text(p.title.displayTitle).font(.title2.bold())
+            if !p.title.monitored {
+                Label("Not monitored", systemImage: "bell.slash").font(.caption).foregroundStyle(.secondary)
+            }
+            TitleProgressBlock(title: p.title)
             if let manga = p.manga {
                 MangaDetailBlock(manga: manga)
             }
         }
     }
 
+    // contentHeader is the web titleContent header: tab switcher plus the
+    // full-width Read/Continue button above the list.
+    private func contentHeader(_ p: TitleReadProgress) -> some View {
+        VStack(spacing: 10) {
+            if p.title.volumeCount > 0 {
+                Picker("Content", selection: $volumes) {
+                    Text("\(p.title.discoveredCount) Chapters").tag(false)
+                    Text("\(p.title.volumeCount) Volumes").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+            if volumes ? p.title.volumeCount > 0 : p.title.completedCount > 0,
+               let next = p.chapters.first(where: { $0.id == p.nextChapterId })
+                   ?? p.chapters.first(where: { volumes || $0.downloaded }) {
+                Button {
+                    readerChapter = next
+                } label: {
+                    Text(readLabel(p)).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func readLabel(_ p: TitleReadProgress) -> String {
+        let started = volumes
+            ? p.chapters.contains { $0.readPages > 0 || $0.completed }
+            : p.readPages > 0
+        return started ? "Continue reading" : "Read"
+    }
+
+    // actionsMenu mirrors the web title dropdown, plus the device-download
+    // scopes; management actions stay gated like the web.
     private func actionsMenu(_ p: TitleReadProgress) -> some View {
         Menu {
             if !volumes {
-                Button("Download to device", systemImage: "iphone.and.arrow.down") {
-                    downloadAll(p)
+                Menu {
+                    Button("All chapters") { downloadToDevice(p) { _ in true } }
+                    Button("Unread only") { downloadToDevice(p) { !$0.completed } }
+                    Button("Range…") { showRange = true }
+                } label: {
+                    Label("Download to device", systemImage: "iphone.and.arrow.down")
                 }
                 .disabled(downloading || !p.chapters.contains { $0.downloaded && !app.store.isDownloaded($0.id) })
                 if !app.store.entries(titleId: titleID).isEmpty {
@@ -107,32 +160,52 @@ struct TitleDetailView: View {
                         app.store.deleteTitle(titleID)
                         note = "Device downloads removed"
                     }
+                    .disabled(downloading)
                 }
             }
             if canManage {
                 Divider()
-                Button(p.title.monitored ? "Stop monitoring" : "Monitor", systemImage: p.title.monitored ? "bell.slash" : "bell") {
-                    patch(["monitored": !p.title.monitored], done: p.title.monitored ? "Monitoring off" : "Monitoring on")
+                if p.title.linked, p.title.missingCount > 0 || p.title.failedCount > 0 {
+                    Button("Download missing" + (p.title.failedCount > 0 ? " · \(p.title.failedCount) failed" : ""),
+                           systemImage: "arrow.down.circle") {
+                        enqueue("download_missing", done: "Download queued")
+                    }
                 }
-                Button("Refresh chapters", systemImage: "arrow.clockwise") {
-                    enqueue("refresh_title", done: "Refresh queued")
+                if p.title.linked {
+                    Button("Refresh chapters", systemImage: "arrow.clockwise") {
+                        enqueue("refresh_title", done: "Refresh queued")
+                    }
                 }
-                Button("Download missing", systemImage: "arrow.down.circle") {
-                    enqueue("download_missing", done: "Download queued")
+                Button("Scan files", systemImage: "internaldrive") {
+                    enqueue("scan_downloads", done: "Scan queued")
                 }
-                Button("Sync AniList", systemImage: "arrow.triangle.2.circlepath") {
-                    post("/api/v1/anilist/sync", body: ["title_id": titleID], done: "AniList synced")
+                if anilistConnected {
+                    Button("Sync AniList", systemImage: "arrow.triangle.2.circlepath") {
+                        post("/api/v1/anilist/sync", body: ["title_id": titleID], done: "AniList synced")
+                    }
                 }
+                Button(p.title.monitored ? "Stop monitoring" : "Monitor",
+                       systemImage: p.title.monitored ? "bell.slash" : "bell") {
+                    patch(["monitored": JSONValue.bool(!p.title.monitored)],
+                          done: p.title.monitored ? "Monitoring off" : "Monitoring on")
+                }
+                if p.title.linked {
+                    Button("Title settings…", systemImage: "gearshape") { showSettings = true }
+                }
+                Button("Add to collection…", systemImage: "square.stack.3d.up") { showCollections = true }
+                Button("Remove title…", systemImage: "trash", role: .destructive) { showRemove = true }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
     }
 
-    // downloadAll pulls every server-downloaded chapter not yet on the device.
-    private func downloadAll(_ p: TitleReadProgress) {
-        guard let api = app.api else { return }
-        let todo = p.chapters.filter { $0.downloaded && !app.store.isDownloaded($0.id) }
+    // downloadToDevice pulls every server-downloaded chapter matching the
+    // scope that isn't on the device yet, then snapshots the title card.
+    private func downloadToDevice(_ p: TitleReadProgress, scope: @escaping (ChapterProgress) -> Bool) {
+        guard let api = app.api, !downloading else { return }
+        let todo = p.chapters.filter { $0.downloaded && !app.store.isDownloaded($0.id) && scope($0) }
+        guard !todo.isEmpty else { note = "Nothing to download"; return }
         downloading = true
         Task {
             defer { downloading = false }
@@ -141,7 +214,8 @@ struct TitleDetailView: View {
                 do {
                     let tmp = try await api.download("/api/v1/reader/chapters/\(ch.id)/archive")
                     try app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,
-                                       titleName: p.title.displayTitle, label: ch.label)
+                                       titleName: p.title.displayTitle, label: ch.label,
+                                       readPages: ch.readPages, completed: ch.completed)
                 } catch {
                     note = error.localizedDescription
                     return
@@ -159,8 +233,13 @@ struct TitleDetailView: View {
 
     private func load() async {
         guard let api = app.api else { return }
+        await app.store.flush(api)
         let mode = volumes ? "?mode=volumes" : ""
         progress = try? await api.get("/api/v1/reader/titles/\(titleID)\(mode)")
+        if let p = progress, !volumes { app.store.syncRead(p.chapters) }
+        if canManage, let status: AniListStatus = try? await api.get("/api/v1/anilist") {
+            anilistConnected = status.connected
+        }
     }
 
     private func toggleFavourite(_ p: TitleReadProgress) {
@@ -172,7 +251,18 @@ struct TitleDetailView: View {
         }
     }
 
-    private func patch(_ body: [String: Bool], done: String) {
+    private func removeTitle(deleteFiles: Bool, deleteAniList: Bool) {
+        guard let api = app.api else { return }
+        Task {
+            do {
+                _ = try await api.data("DELETE",
+                    "/api/v1/library/\(titleID)?delete_files=\(deleteFiles ? 1 : 0)&delete_anilist=\(deleteAniList ? 1 : 0)")
+                dismiss()
+            } catch { note = error.localizedDescription }
+        }
+    }
+
+    private func patch(_ body: [String: some Encodable], done: String) {
         guard let api = app.api else { return }
         Task {
             do {
@@ -196,6 +286,162 @@ struct TitleDetailView: View {
                 note = done
             } catch { note = error.localizedDescription }
         }
+    }
+}
+
+// RangeDownloadSheet mirrors the web bulk-download from/to dropdown.
+struct RangeDownloadSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var onDownload: (Int, Int) -> Void
+    @State private var from = ""
+    @State private var to = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("From chapter", text: $from).keyboardType(.numberPad)
+                    TextField("To chapter", text: $to).keyboardType(.numberPad)
+                } footer: {
+                    Text("Whole chapter numbers, like the web's bulk download.")
+                }
+                .nordRows()
+                Button("Download to device") {
+                    if let f = Int(from), let t = Int(to), f <= t {
+                        onDownload(f, t)
+                        dismiss()
+                    }
+                }
+                .disabled(Int(from) == nil || Int(to) == nil)
+                .nordRows()
+            }
+            .nordScreen()
+            .navigationTitle("Download range")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Cancel") { dismiss() } }
+        }
+        .presentationDetents([.height(300)])
+    }
+}
+
+// TitleSettingsSheet mirrors the web title-settings modal (refresh interval).
+struct TitleSettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State var interval: String
+    var onSave: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Check for new chapters every") {
+                    TextField("6h, 30m — blank for the global default", text: $interval)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
+                .nordRows()
+                Button("Save") { onSave(interval); dismiss() }
+                    .nordRows()
+            }
+            .nordScreen()
+            .navigationTitle("Title settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Cancel") { dismiss() } }
+        }
+        .presentationDetents([.height(260)])
+    }
+}
+
+// CollectionsSheet mirrors the web add-to-collection modal.
+struct CollectionsSheet: View {
+    @Environment(AppState.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    let titleID: Int64
+    var onDone: (String) -> Void
+    @State private var collections: [CollectionItem]?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let collections {
+                    if collections.isEmpty {
+                        Text("No collections yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(collections) { col in
+                        Button(col.name) { add(col) }
+                    }
+                    .nordRows()
+                } else {
+                    ProgressView()
+                }
+            }
+            .nordScreen()
+            .navigationTitle("Add to collection")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Close") { dismiss() } }
+            .task {
+                guard let api = app.api else { return }
+                collections = ((try? await api.get("/api/v1/collections") as CollectionList) ?? CollectionList(items: [])).items
+            }
+        }
+    }
+
+    private func add(_ col: CollectionItem) {
+        guard let api = app.api else { return }
+        Task {
+            do {
+                _ = try await api.data("PUT", "/api/v1/collections/\(col.id)/titles/\(titleID)")
+                onDone("Added to \(col.name)")
+            } catch { onDone(error.localizedDescription) }
+            dismiss()
+        }
+    }
+}
+
+// RemoveTitleSheet mirrors the web remove-title modal with both checkboxes.
+struct RemoveTitleSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let name: String
+    let anilistConnected: Bool
+    var onRemove: (Bool, Bool) -> Void
+    @State private var deleteFiles = false
+    @State private var deleteAniList = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle(isOn: $deleteFiles) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Also delete downloaded files from disk")
+                            Text("Leave off to keep the folder — it shows up on the Import page for re-importing later.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if anilistConnected {
+                        Toggle(isOn: $deleteAniList) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Also delete from AniList")
+                                Text("Removes this manga from your AniList list entirely. Left off, it is set to Dropped instead.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Tracking, chapters and reading progress are removed from the library.")
+                }
+                .nordRows()
+                Button("Remove title", role: .destructive) {
+                    onRemove(deleteFiles, deleteAniList)
+                    dismiss()
+                }
+                .nordRows()
+            }
+            .nordScreen()
+            .navigationTitle("Remove \(name)?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Cancel") { dismiss() } }
+        }
+        .presentationDetents([.medium])
     }
 }
 
@@ -268,12 +514,14 @@ struct MangaDetailBlock: View {
 enum JSONValue: Encodable {
     case string(String)
     case int(Int64)
+    case bool(Bool)
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         switch self {
         case .string(let v): try c.encode(v)
         case .int(let v): try c.encode(v)
+        case .bool(let v): try c.encode(v)
         }
     }
 }
@@ -300,7 +548,7 @@ struct ChapterRow: View {
                 Image(systemName: "iphone").font(.caption).foregroundStyle(.secondary)
             }
             if chapter.completed {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.success)
             } else if chapter.readPages > 0 {
                 Text("\(chapter.readPages)/\(chapter.totalPages)")
                     .font(.caption).foregroundStyle(.secondary)

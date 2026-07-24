@@ -15,6 +15,11 @@ final class LocalStore {
         var path: String
         var pages: Int
         var size: Int64 = 0
+        // Local read state, kept current offline (optional: decode-tolerant).
+        var readPages: Int?
+        var completed: Bool?
+
+        var isRead: Bool { completed ?? false }
     }
 
     // TitleInfo snapshots the server title at download time so the Downloads
@@ -151,9 +156,40 @@ final class LocalStore {
         persistIndex()
     }
 
+    // markLocal records read progress on a downloaded chapter so Downloads
+    // stays accurate offline.
+    func markLocal(chapterID: Int64, page: Int, total: Int) {
+        guard var e = chapters[chapterID] else { return }
+        let read = max(e.readPages ?? 0, page)
+        let done = total > 0 && read >= total
+        guard read != e.readPages ?? 0 || done != e.isRead else { return }
+        e.readPages = read
+        e.completed = done
+        chapters[chapterID] = e
+        persistIndex()
+    }
+
+    // syncRead refreshes local read state from the server's chapter list.
+    // Chapters with queued (unflushed) offline marks are skipped — the local
+    // state is newer than what the server knows.
+    func syncRead(_ list: [ChapterProgress]) {
+        var changed = false
+        let pending = Set(queue.map(\.chapterId))
+        for ch in list {
+            guard !pending.contains(ch.id) else { continue }
+            guard var e = chapters[ch.id], e.readPages ?? -1 != ch.readPages || e.isRead != ch.completed else { continue }
+            e.readPages = ch.readPages
+            e.completed = ch.completed
+            chapters[ch.id] = e
+            changed = true
+        }
+        if changed { persistIndex() }
+    }
+
     // save moves a downloaded temp file into place; sanitized names that would
     // collide across titles or chapters get an id suffix.
-    func save(file src: URL, chapterID: Int64, titleId: Int64, titleName: String, label: String) throws {
+    func save(file src: URL, chapterID: Int64, titleId: Int64, titleName: String, label: String,
+              readPages: Int = 0, completed: Bool = false) throws {
         let dirName = dirName(titleId: titleId, titleName: titleName)
         try FileManager.default.createDirectory(at: Self.root.appendingPathComponent(dirName, isDirectory: true),
                                                 withIntermediateDirectories: true)
@@ -167,7 +203,8 @@ final class LocalStore {
         let pages = ZipArchive(url: dest)?.imageEntries.count ?? 0
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path))?[.size] as? Int64 ?? 0
         chapters[chapterID] = Entry(id: chapterID, titleId: titleId, titleName: titleName,
-                                    label: label, path: path, pages: pages, size: size)
+                                    label: label, path: path, pages: pages, size: size,
+                                    readPages: readPages, completed: completed)
         persistIndex()
     }
 
@@ -247,14 +284,30 @@ final class LocalStore {
 extension UIImage {
     // downsampled decodes at a bounded pixel size so a reading session's pages
     // don't hold full-scan bitmaps in memory (2600px keeps 3x zoom sharp).
+    // Long-strip segments are capped by their SHORT side instead — a
+    // longest-side cap would crush an 800×12000 strip to ~170px wide (blurry).
     nonisolated static func downsampled(_ data: Data, maxDimension: CGFloat = 2600) -> UIImage? {
-        guard let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
-                  kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceShouldCacheImmediately: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true,
-                  kCGImageSourceThumbnailMaxPixelSize: maxDimension,
-              ] as CFDictionary) else { return UIImage(data: data) }
+        guard let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        var maxPixel = maxDimension
+        if let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+           let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+           let h = props[kCGImagePropertyPixelHeight] as? CGFloat, w > 0, h > 0 {
+            let short = min(w, h), long = max(w, h)
+            if long > short * 2.2 {
+                // 16000 stays under the GPU texture limit.
+                maxPixel = long * min(1, 1600 / short, 16000 / long)
+            } else {
+                maxPixel = min(long, maxDimension)
+            }
+        }
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ] as CFDictionary) else { return UIImage(data: data) }
         return UIImage(cgImage: cg)
     }
 }

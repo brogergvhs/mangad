@@ -40,6 +40,7 @@ struct SearchView: View {
                         .padding()
                 }
             }
+            .nordScreen()
             .navigationTitle(browsing ? "For you" : "Search")
             .searchable(text: $query, prompt: "Search AniList")
             .toolbar {
@@ -127,15 +128,11 @@ struct MangaCard: View {
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 6) {
-                Cover(path: manga.coverImage)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(.red, lineWidth: manga.isAdult ? 2 : 0)
-                    )
+                Cover(path: manga.coverImage, adult: manga.isAdult)
                     .overlay(alignment: .topTrailing) {
                         if manga.titleId != nil {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.white, .green)
+                                .foregroundStyle(.white, Theme.success)
                                 .padding(6)
                         }
                     }
@@ -177,7 +174,7 @@ struct MangaDetailSheet: View {
                             Text(manga.caption).font(.caption).foregroundStyle(.secondary)
                             if manga.titleId != nil {
                                 Label("In library", systemImage: "checkmark.circle.fill")
-                                    .font(.caption).foregroundStyle(.green)
+                                    .font(.caption).foregroundStyle(Theme.success)
                             } else if canAdd {
                                 Button(busy ? "Adding…" : "Add to library") { add() }
                                     .buttonStyle(.borderedProminent)

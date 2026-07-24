@@ -31,9 +31,11 @@ struct LoginResponse: Decodable {
 
 struct Title: Decodable, Identifiable, Hashable {
     var id: Int64
+    var sourceUrl: String
     var displayTitle: String
     var coverImage: String
     var monitored: Bool
+    var refreshInterval: String
     var isAdult: Bool
     var averageScore: Int64
     var contentTags: [String]
@@ -49,6 +51,10 @@ struct Title: Decodable, Identifiable, Hashable {
     var volumeReadCount: Int64
     var volumeBytes: Int64
     var updatedAt: String
+
+    // linked mirrors the web's `linked` helper: a real source page is
+    // attached (imported-from-disk titles have a placeholder URL).
+    var linked: Bool { sourceUrl.hasPrefix("http") }
 }
 
 // MangaDetail is the catalog metadata block the web title page shows
@@ -77,6 +83,7 @@ struct ChapterProgress: Decodable, Identifiable, Hashable {
     var titleId: Int64
     var label: String
     var title: String
+    var numberMain: Int
     var downloaded: Bool
     var bytes: Int64
     var pages: Int
@@ -94,8 +101,23 @@ struct TitleReadProgress: Decodable {
     var chapters: [ChapterProgress]
     var readChapters: Int
     var totalChapters: Int
+    var readPages: Int64
     var nextChapterId: Int64
     var nextPage: Int
+}
+
+struct AniListStatus: Decodable {
+    var connected: Bool
+}
+
+struct CollectionItem: Decodable, Identifiable, Hashable {
+    var id: Int64
+    var name: String
+    var kind: String
+}
+
+struct CollectionList: Decodable {
+    var items: [CollectionItem]
 }
 
 struct Manifest: Decodable {
