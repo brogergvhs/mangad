@@ -68,6 +68,7 @@ struct LocalTitleView: View {
     @Environment(AppState.self) private var app
     let titleId: Int64
     @State private var reading: LocalStore.Entry?
+    @State private var showRemoveRange = false
 
     private var title: LocalStore.LocalTitle? { app.store.titles.first { $0.id == titleId } }
 
@@ -98,11 +99,23 @@ struct LocalTitleView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             Menu {
-                Button("Remove all downloads", systemImage: "trash", role: .destructive) {
-                    app.store.deleteTitle(titleId)
+                Menu {
+                    Button("All chapters", role: .destructive) { app.store.deleteTitle(titleId) }
+                    Button("Range…") { showRemoveRange = true }
+                } label: {
+                    Label("Remove downloads", systemImage: "trash")
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
+            }
+        }
+        .sheet(isPresented: $showRemoveRange) {
+            RangeSheet(title: "Remove range", action: "Remove from device") { from, to in
+                for e in title?.entries ?? [] {
+                    if let n = Double(e.label), Int(n) >= from, Int(n) <= to {
+                        app.store.delete(e.id)
+                    }
+                }
             }
         }
         .fullScreenCover(item: $reading) { entry in
@@ -132,7 +145,7 @@ struct LocalTitleView: View {
 
     private func contentHeader(_ title: LocalStore.LocalTitle) -> some View {
         VStack(spacing: 10) {
-            if let next = title.entries.first(where: { !$0.isRead }) ?? title.entries.first {
+            if let next = title.entries.first(where: { !$0.isRead }) ?? title.entries.last {
                 Button {
                     reading = next
                 } label: {

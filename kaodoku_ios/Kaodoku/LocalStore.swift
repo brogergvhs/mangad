@@ -93,7 +93,7 @@ final class LocalStore {
     // and title records left without chapters.
     func prune() {
         let dead = chapters.values.filter {
-            !FileManager.default.fileExists(atPath: Self.root.appendingPathComponent($0.path).path)
+            $0.pages == 0 || !FileManager.default.fileExists(atPath: Self.root.appendingPathComponent($0.path).path)
         }
         for e in dead { chapters.removeValue(forKey: e.id) }
         let orphans = titleInfo.keys.filter { id in !chapters.values.contains { $0.titleId == id } }
@@ -201,6 +201,10 @@ final class LocalStore {
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: src, to: dest)
         let pages = ZipArchive(url: dest)?.imageEntries.count ?? 0
+        guard pages > 0 else {
+            try? FileManager.default.removeItem(at: dest)
+            throw CocoaError(.fileReadCorruptFile)
+        }
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path))?[.size] as? Int64 ?? 0
         chapters[chapterID] = Entry(id: chapterID, titleId: titleId, titleName: titleName,
                                     label: label, path: path, pages: pages, size: size,

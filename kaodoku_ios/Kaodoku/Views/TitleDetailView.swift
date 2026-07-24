@@ -11,6 +11,7 @@ struct TitleDetailView: View {
     @State private var downloading = false
     @State private var anilistConnected = false
     @State private var showRange = false
+    @State private var showRemoveRange = false
     @State private var showSettings = false
     @State private var showCollections = false
     @State private var showRemove = false
@@ -33,6 +34,13 @@ struct TitleDetailView: View {
                                        local: !volumes && app.store.isDownloaded(ch.id))
                         }
                         .disabled(!volumes && !ch.downloaded && !app.store.isDownloaded(ch.id))
+                        .swipeActions {
+                            if !volumes, app.store.isDownloaded(ch.id) {
+                                Button("Remove from device", systemImage: "iphone.slash", role: .destructive) {
+                                    app.store.delete(ch.id)
+                                }
+                            }
+                        }
                     }
                 }
                 .nordRows()
@@ -58,8 +66,18 @@ struct TitleDetailView: View {
             }
         }
         .sheet(isPresented: $showRange) {
-            RangeDownloadSheet { from, to in
+            RangeSheet(title: "Download range", action: "Download to device") { from, to in
                 if let p = progress { downloadToDevice(p) { $0.numberMain >= from && $0.numberMain <= to } }
+            }
+        }
+        .sheet(isPresented: $showRemoveRange) {
+            RangeSheet(title: "Remove range", action: "Remove from device") { from, to in
+                guard let p = progress else { return }
+                let todo = p.chapters.filter {
+                    app.store.isDownloaded($0.id) && $0.numberMain >= from && $0.numberMain <= to
+                }
+                for ch in todo { app.store.delete(ch.id) }
+                note = "Removed \(todo.count) chapters from device"
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -156,9 +174,14 @@ struct TitleDetailView: View {
                 }
                 .disabled(downloading || !p.chapters.contains { $0.downloaded && !app.store.isDownloaded($0.id) })
                 if !app.store.entries(titleId: titleID).isEmpty {
-                    Button("Remove device downloads", systemImage: "trash", role: .destructive) {
-                        app.store.deleteTitle(titleID)
-                        note = "Device downloads removed"
+                    Menu {
+                        Button("All chapters", role: .destructive) {
+                            app.store.deleteTitle(titleID)
+                            note = "Device downloads removed"
+                        }
+                        Button("Range…") { showRemoveRange = true }
+                    } label: {
+                        Label("Remove device downloads", systemImage: "trash")
                     }
                     .disabled(downloading)
                 }
@@ -289,10 +312,12 @@ struct TitleDetailView: View {
     }
 }
 
-// RangeDownloadSheet mirrors the web bulk-download from/to dropdown.
-struct RangeDownloadSheet: View {
+// RangeSheet mirrors the web bulk from/to dropdowns (download, delete, …).
+struct RangeSheet: View {
     @Environment(\.dismiss) private var dismiss
-    var onDownload: (Int, Int) -> Void
+    let title: String
+    let action: String
+    var onSubmit: (Int, Int) -> Void
     @State private var from = ""
     @State private var to = ""
 
@@ -303,12 +328,12 @@ struct RangeDownloadSheet: View {
                     TextField("From chapter", text: $from).keyboardType(.numberPad)
                     TextField("To chapter", text: $to).keyboardType(.numberPad)
                 } footer: {
-                    Text("Whole chapter numbers, like the web's bulk download.")
+                    Text("Whole chapter numbers, like the web's bulk actions.")
                 }
                 .nordRows()
-                Button("Download to device") {
+                Button(action) {
                     if let f = Int(from), let t = Int(to), f <= t {
-                        onDownload(f, t)
+                        onSubmit(f, t)
                         dismiss()
                     }
                 }
@@ -316,7 +341,7 @@ struct RangeDownloadSheet: View {
                 .nordRows()
             }
             .nordScreen()
-            .navigationTitle("Download range")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Cancel") { dismiss() } }
         }

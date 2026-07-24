@@ -29,40 +29,61 @@ struct ReaderView: View {
     @State private var noMore = false
     @State private var showBar = true
     @State private var showSettings = false
+    @State private var scrollID: Int?
+    @State private var loadFailed = false
+    @State private var settled = false
 
     private var paged: Bool { app.settings.readerMode != "strip" }
     private var rtl: Bool { app.settings.readerDir == "rtl" }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            if pages.isEmpty {
-                ProgressView().tint(.white)
-            } else if paged {
-                TabView(selection: $index) {
-                    ForEach(pages.indices, id: \.self) { i in
-                        ReaderPage(ref: pages[i], active: abs(i - index) <= 3).tag(i)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
-                .ignoresSafeArea()
-                .onChange(of: index) { onSettle(index) }
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(pages.indices, id: \.self) { i in
-                            ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
-                                .onAppear { onSettle(i) }
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if loadFailed {
+                    Label("This chapter can't be opened", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.white)
+                } else if pages.isEmpty {
+                    ProgressView().tint(.white)
+                } else if paged {
+                    // A paging ScrollView instead of TabView(.page): TabView can
+                    // land between pages when the page array grows mid-swipe.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 0) {
+                            ForEach(pages.indices, id: \.self) { i in
+                                ReaderPage(ref: pages[i], active: abs(i - index) <= 3)
+                                    .containerRelativeFrame([.horizontal, .vertical])
+                            }
                         }
+                        .scrollTargetLayout()
                     }
+                    .scrollTargetBehavior(.paging)
+                    .scrollPosition(id: $scrollID)
+                    .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
+                    .ignoresSafeArea()
+                    .onChange(of: scrollID) {
+                        if let i = scrollID, pages.indices.contains(i) { onSettle(i) }
+                    }
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(pages.indices, id: \.self) { i in
+                                ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
+                                    .onAppear { onSettle(i) }
+                            }
+                        }
+                        .scrollTargetLayout()
+                    }
+                    .scrollPosition(id: $scrollID, anchor: .top)
+                    .ignoresSafeArea()
                 }
-                .ignoresSafeArea()
+                if showBar { bar }
             }
-            if showBar { bar }
+            .statusBarHidden(!showBar)
+            .onTapGesture { point in
+                handleTap(point, width: geo.size.width)
+            }
         }
-        .statusBarHidden(!showBar)
-        .onTapGesture { showBar.toggle() }
         .task { await load(chapter: startChapter, resume: true) }
         .onDisappear {
             guard let api = app.api else { return }
@@ -93,7 +114,34 @@ struct ReaderView: View {
         }
     }
 
+    // handleTap mirrors the web tap zones in paged mode: outer thirds page in
+    // the tapped physical direction, the middle toggles the bar.
+    private func handleTap(_ point: CGPoint, width: CGFloat) {
+        guard paged, !pages.isEmpty, width > 0 else {
+            showBar.toggle()
+            return
+        }
+        let leftStep = rtl ? 1 : -1
+        switch point.x {
+        case ..<(width / 3): step(by: leftStep)
+        case (width * 2 / 3)...: step(by: -leftStep)
+        default: showBar.toggle()
+        }
+    }
+
+    private func step(by delta: Int) {
+        let target = min(max(index + delta, 0), pages.count - 1)
+        guard target != index else { return }
+        withAnimation { scrollID = target }
+    }
+
+    // onSettle ignores rows that appear before the initial resume jump lands
+    // (a strip's top rows fire onAppear first) so they aren't marked read.
     private func onSettle(_ i: Int) {
+        if !settled {
+            guard i == index else { return }
+            settled = true
+        }
         index = i
         mark(pages[i])
         extendIfNeeded()
@@ -110,8 +158,19 @@ struct ReaderView: View {
                             url: "", localURL: local)
                 }
             }.flatMap { $0 }
-            if let i = pages.firstIndex(where: { $0.chapterID == chapter }) { index = i }
-            if pages.indices.contains(index) { mark(pages[index]) }
+            // Resume at the first unread page from the LOCAL read state —
+            // offline progress must survive without a server. Completed
+            // chapters restart at page 1, like the web. The settle path does
+            // the marking; a missing/unreadable chapter is an error, never a
+            // silent fallback that would mark some other chapter.
+            let entry = localChapters.first { $0.id == chapter }
+            let resumePage = entry.map { $0.isRead ? 1 : min(($0.readPages ?? 0) + 1, max($0.pages, 1)) } ?? 1
+            guard let i = pages.firstIndex(where: { $0.chapterID == chapter && $0.page == resumePage }) else {
+                loadFailed = true
+                return
+            }
+            index = i
+            scrollID = i
             return
         }
         guard let api = app.api else { return }
@@ -125,7 +184,7 @@ struct ReaderView: View {
                 if let i = pages.firstIndex(where: { $0.chapterID == m.resumeChapterId && $0.page == m.resumePage }) {
                     index = i
                 }
-                if pages.indices.contains(index) { mark(pages[index]) }
+                scrollID = index
             }
         } catch {
             app.errorMessage = error.localizedDescription
