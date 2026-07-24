@@ -38,11 +38,19 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
 			}
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+				v1err(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+			} else {
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+			}
 			return
 		}
 		if p := requiredPerm(r); p != "" && !user.Can(p) {
-			writeError(w, http.StatusForbidden, "missing permission: "+p)
+			if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+				v1err(w, http.StatusForbidden, "forbidden", "missing permission: "+p)
+			} else {
+				writeError(w, http.StatusForbidden, "missing permission: "+p)
+			}
 			return
 		}
 		if !user.AllowAdult {

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"io"
 	"mime"
 	"net/http"
@@ -160,14 +161,42 @@ func (a *apiV1) meta(w http.ResponseWriter, _ *http.Request) {
 		ServerVersion: serverVersion(),
 		APIVersion:    1,
 		AuthRequired:  authEnabled(),
-		Features:      []string{},
+		Features:      []string{"archives", "delta_sync", "progress_batch", "collections", "screens", "anilist", "notifications"},
 		ImageFormats:  []string{"jpg", "jpeg", "png", "webp", "gif", "avif"},
 		MaxPageBytes:  maxPageBytes,
 	})
 }
 
+// loginRL is a fixed-window per-IP limiter for the login endpoint.
+type ipWindow struct {
+	n   int
+	win time.Time
+}
+
+var loginRL = struct {
+	sync.Mutex
+	hits map[string]ipWindow
+}{hits: map[string]ipWindow{}}
+
+func loginAllowedIP(ip string) bool {
+	const window, max = 15 * time.Minute, 20
+	loginRL.Lock()
+	defer loginRL.Unlock()
+	h := loginRL.hits[ip]
+	if time.Since(h.win) > window {
+		h = ipWindow{win: time.Now()}
+	}
+	h.n++
+	loginRL.hits[ip] = h
+	return h.n <= max
+}
+
 // login verifies credentials and mints a never-expiring device API token.
 func (a *apiV1) login(w http.ResponseWriter, r *http.Request) {
+	if !loginAllowedIP(clientIP(r)) {
+		v1err(w, http.StatusTooManyRequests, "rate_limited", "too many login attempts, try again later")
+		return
+	}
 	if !authEnabled() {
 		v1err(w, http.StatusBadRequest, "bad_request", "server is in single-user mode; login is not required")
 		return

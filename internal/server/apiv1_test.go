@@ -418,3 +418,78 @@ func TestAPIV1EnqueueOwnership(t *testing.T) {
 		t.Fatalf("member jobs/run = %d, want 403", rec.Code)
 	}
 }
+
+// Every v1 route except meta/login must reject unauthenticated requests.
+// Keep in sync with registerAPIV1.
+func TestAPIV1RequiresAuth(t *testing.T) {
+	t.Setenv("KAODOKU_ADMIN_USER", "boss")
+	t.Setenv("KAODOKU_ADMIN_PASSWORD", "secret123")
+	api, closeDB := testAPI(t)
+	defer closeDB()
+
+	routes := []string{
+		"GET /api/v1/me", "DELETE /api/v1/auth/token",
+		"GET /api/v1/library", "GET /api/v1/library/1", "GET /api/v1/covers/1", "GET /api/v1/volumes/1/cover",
+		"GET /api/v1/reader/titles/1", "GET /api/v1/reader/titles/1/manifest",
+		"GET /api/v1/reader/chapters/1/pages/1", "GET /api/v1/reader/volumes/1/pages/1",
+		"POST /api/v1/reader/chapters/1/pages", "POST /api/v1/reader/chapters/1/complete",
+		"POST /api/v1/reader/chapters/1/unread", "POST /api/v1/reader/titles/1/read-range",
+		"POST /api/v1/reader/volumes/1/pages", "GET /api/v1/reader/chapters/1/archive",
+		"GET /api/v1/reader/volumes/1/archive", "GET /api/v1/reader/progress",
+		"POST /api/v1/reader/progress/batch", "POST /api/v1/reader/volumes/1/read",
+		"POST /api/v1/reader/volumes/1/unread", "POST /api/v1/reader/titles/1/volumes/read-range",
+		"PUT /api/v1/library/1/favourite", "DELETE /api/v1/library/1/favourite",
+		"PATCH /api/v1/library/1", "DELETE /api/v1/library/1",
+		"GET /api/v1/collections", "POST /api/v1/collections", "GET /api/v1/collections/1",
+		"PATCH /api/v1/collections/1", "DELETE /api/v1/collections/1",
+		"PUT /api/v1/collections/1/titles/1", "DELETE /api/v1/collections/1/titles/1",
+		"PUT /api/v1/collections/smart/k/pins/1", "DELETE /api/v1/collections/smart/k/pins/1",
+		"GET /api/v1/screens", "POST /api/v1/screens", "PATCH /api/v1/screens/1",
+		"DELETE /api/v1/screens/1", "POST /api/v1/screens/reorder",
+		"GET /api/v1/me/settings", "PUT /api/v1/me/settings",
+		"GET /api/v1/anilist", "POST /api/v1/anilist/sync", "DELETE /api/v1/anilist",
+		"GET /api/v1/wanted/search", "GET /api/v1/wanted/trending", "GET /api/v1/wanted",
+		"POST /api/v1/wanted", "GET /api/v1/wanted/matches", "POST /api/v1/wanted/matches",
+		"POST /api/v1/wanted/track",
+		"GET /api/v1/jobs", "GET /api/v1/jobs/1", "POST /api/v1/jobs/enqueue", "POST /api/v1/jobs/run",
+		"GET /api/v1/notifications", "POST /api/v1/notifications/read", "DELETE /api/v1/notifications/1",
+		"GET /api/v1/sources",
+	}
+	for _, route := range routes {
+		parts := strings.SplitN(route, " ", 2)
+		rec := do(t, api, parts[0], parts[1], "", nil)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s = %d, want 401", route, rec.Code)
+		}
+		var body struct {
+			Code string `json:"code"`
+		}
+		_ = json.NewDecoder(rec.Body).Decode(&body)
+		if body.Code != "unauthorized" {
+			t.Errorf("%s code = %q, want unauthorized", route, body.Code)
+		}
+	}
+	if rec := do(t, api, http.MethodGet, "/api/v1/meta", "", nil); rec.Code != http.StatusOK {
+		t.Errorf("meta = %d, want 200", rec.Code)
+	}
+}
+
+func TestAPIV1LoginRateLimit(t *testing.T) {
+	t.Setenv("KAODOKU_ADMIN_USER", "boss")
+	t.Setenv("KAODOKU_ADMIN_PASSWORD", "secret123")
+	api, closeDB := testAPI(t)
+	defer closeDB()
+	defer func() {
+		loginRL.Lock()
+		loginRL.hits = map[string]ipWindow{}
+		loginRL.Unlock()
+	}()
+	last := 0
+	for i := 0; i < 25; i++ {
+		rec := do(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "nobody", "password": "x"})
+		last = rec.Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("25th login = %d, want 429", last)
+	}
+}
