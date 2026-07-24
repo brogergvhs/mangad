@@ -37,7 +37,9 @@ struct APIClient {
         guard let url = URL(string: path, relativeTo: baseURL) else { throw APIError.badURL }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        if let token { req.setValue(token, forHTTPHeaderField: "X-API-Key") }
+        if let token, url.host == baseURL.host {
+            req.setValue(token, forHTTPHeaderField: "X-API-Key")
+        }
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             let enc = JSONEncoder()

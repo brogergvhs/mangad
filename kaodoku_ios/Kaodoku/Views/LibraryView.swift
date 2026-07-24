@@ -22,6 +22,19 @@ struct ServerImage: View {
     }
 }
 
+// Cover renders a uniform 2:3 cover cell regardless of the image's own size:
+// the clear frame owns the layout, the image only fills and clips.
+struct Cover: View {
+    let path: String
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(2 / 3, contentMode: .fit)
+            .overlay(ServerImage(path: path))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 struct LibraryView: View {
     @Environment(AppState.self) private var app
     @State private var titles: [Title] = []
@@ -89,9 +102,7 @@ struct TitleCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ServerImage(path: title.coverImage)
-                .aspectRatio(2 / 3, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            Cover(path: title.coverImage)
                 .overlay(alignment: .topTrailing) {
                     let unread = title.completedCount - title.readCount
                     if unread > 0 {
@@ -106,7 +117,7 @@ struct TitleCard: View {
                 }
             Text(title.displayTitle)
                 .font(.caption)
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
                 .foregroundStyle(.primary)
         }
     }

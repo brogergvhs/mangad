@@ -1,15 +1,16 @@
 import SwiftUI
 
-// ReaderView streams pages online, horizontally paged. It follows the server
-// manifest: a window of chapters that extends as the reader approaches the end
-// (same contract as the web reader). Each settled page is marked read.
+// ReaderView streams pages online in paged (LTR/RTL) or vertical strip mode,
+// following the server manifest window that extends as the reader approaches
+// the end. Mode/direction sync via /me/settings. Each settled page is marked.
 struct ReaderView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     let titleID: Int64
     let startChapter: Int64
+    var volumes = false
 
-    private struct PageRef: Hashable {
+    struct PageRef: Hashable {
         var chapterID: Int64
         var label: String
         var page: Int
@@ -24,47 +25,78 @@ struct ReaderView: View {
     @State private var lastChapterID: Int64 = 0
     @State private var noMore = false
     @State private var showBar = true
+    @State private var showSettings = false
+
+    private var paged: Bool { app.settings.readerMode != "strip" }
+    private var rtl: Bool { app.settings.readerDir == "rtl" }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if pages.isEmpty {
                 ProgressView().tint(.white)
-            } else {
+            } else if paged {
                 TabView(selection: $index) {
                     ForEach(pages.indices, id: \.self) { i in
                         ReaderPage(path: pages[i].url).tag(i)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
                 .ignoresSafeArea()
-                .onChange(of: index) { mark(pages[index]); extendIfNeeded() }
-            }
-            if showBar {
-                VStack {
-                    HStack {
-                        Button("Close") { dismiss() }
-                        Spacer()
-                        if pages.indices.contains(index) {
-                            Text("Ch \(pages[index].label) · \(pages[index].page)/\(pages[index].total)")
+                .onChange(of: index) { onSettle(index) }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(pages.indices, id: \.self) { i in
+                            ReaderPage(path: pages[i].url, strip: true)
+                                .onAppear { onSettle(i) }
                         }
                     }
-                    .padding()
-                    .background(.black.opacity(0.6))
-                    .foregroundStyle(.white)
-                    Spacer()
                 }
+                .ignoresSafeArea()
             }
+            if showBar { bar }
         }
         .statusBarHidden(!showBar)
         .onTapGesture { showBar.toggle() }
         .task { await load(chapter: startChapter, resume: true) }
+        .sheet(isPresented: $showSettings) { ReaderSettingsSheet() }
+    }
+
+    private var bar: some View {
+        VStack {
+            HStack {
+                Button("Close") { dismiss() }
+                Spacer()
+                if pages.indices.contains(index) {
+                    Text("\(volumes ? "Vol" : "Ch") \(pages[index].label) · \(pages[index].page)/\(pages[index].total)")
+                }
+                Spacer()
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+            }
+            .padding()
+            .background(.black.opacity(0.6))
+            .foregroundStyle(.white)
+            Spacer()
+        }
+    }
+
+    private func onSettle(_ i: Int) {
+        index = i
+        mark(pages[i])
+        extendIfNeeded()
     }
 
     private func load(chapter: Int64, resume: Bool) async {
         guard let api = app.api else { return }
+        let mode = volumes ? "&mode=volumes" : ""
         do {
-            let m: Manifest = try await api.get("/api/v1/reader/titles/\(titleID)/manifest?chapter=\(chapter)")
+            let m: Manifest = try await api.get("/api/v1/reader/titles/\(titleID)/manifest?chapter=\(chapter)\(mode)")
             markBase = m.markBase
             extendBase = m.extendBase
             append(m.chapters)
@@ -110,10 +142,40 @@ struct ReaderView: View {
     }
 }
 
-// ReaderPage shows one page image with pinch zoom.
+struct ReaderSettingsSheet: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        @Bindable var app = app
+        NavigationStack {
+            Form {
+                Picker("Layout", selection: Binding(
+                    get: { app.settings.readerMode ?? "paged" },
+                    set: { app.settings.readerMode = $0; app.saveSettings() }
+                )) {
+                    Text("Paged").tag("paged")
+                    Text("Long strip").tag("strip")
+                }
+                Picker("Direction", selection: Binding(
+                    get: { app.settings.readerDir ?? "ltr" },
+                    set: { app.settings.readerDir = $0; app.saveSettings() }
+                )) {
+                    Text("Left to right").tag("ltr")
+                    Text("Right to left").tag("rtl")
+                }
+            }
+            .navigationTitle("Reader")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.height(220)])
+    }
+}
+
+// ReaderPage shows one page image; fit-to-screen when paged, full-width in strip.
 struct ReaderPage: View {
     @Environment(AppState.self) private var app
     let path: String
+    var strip = false
     @State private var image: UIImage?
     @State private var failed = false
     @State private var zoom: CGFloat = 1
@@ -121,21 +183,27 @@ struct ReaderPage: View {
     var body: some View {
         Group {
             if let image {
-                ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .containerRelativeFrame([.horizontal, .vertical])
-                        .scaleEffect(zoom)
+                if strip {
+                    Image(uiImage: image).resizable().scaledToFit()
+                } else {
+                    ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .containerRelativeFrame([.horizontal, .vertical])
+                            .scaleEffect(zoom)
+                    }
+                    .gesture(
+                        MagnifyGesture().onChanged { zoom = max(1, min(3, $0.magnification)) }
+                    )
                 }
-                .gesture(
-                    MagnifyGesture().onChanged { zoom = max(1, min(3, $0.magnification)) }
-                )
             } else if failed {
                 Label("Page failed to load", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.white)
+                    .frame(minHeight: strip ? 200 : 0)
             } else {
                 ProgressView().tint(.white)
+                    .frame(maxWidth: .infinity, minHeight: strip ? 400 : 0)
             }
         }
         .task(id: path) {

@@ -450,7 +450,13 @@ func (u *webUI) mangaResultsView(ctx context.Context, heading, view string, item
 }
 
 func (u *webUI) stripItems(ctx context.Context, items []catalog.Manga) []searchResultView {
-	inLibrary, _ := u.svc.TitlesByProvider(ctx, catalog.AniListProvider)
+	return stripItems(ctx, u.svc, items)
+}
+
+// stripItems guards manga for the acting user and maps tracked ones to their
+// library title id.
+func stripItems(ctx context.Context, svc *service.JobService, items []catalog.Manga) []searchResultView {
+	inLibrary, _ := svc.TitlesByProvider(ctx, catalog.AniListProvider)
 	views := make([]searchResultView, 0, len(items))
 	for _, m := range items {
 		if !contentAllowed(ctx, m.IsAdult, mangaContentTags(m)) {
@@ -537,12 +543,19 @@ func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
 // guardedBrowse fills an empty suggestions grid with a popularity browse
 // pre-filtered by the acting user's tag guards.
 func (u *webUI) guardedBrowse(ctx context.Context, c searchControls) mangaResults {
-	filter := catalog.SearchFilter{Sort: anilistSort(c.Sort, c.Dir)}
+	items := guardedBrowseManga(ctx, u.svc, c.Sort, c.Dir)
+	return u.mangaResultsView(ctx, "", c.View, items)
+}
+
+// guardedBrowseManga is a popularity browse pre-filtered by the acting user's
+// tag guards, shared by the web and v1 trending fallbacks.
+func guardedBrowseManga(ctx context.Context, svc *service.JobService, sort, dir string) []catalog.Manga {
+	filter := catalog.SearchFilter{Sort: anilistSort(sort, dir)}
 	if filter.Sort == "" {
 		filter.Sort = "POPULARITY_DESC"
 	}
 	if usr := auth.FromContext(ctx); usr != nil {
-		if options, err := u.svc.ContentTagOptions(ctx); err == nil && len(options) > 0 {
+		if options, err := svc.ContentTagOptions(ctx); err == nil && len(options) > 0 {
 			genres, tags := splitByKind(usr.AllowedTags, options)
 			if len(genres) == 0 || len(tags) == 0 {
 				filter.GenreIn, filter.TagIn = genres, tags
@@ -550,11 +563,11 @@ func (u *webUI) guardedBrowse(ctx context.Context, c searchControls) mangaResult
 			filter.GenreNotIn, filter.TagNotIn = splitByKind(usr.BlockedTags, options)
 		}
 	}
-	items, _, err := u.svc.SearchAniList(ctx, "", 18, filter)
+	items, _, err := svc.SearchAniList(ctx, "", 18, filter)
 	if err != nil {
-		return mangaResults{}
+		return nil
 	}
-	return u.mangaResultsView(ctx, "", c.View, items)
+	return items
 }
 
 // filterNSFWSources hides NSFW-only sources from users without adult access.

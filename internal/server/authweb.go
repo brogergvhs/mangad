@@ -85,7 +85,7 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermJobsView
 	case p == "/api/v1/wanted/track":
 		return auth.PermLibraryManage
-	case strings.HasPrefix(p, "/api/v1/wanted"):
+	case strings.HasPrefix(p, "/api/v1/wanted") || p == "/api/v1/tags" || p == "/api/v1/library/add":
 		return auth.PermLibraryAdd
 	case strings.HasPrefix(p, "/api/v1/anilist"):
 		return auth.PermReaderUse

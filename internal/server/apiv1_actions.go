@@ -465,33 +465,116 @@ func (a *apiV1) anilistDisconnect(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// searchItemDTO is a manga plus its library title id when already tracked.
+type searchItemDTO struct {
+	catalog.Manga
+	TitleID int64 `json:"title_id,omitempty"`
+}
+
+func toSearchItems(views []searchResultView) []searchItemDTO {
+	out := make([]searchItemDTO, 0, len(views))
+	for _, v := range views {
+		out = append(out, searchItemDTO{Manga: v.Manga, TitleID: v.TitleID})
+	}
+	return out
+}
+
+// wantedSearch mirrors the web search: relevance or POPULARITY_DESC browse,
+// mixed include/exclude tags split by kind, and page scanning so guard-filtered
+// pages don't come back empty while more results exist.
 func (a *apiV1) wantedSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	term := strings.TrimSpace(q.Get("q"))
-	if term == "" {
-		v1err(w, http.StatusBadRequest, "bad_request", "q is required")
-		return
+	include, exclude := splitCSV(q.Get("include_tags")), splitCSV(q.Get("exclude_tags"))
+	filter := catalog.SearchFilter{Sort: anilistSort(q.Get("sort"), q.Get("dir"))}
+	if term == "" && filter.Sort == "" {
+		filter.Sort = "POPULARITY_DESC"
 	}
-	filter := catalog.SearchFilter{
-		GenreIn: splitCSV(q.Get("genre_in")), GenreNotIn: splitCSV(q.Get("genre_not_in")),
-		TagIn: splitCSV(q.Get("tag_in")), TagNotIn: splitCSV(q.Get("tag_not_in")),
+	if len(include) > 0 || len(exclude) > 0 {
+		if options, err := a.svc.ContentTagOptions(r.Context()); err == nil && len(options) > 0 {
+			filter.GenreIn, filter.TagIn = splitByKind(include, options)
+			filter.GenreNotIn, filter.TagNotIn = splitByKind(exclude, options)
+		}
 	}
-	filter.Page, _ = strconv.Atoi(q.Get("page"))
-	items, hasMore, err := a.svc.SearchAniList(r.Context(), term, clampLimit(q.Get("limit")), filter)
-	if err != nil {
-		v1err(w, http.StatusBadGateway, "unavailable", err.Error())
-		return
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 1 {
+		page = 1
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": allowedManga(r.Context(), items), "has_more": hasMore})
+	var views []searchResultView
+	more, last := false, page
+	for scan := 0; scan < 3; scan++ {
+		last = page + scan
+		filter.Page = last
+		fetched, m, err := a.svc.SearchAniList(r.Context(), term, searchPerPage, filter)
+		if err != nil {
+			v1err(w, http.StatusBadGateway, "unavailable", err.Error())
+			return
+		}
+		views, more = stripItems(r.Context(), a.svc, fetched), m
+		if len(views) > 0 || !more {
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": toSearchItems(views), "has_more": more, "page": last})
 }
 
+// wantedTrending mirrors the web: personalized recommendations, falling back to
+// a guarded popularity browse so the grid is never empty.
 func (a *apiV1) wantedTrending(w http.ResponseWriter, r *http.Request) {
-	items, err := a.svc.TrendingManga(r.Context(), clampLimit(r.URL.Query().Get("limit")))
+	items, err := a.svc.RecommendedManga(r.Context(), 18)
 	if err != nil {
-		v1err(w, http.StatusBadGateway, "unavailable", err.Error())
+		items = nil
+	}
+	views := stripItems(r.Context(), a.svc, items)
+	if len(views) > 18 {
+		views = views[:18]
+	}
+	if len(views) == 0 {
+		views = stripItems(r.Context(), a.svc, guardedBrowseManga(r.Context(), a.svc, "", ""))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": toSearchItems(views)})
+}
+
+// libraryAdd is the web's one-click add: track a catalog title and kick the
+// job runner so matching/downloading starts immediately.
+func (a *apiV1) libraryAdd(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ProviderID int `json:"provider_id"`
+	}
+	if !decodeBody(w, r, &body) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": allowedManga(r.Context(), items)})
+	title, err := a.svc.AddCatalogTitle(r.Context(), body.ProviderID)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
+		v1err(w, http.StatusNotFound, "not_found", "title not found")
+		return
+	}
+	if a.runJobs != nil {
+		go func() { _, _ = a.runJobs(context.Background()) }()
+	}
+	writeJSON(w, http.StatusCreated, toTitleDTO(title))
+}
+
+// tagOptions lists the genre/tag vocabulary for search filter pickers.
+func (a *apiV1) tagOptions(w http.ResponseWriter, r *http.Request) {
+	options, err := a.svc.ContentTagOptions(r.Context())
+	if err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	type tagDTO struct {
+		Name string `json:"name"`
+		Kind string `json:"kind"`
+	}
+	items := make([]tagDTO, 0, len(options))
+	for _, o := range options {
+		items = append(items, tagDTO{Name: o.Name, Kind: o.Kind})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (a *apiV1) wantedList(w http.ResponseWriter, r *http.Request) {

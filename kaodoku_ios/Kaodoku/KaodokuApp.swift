@@ -7,9 +7,12 @@ struct KaodokuApp: App {
     var body: some Scene {
         WindowGroup {
             if app.connected {
-                LibraryView()
-                    .environment(app)
-                    .task { await app.loadMe() }
+                TabView {
+                    LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }
+                    SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }
+                }
+                .environment(app)
+                .task { await app.loadMe() }
             } else {
                 ConnectView()
                     .environment(app)

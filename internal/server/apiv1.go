@@ -24,11 +24,14 @@ import (
 
 const maxPageBytes = 64 << 20 // per-image download cap
 
-type apiV1 struct{ svc *service.JobService }
+type apiV1 struct {
+	svc     *service.JobService
+	runJobs func(context.Context) (service.RunSummary, error)
+}
 
 // registerAPIV1 mounts the /api/v1 surface consumed by the native app.
 func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(context.Context) (service.RunSummary, error)) {
-	a := &apiV1{svc: svc}
+	a := &apiV1{svc: svc, runJobs: runJobs}
 	mux.HandleFunc("GET /api/v1/meta", a.meta)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("GET /api/v1/me", a.me)
@@ -84,6 +87,8 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(con
 	mux.HandleFunc("DELETE /api/v1/anilist", a.anilistDisconnect)
 
 	mux.HandleFunc("GET /api/v1/wanted/search", a.wantedSearch)
+	mux.HandleFunc("GET /api/v1/tags", a.tagOptions)
+	mux.HandleFunc("POST /api/v1/library/add", a.libraryAdd)
 	mux.HandleFunc("GET /api/v1/wanted/trending", a.wantedTrending)
 	mux.HandleFunc("GET /api/v1/wanted", a.wantedList)
 	mux.HandleFunc("POST /api/v1/wanted", a.wantedAdd)

@@ -7,6 +7,7 @@ import Observation
 final class AppState {
     var api: APIClient?
     var me: Me?
+    var settings = UserSettings()
     var errorMessage: String?
 
     private static let serverKey = "server_url"
@@ -59,11 +60,18 @@ final class AppState {
         guard let api, me == nil else { return }
         do {
             me = try await api.get("/api/v1/me")
+            settings = try await api.get("/api/v1/me/settings")
         } catch APIError.unauthorized {
             signOut()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func saveSettings() {
+        guard let api else { return }
+        let s = settings
+        Task { _ = try? await api.data("PUT", "/api/v1/me/settings", body: s) }
     }
 
     func signOut() {
