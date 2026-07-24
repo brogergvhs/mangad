@@ -68,27 +68,29 @@ struct TitleDetailView: View {
         }
     }
 
+    // header mirrors the web title page: cover, name, progress bar block,
+    // then the mangaDetail badges/description/genres.
     private func header(_ p: TitleReadProgress) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ServerImage(path: p.title.coverImage)
-                .frame(width: 90, height: 135)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 6) {
-                Text(p.title.displayTitle).font(.headline)
-                Text("\(p.readChapters)/\(p.totalChapters) \(volumes ? "volumes" : "chapters") read")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                if p.title.averageScore > 0 {
-                    Text("★ \(p.title.averageScore)%").font(.subheadline).foregroundStyle(.secondary)
-                }
-                if !p.title.monitored {
-                    Label("Not monitored", systemImage: "bell.slash").font(.caption).foregroundStyle(.secondary)
-                }
-                if let next = p.chapters.first(where: { $0.id == p.nextChapterId }) {
-                    Button(p.readChapters > 0 ? "Continue reading" : "Start reading") {
-                        readerChapter = next
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Cover(path: p.title.coverImage, adult: p.title.isAdult)
+                    .frame(width: 110)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(p.title.displayTitle).font(.title3.bold())
+                    if !p.title.monitored {
+                        Label("Not monitored", systemImage: "bell.slash").font(.caption).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.borderedProminent)
+                    TitleProgressBlock(title: p.title)
+                    if let next = p.chapters.first(where: { $0.id == p.nextChapterId }) {
+                        Button(p.readChapters > 0 ? "Continue reading" : "Start reading") {
+                            readerChapter = next
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 }
+            }
+            if let manga = p.manga {
+                MangaDetailBlock(manga: manga)
             }
         }
     }
@@ -145,6 +147,12 @@ struct TitleDetailView: View {
                     return
                 }
             }
+            let cover = try? await api.data("GET", p.title.coverImage)
+            app.store.saveTitle(LocalStore.TitleInfo(
+                id: titleID, name: p.title.displayTitle, isAdult: p.title.isAdult, detail: p.manga,
+                readCount: p.title.readCount, completedCount: p.title.completedCount,
+                discoveredCount: p.title.discoveredCount, missingCount: p.title.missingCount
+            ), coverData: cover)
             note = "Downloaded \(todo.count) chapters"
         }
     }
@@ -191,6 +199,71 @@ struct TitleDetailView: View {
     }
 }
 
+// TitleProgressBlock is the web progressBar partial: two-color bar plus the
+// "X/Y read · N missing · size · vols" line (volumes fallback included).
+struct TitleProgressBlock: View {
+    let title: Title
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if title.discoveredCount > 0 {
+                BarView(read: pct(title.readCount, title.discoveredCount),
+                        full: pct(title.completedCount, title.discoveredCount))
+                Text(line).font(.caption).foregroundStyle(.secondary)
+            } else if title.volumeCount > 0 {
+                BarView(read: pct(title.volumeReadCount, title.volumeCount), full: 1)
+                Text("\(title.volumeReadCount)/\(title.volumeCount) volumes read · \(humanBytes(title.volumeBytes))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var line: String {
+        var parts = ["\(title.readCount)/\(title.discoveredCount) read"]
+        if title.missingCount > 0 { parts.append("\(title.missingCount) missing") }
+        if title.failedCount > 0 { parts.append("\(title.failedCount) failed") }
+        parts.append(humanBytes(title.sizeBytes))
+        if title.volumeCount > 0 { parts.append("\(title.volumeReadCount)/\(title.volumeCount) vols") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+// MangaDetailBlock is the web mangaDetail cell: badge row, description,
+// authors/AniList-counts line, genre chips.
+struct MangaDetailBlock: View {
+    let manga: MangaDetail
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WrapLayout {
+                if let s = manga.status, !s.isEmpty { Badge(text: s, style: .soft) }
+                if let f = manga.format, !f.isEmpty { Badge(text: f) }
+                if let sc = manga.averageScore, sc > 0 { Badge(text: "★ \(sc)%", style: .warning) }
+                if let y = manga.year, y > 0 { Badge(text: String(y)) }
+            }
+            if let d = manga.description, !d.isEmpty {
+                Text(d.strippedHTML).font(.subheadline).foregroundStyle(.secondary)
+            }
+            if !metaLine.isEmpty {
+                Text(metaLine).font(.caption).foregroundStyle(.tertiary)
+            }
+            if let genres = manga.genres, !genres.isEmpty {
+                WrapLayout {
+                    ForEach(genres, id: \.self) { Badge(text: $0, style: .outline) }
+                }
+            }
+        }
+    }
+
+    private var metaLine: String {
+        var parts: [String] = []
+        if let a = manga.authors, !a.isEmpty { parts.append("By \(a.joined(separator: ", "))") }
+        if let c = manga.chapters, c > 0 { parts.append("\(c) chapters (AniList)") }
+        if let v = manga.volumes, v > 0 { parts.append("\(v) volumes (AniList)") }
+        return parts.joined(separator: " · ")
+    }
+}
+
 // JSONValue lets small mixed-type bodies stay one-liners.
 enum JSONValue: Encodable {
     case string(String)
@@ -220,6 +293,9 @@ struct ChapterRow: View {
                 }
             }
             Spacer()
+            if chapter.bytes > 0 {
+                Text(humanBytes(chapter.bytes)).font(.caption2).foregroundStyle(.tertiary)
+            }
             if local {
                 Image(systemName: "iphone").font(.caption).foregroundStyle(.secondary)
             }

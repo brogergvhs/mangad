@@ -41,10 +41,29 @@ struct Title: Decodable, Identifiable, Hashable {
     var releaseStatus: String
     var discoveredCount: Int64
     var missingCount: Int64
+    var failedCount: Int64
     var readCount: Int64
     var completedCount: Int64
+    var sizeBytes: Int64
     var volumeCount: Int64
+    var volumeReadCount: Int64
+    var volumeBytes: Int64
     var updatedAt: String
+}
+
+// MangaDetail is the catalog metadata block the web title page shows
+// (badges, description, authors, genres). Codable: it's also snapshotted
+// into the offline index.
+struct MangaDetail: Codable, Hashable {
+    var description: String?
+    var status: String?
+    var format: String?
+    var year: Int?
+    var chapters: Int?
+    var volumes: Int?
+    var authors: [String]?
+    var genres: [String]?
+    var averageScore: Int?
 }
 
 struct TitlePage: Decodable {
@@ -59,6 +78,7 @@ struct ChapterProgress: Decodable, Identifiable, Hashable {
     var label: String
     var title: String
     var downloaded: Bool
+    var bytes: Int64
     var pages: Int
     var totalPages: Int
     var readPages: Int
@@ -70,6 +90,7 @@ struct ChapterProgress: Decodable, Identifiable, Hashable {
 
 struct TitleReadProgress: Decodable {
     var title: Title
+    var manga: MangaDetail?
     var chapters: [ChapterProgress]
     var readChapters: Int
     var totalChapters: Int

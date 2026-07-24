@@ -14,6 +14,26 @@ final class LocalStore {
         var label: String
         var path: String
         var pages: Int
+        var size: Int64 = 0
+    }
+
+    // TitleInfo snapshots the server title at download time so the Downloads
+    // grid and offline title page can render the web card/detail layout.
+    struct TitleInfo: Codable, Identifiable {
+        var id: Int64
+        var name: String
+        var cover: String?
+        var isAdult: Bool = false
+        var detail: MangaDetail?
+        var readCount: Int64 = 0
+        var completedCount: Int64 = 0
+        var discoveredCount: Int64 = 0
+        var missingCount: Int64 = 0
+    }
+
+    private struct Index: Codable {
+        var titles: [TitleInfo] = []
+        var chapters: [Entry] = []
     }
 
     struct QueuedMark: Codable, Equatable {
@@ -25,6 +45,7 @@ final class LocalStore {
     }
 
     private(set) var chapters: [Int64: Entry] = [:]
+    private(set) var titleInfo: [Int64: TitleInfo] = [:]
     private var queue: [QueuedMark] = []
     private var flushing = false
 
@@ -32,10 +53,30 @@ final class LocalStore {
     private static let indexURL = root.appendingPathComponent(".index.json")
     private static let queueURL = root.appendingPathComponent(".marks.json")
 
+    // Legacy phase-3 index shape: a flat [Entry] array without sizes.
+    private struct LegacyEntry: Decodable {
+        var id: Int64
+        var titleId: Int64
+        var titleName: String
+        var label: String
+        var path: String
+        var pages: Int
+    }
+
     init() {
-        if let data = try? Data(contentsOf: Self.indexURL),
-           let list = try? JSONDecoder().decode([Entry].self, from: data) {
-            chapters = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
+        if let data = try? Data(contentsOf: Self.indexURL) {
+            if let idx = try? JSONDecoder().decode(Index.self, from: data) {
+                chapters = Dictionary(uniqueKeysWithValues: idx.chapters.map { ($0.id, $0) })
+                titleInfo = Dictionary(uniqueKeysWithValues: idx.titles.map { ($0.id, $0) })
+            } else if let legacy = try? JSONDecoder().decode([LegacyEntry].self, from: data) {
+                chapters = Dictionary(uniqueKeysWithValues: legacy.map { e in
+                    let size = (try? FileManager.default.attributesOfItem(
+                        atPath: Self.root.appendingPathComponent(e.path).path))?[.size] as? Int64 ?? 0
+                    return (e.id, Entry(id: e.id, titleId: e.titleId, titleName: e.titleName,
+                                        label: e.label, path: e.path, pages: e.pages, size: size))
+                })
+                persistIndex()
+            }
         }
         if let data = try? Data(contentsOf: Self.queueURL) {
             queue = (try? JSONDecoder().decode([QueuedMark].self, from: data)) ?? []
@@ -43,14 +84,16 @@ final class LocalStore {
         prune()
     }
 
-    // prune drops index entries whose file was deleted through the Files app.
+    // prune drops index entries whose file was deleted through the Files app,
+    // and title records left without chapters.
     func prune() {
         let dead = chapters.values.filter {
             !FileManager.default.fileExists(atPath: Self.root.appendingPathComponent($0.path).path)
         }
-        guard !dead.isEmpty else { return }
         for e in dead { chapters.removeValue(forKey: e.id) }
-        persistIndex()
+        let orphans = titleInfo.keys.filter { id in !chapters.values.contains { $0.titleId == id } }
+        for id in orphans { titleInfo.removeValue(forKey: id) }
+        if !dead.isEmpty || !orphans.isEmpty { persistIndex() }
     }
 
     func isDownloaded(_ chapterID: Int64) -> Bool { url(for: chapterID) != nil }
@@ -68,10 +111,44 @@ final class LocalStore {
             .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
     }
 
-    var titles: [(id: Int64, name: String, entries: [Entry])] {
+    struct LocalTitle: Identifiable {
+        var id: Int64
+        var info: TitleInfo
+        var entries: [Entry]
+        var size: Int64 { entries.reduce(0) { $0 + $1.size } }
+        var coverURL: URL? {
+            info.cover.map(LocalStore.root.appendingPathComponent).flatMap {
+                FileManager.default.fileExists(atPath: $0.path) ? $0 : nil
+            }
+        }
+    }
+
+    var titles: [LocalTitle] {
         Dictionary(grouping: chapters.values, by: \.titleId)
-            .map { id, list in (id, list[0].titleName, list.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }) }
-            .sorted { $0.1.localizedStandardCompare($1.1) == .orderedAscending }
+            .map { id, list in
+                LocalTitle(id: id,
+                           info: titleInfo[id] ?? TitleInfo(id: id, name: list[0].titleName),
+                           entries: list.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending })
+            }
+            .sorted { $0.info.name.localizedStandardCompare($1.info.name) == .orderedAscending }
+    }
+
+    // saveTitle snapshots the title card data and writes the cover image next
+    // to the chapters, so Downloads renders the web layout fully offline.
+    func saveTitle(_ info: TitleInfo, coverData: Data?) {
+        var info = info
+        let dir = dirName(titleId: info.id, titleName: info.name)
+        if let coverData {
+            let path = "\(dir)/cover.jpg"
+            try? FileManager.default.createDirectory(at: Self.root.appendingPathComponent(dir, isDirectory: true),
+                                                     withIntermediateDirectories: true)
+            if (try? coverData.write(to: Self.root.appendingPathComponent(path))) != nil {
+                info.cover = path
+            }
+        }
+        if info.cover == nil { info.cover = titleInfo[info.id]?.cover }
+        titleInfo[info.id] = info
+        persistIndex()
     }
 
     // save moves a downloaded temp file into place; sanitized names that would
@@ -88,8 +165,9 @@ final class LocalStore {
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: src, to: dest)
         let pages = ZipArchive(url: dest)?.imageEntries.count ?? 0
+        let size = (try? FileManager.default.attributesOfItem(atPath: dest.path))?[.size] as? Int64 ?? 0
         chapters[chapterID] = Entry(id: chapterID, titleId: titleId, titleName: titleName,
-                                    label: label, path: path, pages: pages)
+                                    label: label, path: path, pages: pages, size: size)
         persistIndex()
     }
 
@@ -107,9 +185,9 @@ final class LocalStore {
         guard let e = chapters.removeValue(forKey: chapterID) else { return }
         let file = Self.root.appendingPathComponent(e.path)
         try? FileManager.default.removeItem(at: file)
-        let dir = file.deletingLastPathComponent()
-        if (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty == true {
-            try? FileManager.default.removeItem(at: dir)
+        if !chapters.values.contains(where: { $0.titleId == e.titleId }) {
+            titleInfo.removeValue(forKey: e.titleId)
+            try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
         }
         persistIndex()
     }
@@ -151,7 +229,9 @@ final class LocalStore {
         }.value
     }
 
-    private func persistIndex() { persist(Array(chapters.values), to: Self.indexURL) }
+    private func persistIndex() {
+        persist(Index(titles: Array(titleInfo.values), chapters: Array(chapters.values)), to: Self.indexURL)
+    }
 
     private func persist(_ value: some Encodable, to url: URL) {
         try? JSONEncoder().encode(value).write(to: url)
