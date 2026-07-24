@@ -7,6 +7,7 @@ struct TitleDetailView: View {
     @State private var volumes = false
     @State private var readerChapter: ChapterProgress?
     @State private var note: String?
+    @State private var downloading = false
 
     private var canManage: Bool { app.me?.can("library.manage") == true }
 
@@ -29,9 +30,10 @@ struct TitleDetailView: View {
                         Button {
                             readerChapter = ch
                         } label: {
-                            ChapterRow(chapter: ch, volumes: volumes)
+                            ChapterRow(chapter: ch, volumes: volumes,
+                                       local: !volumes && app.store.isDownloaded(ch.id))
                         }
-                        .disabled(!volumes && !ch.downloaded)
+                        .disabled(!volumes && !ch.downloaded && !app.store.isDownloaded(ch.id))
                     }
                 }
             } else {
@@ -51,9 +53,7 @@ struct TitleDetailView: View {
                 } label: {
                     Image(systemName: p.title.favourite ? "heart.fill" : "heart")
                 }
-                if canManage {
-                    actionsMenu(p)
-                }
+                actionsMenu(p)
             }
         }
         .overlay(alignment: .bottom) {
@@ -95,20 +95,57 @@ struct TitleDetailView: View {
 
     private func actionsMenu(_ p: TitleReadProgress) -> some View {
         Menu {
-            Button(p.title.monitored ? "Stop monitoring" : "Monitor", systemImage: p.title.monitored ? "bell.slash" : "bell") {
-                patch(["monitored": !p.title.monitored], done: p.title.monitored ? "Monitoring off" : "Monitoring on")
+            if !volumes {
+                Button("Download to device", systemImage: "iphone.and.arrow.down") {
+                    downloadAll(p)
+                }
+                .disabled(downloading || !p.chapters.contains { $0.downloaded && !app.store.isDownloaded($0.id) })
+                if !app.store.entries(titleId: titleID).isEmpty {
+                    Button("Remove device downloads", systemImage: "trash", role: .destructive) {
+                        app.store.deleteTitle(titleID)
+                        note = "Device downloads removed"
+                    }
+                }
             }
-            Button("Refresh chapters", systemImage: "arrow.clockwise") {
-                enqueue("refresh_title", done: "Refresh queued")
-            }
-            Button("Download missing", systemImage: "arrow.down.circle") {
-                enqueue("download_missing", done: "Download queued")
-            }
-            Button("Sync AniList", systemImage: "arrow.triangle.2.circlepath") {
-                post("/api/v1/anilist/sync", body: ["title_id": titleID], done: "AniList synced")
+            if canManage {
+                Divider()
+                Button(p.title.monitored ? "Stop monitoring" : "Monitor", systemImage: p.title.monitored ? "bell.slash" : "bell") {
+                    patch(["monitored": !p.title.monitored], done: p.title.monitored ? "Monitoring off" : "Monitoring on")
+                }
+                Button("Refresh chapters", systemImage: "arrow.clockwise") {
+                    enqueue("refresh_title", done: "Refresh queued")
+                }
+                Button("Download missing", systemImage: "arrow.down.circle") {
+                    enqueue("download_missing", done: "Download queued")
+                }
+                Button("Sync AniList", systemImage: "arrow.triangle.2.circlepath") {
+                    post("/api/v1/anilist/sync", body: ["title_id": titleID], done: "AniList synced")
+                }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
+        }
+    }
+
+    // downloadAll pulls every server-downloaded chapter not yet on the device.
+    private func downloadAll(_ p: TitleReadProgress) {
+        guard let api = app.api else { return }
+        let todo = p.chapters.filter { $0.downloaded && !app.store.isDownloaded($0.id) }
+        downloading = true
+        Task {
+            defer { downloading = false }
+            for (i, ch) in todo.enumerated() {
+                note = "Downloading \(i + 1)/\(todo.count)…"
+                do {
+                    let tmp = try await api.download("/api/v1/reader/chapters/\(ch.id)/archive")
+                    try app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,
+                                       titleName: p.title.displayTitle, label: ch.label)
+                } catch {
+                    note = error.localizedDescription
+                    return
+                }
+            }
+            note = "Downloaded \(todo.count) chapters"
         }
     }
 
@@ -171,17 +208,21 @@ enum JSONValue: Encodable {
 struct ChapterRow: View {
     let chapter: ChapterProgress
     var volumes = false
+    var local = false
 
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
                 Text("\(volumes ? "Volume" : "Chapter") \(chapter.label)")
-                    .foregroundStyle(volumes || chapter.downloaded ? .primary : .secondary)
+                    .foregroundStyle(volumes || chapter.downloaded || local ? .primary : .secondary)
                 if !chapter.title.isEmpty {
                     Text(chapter.title).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
+            if local {
+                Image(systemName: "iphone").font(.caption).foregroundStyle(.secondary)
+            }
             if chapter.completed {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             } else if chapter.readPages > 0 {

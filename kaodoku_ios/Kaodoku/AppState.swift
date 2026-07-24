@@ -9,6 +9,7 @@ final class AppState {
     var me: Me?
     var settings = UserSettings()
     var errorMessage: String?
+    let store = LocalStore()
 
     private static let serverKey = "server_url"
     private static let tokenAccount = "api_token"
@@ -61,6 +62,7 @@ final class AppState {
         do {
             me = try await api.get("/api/v1/me")
             settings = try await api.get("/api/v1/me/settings")
+            await store.flush(api)
         } catch APIError.unauthorized {
             signOut()
         } catch {

@@ -1,14 +1,16 @@
 import SwiftUI
 
-// ReaderView streams pages online in paged (LTR/RTL) or vertical strip mode,
-// following the server manifest window that extends as the reader approaches
-// the end. Mode/direction sync via /me/settings. Each settled page is marked.
+// ReaderView shows pages in paged (LTR/RTL) or vertical strip mode. Online it
+// follows the server manifest window; with localChapters it reads device CBZs
+// fully offline. Pages downloaded to the device always load locally first.
+// Each settled page is marked; marks made offline queue for batch replay.
 struct ReaderView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     let titleID: Int64
     let startChapter: Int64
     var volumes = false
+    var localChapters: [LocalStore.Entry]? = nil
 
     struct PageRef: Hashable {
         var chapterID: Int64
@@ -16,6 +18,7 @@ struct ReaderView: View {
         var page: Int
         var total: Int
         var url: String
+        var localURL: URL?
     }
 
     @State private var pages: [PageRef] = []
@@ -38,7 +41,7 @@ struct ReaderView: View {
             } else if paged {
                 TabView(selection: $index) {
                     ForEach(pages.indices, id: \.self) { i in
-                        ReaderPage(path: pages[i].url).tag(i)
+                        ReaderPage(ref: pages[i], active: abs(i - index) <= 3).tag(i)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -49,7 +52,7 @@ struct ReaderView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(pages.indices, id: \.self) { i in
-                            ReaderPage(path: pages[i].url, strip: true)
+                            ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 6)
                                 .onAppear { onSettle(i) }
                         }
                     }
@@ -61,6 +64,10 @@ struct ReaderView: View {
         .statusBarHidden(!showBar)
         .onTapGesture { showBar.toggle() }
         .task { await load(chapter: startChapter, resume: true) }
+        .onDisappear {
+            guard let api = app.api else { return }
+            Task { await app.store.flush(api) }
+        }
         .sheet(isPresented: $showSettings) { ReaderSettingsSheet() }
     }
 
@@ -93,6 +100,20 @@ struct ReaderView: View {
     }
 
     private func load(chapter: Int64, resume: Bool) async {
+        if let localChapters {
+            markBase = "/api/v1/reader/chapters/"
+            noMore = true
+            pages = localChapters.compactMap { e -> [PageRef]? in
+                guard let local = app.store.url(for: e.id), e.pages > 0 else { return nil }
+                return (1...e.pages).map {
+                    PageRef(chapterID: e.id, label: e.label, page: $0, total: e.pages,
+                            url: "", localURL: local)
+                }
+            }.flatMap { $0 }
+            if let i = pages.firstIndex(where: { $0.chapterID == chapter }) { index = i }
+            if pages.indices.contains(index) { mark(pages[index]) }
+            return
+        }
         guard let api = app.api else { return }
         let mode = volumes ? "&mode=volumes" : ""
         do {
@@ -114,8 +135,9 @@ struct ReaderView: View {
     private func append(_ chapters: [Manifest.Chapter]) {
         var added = false
         for ch in chapters where !pages.contains(where: { $0.chapterID == ch.id }) {
+            let local = volumes ? nil : app.store.url(for: ch.id)
             pages.append(contentsOf: ch.pages.map {
-                PageRef(chapterID: ch.id, label: ch.label, page: $0.page, total: ch.pageCount, url: $0.url)
+                PageRef(chapterID: ch.id, label: ch.label, page: $0.page, total: ch.pageCount, url: $0.url, localURL: local)
             })
             lastChapterID = ch.id
             added = true
@@ -134,10 +156,14 @@ struct ReaderView: View {
     }
 
     private func mark(_ p: PageRef) {
-        guard let api = app.api else { return }
         Task {
-            _ = try? await api.data("POST", markBase + "\(p.chapterID)/pages",
-                                    body: ["page": p.page, "total_pages": p.total])
+            do {
+                guard let api = app.api else { throw APIError.badURL }
+                _ = try await api.data("POST", markBase + "\(p.chapterID)/pages",
+                                       body: ["page": p.page, "total_pages": p.total])
+            } catch {
+                app.store.queueMark(id: p.chapterID, volume: volumes, page: p.page, totalPages: p.total)
+            }
         }
     }
 }
@@ -171,11 +197,14 @@ struct ReaderSettingsSheet: View {
     }
 }
 
-// ReaderPage shows one page image; fit-to-screen when paged, full-width in strip.
+// ReaderPage shows one page image; fit-to-screen when paged, full-width in
+// strip. A device CBZ copy is preferred over the network. Pages outside the
+// active window release their decoded bitmap so long sessions stay bounded.
 struct ReaderPage: View {
     @Environment(AppState.self) private var app
-    let path: String
+    let ref: ReaderView.PageRef
     var strip = false
+    var active = true
     @State private var image: UIImage?
     @State private var failed = false
     @State private var zoom: CGFloat = 1
@@ -206,9 +235,18 @@ struct ReaderPage: View {
                     .frame(maxWidth: .infinity, minHeight: strip ? 400 : 0)
             }
         }
-        .task(id: path) {
-            guard let api = app.api, image == nil else { return }
-            if let data = try? await api.data("GET", path), let img = UIImage(data: data) {
+        .onChange(of: active) { _, a in
+            if !a { image = nil; failed = false }
+        }
+        .task(id: active) {
+            guard active, image == nil else { return }
+            if let local = ref.localURL, let img = await LocalStore.pageImage(at: local, page: ref.page) {
+                image = img
+                return
+            }
+            if let api = app.api, !ref.url.isEmpty,
+               let data = try? await api.data("GET", ref.url),
+               let img = await Task.detached(priority: .userInitiated, operation: { UIImage.downsampled(data) }).value {
                 image = img
             } else {
                 failed = true

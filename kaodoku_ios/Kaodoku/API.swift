@@ -44,6 +44,7 @@ struct APIClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             let enc = JSONEncoder()
             enc.keyEncodingStrategy = .convertToSnakeCase
+            enc.dateEncodingStrategy = .iso8601
             req.httpBody = try enc.encode(body)
         }
         return req
@@ -58,6 +59,17 @@ struct APIClient {
         default:
             let msg = (try? Self.decoder.decode(APIErrorBody.self, from: data))?.error
             throw APIError.server(msg ?? "HTTP \(http.statusCode)")
+        }
+    }
+
+    // download streams a response to a temp file (large CBZs never sit in memory).
+    func download(_ path: String) async throws -> URL {
+        let (url, resp) = try await Self.session.download(for: request("GET", path))
+        guard let http = resp as? HTTPURLResponse else { throw APIError.server("no response") }
+        switch http.statusCode {
+        case 200..<300: return url
+        case 401: throw APIError.unauthorized
+        default: throw APIError.server("HTTP \(http.statusCode)")
         }
     }
 

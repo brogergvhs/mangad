@@ -10,6 +10,7 @@ struct KaodokuApp: App {
                 TabView {
                     LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }
                     SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }
+                    DownloadsView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
                 }
                 .environment(app)
                 .task { await app.loadMe() }
