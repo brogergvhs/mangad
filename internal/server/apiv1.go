@@ -491,7 +491,13 @@ func (a *apiV1) readerTitle(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, toTitleReadProgressDTO(p))
+	dto := toTitleReadProgressDTO(p)
+	if p.Title.CatalogMangaID != nil {
+		if m, err := a.svc.GetManga(r.Context(), *p.Title.CatalogMangaID); err == nil {
+			dto.Manga = toMangaDetailDTO(m)
+		}
+	}
+	writeJSON(w, http.StatusOK, dto)
 }
 
 func (a *apiV1) manifest(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/brogergvhs/kaodoku/internal/catalog"
 	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/library"
@@ -90,8 +91,31 @@ func toChapterProgressDTO(c library.ChapterReadStatus) chapterProgressDTO {
 	}
 }
 
+// mangaDetailDTO is the catalog metadata the web title page renders
+// (mangaDetail template): badges, description, authors, genres.
+type mangaDetailDTO struct {
+	Description  string   `json:"description,omitempty"`
+	Status       string   `json:"status,omitempty"`
+	Format       string   `json:"format,omitempty"`
+	Year         int      `json:"year,omitempty"`
+	Chapters     *int     `json:"chapters,omitempty"`
+	Volumes      *int     `json:"volumes,omitempty"`
+	Authors      []string `json:"authors,omitempty"`
+	Genres       []string `json:"genres,omitempty"`
+	AverageScore int      `json:"average_score,omitempty"`
+}
+
+func toMangaDetailDTO(m catalog.Manga) *mangaDetailDTO {
+	return &mangaDetailDTO{
+		Description: m.Description, Status: m.Status, Format: m.Format, Year: m.Year,
+		Chapters: m.Chapters, Volumes: m.Volumes, Authors: m.Authors, Genres: m.Genres,
+		AverageScore: m.AverageScore,
+	}
+}
+
 type titleReadProgressDTO struct {
 	Title         titleDTO             `json:"title"`
+	Manga         *mangaDetailDTO      `json:"manga,omitempty"`
 	Chapters      []chapterProgressDTO `json:"chapters"`
 	ReadChapters  int                  `json:"read_chapters"`
 	TotalChapters int                  `json:"total_chapters"`
