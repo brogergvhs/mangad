@@ -655,8 +655,11 @@ func clampLimit(s string) int {
 // libraryControlsFromQuery maps the v1 query params onto the shared web filter.
 func libraryControlsFromQuery(q url.Values) libraryControls {
 	c := libraryControls{Q: q.Get("q"), Source: q.Get("source"), Progress: q.Get("progress"), Content: q.Get("content")}
-	if q.Get("monitored") == "1" {
+	switch q.Get("monitored") {
+	case "1":
 		c.Monitor = "on"
+	case "0":
+		c.Monitor = "off"
 	}
 	if q.Get("favourite") == "1" {
 		c.Fav = "only"

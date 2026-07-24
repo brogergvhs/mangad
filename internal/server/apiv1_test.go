@@ -405,8 +405,8 @@ func TestAPIV1EnqueueOwnership(t *testing.T) {
 	if code := enqueue(memberTok, memberTitle, "refresh_title"); code != http.StatusCreated {
 		t.Fatalf("member own title enqueue = %d, want 201", code)
 	}
-	if code := enqueue(memberTok, adminTitle, "refresh_title"); code != http.StatusForbidden {
-		t.Fatalf("member foreign title enqueue = %d, want 403", code)
+	if code := enqueue(memberTok, adminTitle, "refresh_title"); code != http.StatusCreated {
+		t.Fatalf("member foreign title enqueue = %d, want 201 (web parity)", code)
 	}
 	if code := enqueue(memberTok, 0, "scan_downloads"); code != http.StatusForbidden {
 		t.Fatalf("member global enqueue = %d, want 403", code)

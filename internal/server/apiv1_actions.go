@@ -707,32 +707,23 @@ func (a *apiV1) jobGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toJobDTO(j))
 }
 
-// titleScopedJobTypes may be enqueued with library.manage by the title's owner.
+// titleScopedJobTypes may be enqueued with library.manage alone.
 var titleScopedJobTypes = map[string]bool{
 	jobs.TypeRefreshTitle:    true,
 	jobs.TypeDownloadMissing: true,
 	jobs.TypeScanDownloads:   true,
 }
 
-// mayEnqueue enforces the split: jobs.manage for anything, library.manage only
-// for title-scoped jobs on titles the user added (added_by 0 = env admin).
+// mayEnqueue enforces the split: jobs.manage for anything; library.manage for
+// title-scoped jobs on any visible title — the same rule as the web UI's
+// /ui/library/{id}/refresh|download|scan actions.
 func (a *apiV1) mayEnqueue(r *http.Request, typ string, titleID int64) bool {
 	user := userFrom(r.Context())
 	if user.Can(auth.PermJobsManage) {
 		return true
 	}
-	if !user.Can(auth.PermLibraryManage) || !titleScopedJobTypes[typ] || titleID <= 0 {
-		return false
-	}
-	owners, err := a.svc.TitleOwners(r.Context())
-	if err != nil {
-		return false
-	}
-	owner := owners[titleID]
-	if owner == 0 {
-		owner = auth.EnvAdminID
-	}
-	return owner == user.ID && titleAllowed(r.Context(), a.svc, titleID)
+	return user.Can(auth.PermLibraryManage) && titleScopedJobTypes[typ] && titleID > 0 &&
+		titleAllowed(r.Context(), a.svc, titleID)
 }
 
 func (a *apiV1) jobEnqueue(w http.ResponseWriter, r *http.Request) {
