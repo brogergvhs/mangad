@@ -65,17 +65,21 @@ struct ReaderView: View {
                         if let i = scrollID, pages.indices.contains(i) { onSettle(i) }
                     }
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(pages.indices, id: \.self) { i in
-                                ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
-                                    .onAppear { onSettle(i) }
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(pages.indices, id: \.self) { i in
+                                    ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
+                                        .onAppear { onSettle(i) }
+                                }
                             }
                         }
-                        .scrollTargetLayout()
+                        .ignoresSafeArea()
+                        .onChange(of: scrollID) { _, id in
+                            guard let id, !settled else { return }
+                            Task { proxy.scrollTo(id, anchor: .top) }
+                        }
                     }
-                    .scrollPosition(id: $scrollID, anchor: .top)
-                    .ignoresSafeArea()
                 }
                 if showBar { bar }
             }
@@ -261,6 +265,11 @@ struct ReaderSettingsSheet: View {
 // strip. A device CBZ copy is preferred over the network. Pages outside the
 // active window release their decoded bitmap so long sessions stay bounded.
 struct ReaderPage: View {
+    // aspects remembers each decoded page's width/height ratio so placeholders
+    // and evicted pages keep their true height — unstable strip row heights
+    // cause scroll jumps when scrolling upward.
+    @MainActor static var aspects: [String: CGFloat] = [:]
+
     @Environment(AppState.self) private var app
     let ref: ReaderView.PageRef
     var strip = false
@@ -290,6 +299,12 @@ struct ReaderPage: View {
                 Label("Page failed to load", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.white)
                     .frame(minHeight: strip ? 200 : 0)
+            } else if strip, let ratio = Self.aspects[aspectKey] {
+                ZStack {
+                    Color.clear
+                    ProgressView().tint(.white)
+                }
+                .aspectRatio(ratio, contentMode: .fit)
             } else {
                 ProgressView().tint(.white)
                     .frame(maxWidth: .infinity, minHeight: strip ? 400 : 0)
@@ -301,16 +316,23 @@ struct ReaderPage: View {
         .task(id: active) {
             guard active, image == nil else { return }
             if let local = ref.localURL, let img = await LocalStore.pageImage(at: local, page: ref.page) {
-                image = img
+                setImage(img)
                 return
             }
             if let api = app.api, !ref.url.isEmpty,
                let data = try? await api.data("GET", ref.url),
                let img = await Task.detached(priority: .userInitiated, operation: { UIImage.downsampled(data) }).value {
-                image = img
+                setImage(img)
             } else {
                 failed = true
             }
         }
+    }
+
+    private var aspectKey: String { "\(ref.chapterID)-\(ref.page)" }
+
+    private func setImage(_ img: UIImage) {
+        if img.size.height > 0 { Self.aspects[aspectKey] = img.size.width / img.size.height }
+        image = img
     }
 }
