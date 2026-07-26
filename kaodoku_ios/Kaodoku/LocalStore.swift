@@ -18,6 +18,7 @@ final class LocalStore {
         // Local read state, kept current offline (optional: decode-tolerant).
         var readPages: Int?
         var completed: Bool?
+        var pageAspects: [Double]?
 
         var isRead: Bool { completed ?? false }
     }
@@ -200,15 +201,23 @@ final class LocalStore {
         let dest = Self.root.appendingPathComponent(path)
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: src, to: dest)
-        let pages = ZipArchive(url: dest)?.imageEntries.count ?? 0
-        guard pages > 0 else {
+        guard let zip = ZipArchive(url: dest), !zip.imageEntries.isEmpty else {
             try? FileManager.default.removeItem(at: dest)
             throw CocoaError(.fileReadCorruptFile)
         }
+        let images = zip.imageEntries
+        let aspects = images.map { entry -> Double in
+            guard let data = zip.data(for: entry),
+                  let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+                  let w = props[kCGImagePropertyPixelWidth] as? Double,
+                  let h = props[kCGImagePropertyPixelHeight] as? Double, w > 0, h > 0 else { return 0 }
+            return w / h
+        }
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path))?[.size] as? Int64 ?? 0
         chapters[chapterID] = Entry(id: chapterID, titleId: titleId, titleName: titleName,
-                                    label: label, path: path, pages: pages, size: size,
-                                    readPages: readPages, completed: completed)
+                                    label: label, path: path, pages: images.count, size: size,
+                                    readPages: readPages, completed: completed, pageAspects: aspects)
         persistIndex()
     }
 

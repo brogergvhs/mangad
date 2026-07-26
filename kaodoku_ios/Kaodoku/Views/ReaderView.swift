@@ -74,7 +74,7 @@ struct ReaderView: View {
                         }
                         .scrollTargetLayout()
                     }
-                    .scrollPosition(id: $scrollID, anchor: settled ? nil : .top)
+                    .scrollPosition(id: $scrollID, anchor: settled ? .center : .top)
                     .ignoresSafeArea()
                 }
                 if showBar { bar }
@@ -153,6 +153,9 @@ struct ReaderView: View {
             noMore = true
             pages = localChapters.compactMap { e -> [PageRef]? in
                 guard let local = app.store.url(for: e.id), e.pages > 0 else { return nil }
+                for (pi, a) in (e.pageAspects ?? []).enumerated() where a > 0 {
+                    ReaderPage.aspects["\(e.id)-\(pi + 1)"] = a
+                }
                 return (1...e.pages).map {
                     PageRef(chapterID: e.id, label: e.label, page: $0, total: e.pages,
                             url: "", localURL: local)
