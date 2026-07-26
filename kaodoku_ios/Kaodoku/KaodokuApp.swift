@@ -12,6 +12,7 @@ struct KaodokuApp: App {
                         LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }
                         SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }
                         DownloadsView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+                        SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }
                     }
                     .task { await app.loadMe() }
                 } else {

@@ -238,14 +238,6 @@ struct LibraryView: View {
                     Image(systemName: filtersActive
                         ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 }
-                Menu {
-                    if let me = app.me {
-                        Text(me.user.username)
-                    }
-                    Button("Sign out", role: .destructive) { app.signOut() }
-                } label: {
-                    Image(systemName: "person.circle")
-                }
             }
             .sheet(isPresented: $showFilters, onDismiss: { Task { await load() } }) {
                 LibraryFiltersSheet(sort: $sort, dir: $dir, fav: $fav, monitored: $monitored,

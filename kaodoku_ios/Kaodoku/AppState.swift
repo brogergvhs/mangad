@@ -12,6 +12,7 @@ final class AppState {
     let store = LocalStore()
 
     private static let serverKey = "server_url"
+    private static let settingsKey = "user_settings"
     private static let tokenAccount = "api_token"
 
     var connected: Bool { api != nil }
@@ -19,6 +20,10 @@ final class AppState {
     init() {
         if let raw = UserDefaults.standard.string(forKey: Self.serverKey), let url = URL(string: raw) {
             api = APIClient(baseURL: url, token: Keychain.load(account: Self.tokenAccount))
+        }
+        if let data = UserDefaults.standard.data(forKey: Self.settingsKey),
+           let cached = try? JSONDecoder().decode(UserSettings.self, from: data) {
+            settings = cached
         }
     }
 
@@ -62,6 +67,7 @@ final class AppState {
         do {
             me = try await api.get("/api/v1/me")
             settings = try await api.get("/api/v1/me/settings")
+            cacheSettings()
             await store.flush(api)
         } catch APIError.unauthorized {
             signOut()
@@ -71,9 +77,14 @@ final class AppState {
     }
 
     func saveSettings() {
+        cacheSettings()
         guard let api else { return }
         let s = settings
         Task { _ = try? await api.data("PUT", "/api/v1/me/settings", body: s) }
+    }
+
+    private func cacheSettings() {
+        UserDefaults.standard.set(try? JSONEncoder().encode(settings), forKey: Self.settingsKey)
     }
 
     func signOut() {
@@ -82,6 +93,7 @@ final class AppState {
         }
         Keychain.delete(account: Self.tokenAccount)
         UserDefaults.standard.removeObject(forKey: Self.serverKey)
+        UserDefaults.standard.removeObject(forKey: Self.settingsKey)
         api = nil
         me = nil
     }

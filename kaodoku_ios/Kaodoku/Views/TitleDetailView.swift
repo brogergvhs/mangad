@@ -25,6 +25,7 @@ struct TitleDetailView: View {
                     .nordRows()
                 Section { contentHeader(p) }
                     .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 Section(volumes ? "Volumes" : "Chapters") {
                     ForEach(p.chapters) { ch in
                         Button {
@@ -146,7 +147,10 @@ struct TitleDetailView: View {
                 Button {
                     readerChapter = next
                 } label: {
-                    Text(readLabel(p)).frame(maxWidth: .infinity)
+                    Text(readLabel(p))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
             }

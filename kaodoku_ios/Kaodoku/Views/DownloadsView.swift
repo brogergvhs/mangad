@@ -79,6 +79,7 @@ struct LocalTitleView: View {
                     .nordRows()
                 Section { contentHeader(title) }
                     .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 Section("Chapters") {
                     ForEach(title.entries) { entry in
                         Button {
@@ -150,7 +151,9 @@ struct LocalTitleView: View {
                     reading = next
                 } label: {
                     Text(title.entries.contains { ($0.readPages ?? 0) > 0 || $0.isRead } ? "Continue reading" : "Read")
+                        .font(.headline)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
             }
