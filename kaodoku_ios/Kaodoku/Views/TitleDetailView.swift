@@ -286,6 +286,7 @@ struct TitleDetailView: View {
             })
             for (i, ch) in todo.enumerated() {
                 note = "Downloading \(i + 1)/\(todo.count)…"
+                app.store.markActive(ch.id, volume: volumes)
                 do {
                     let kind = volumes ? "volumes" : "chapters"
                     let name = volumes && !ch.title.isEmpty ? ch.title : ch.label
@@ -613,9 +614,16 @@ struct ChapterRow: View {
         chapter.title.isEmpty ? "Volume \(chapter.label)" : chapter.title
     }
 
+    var localThumb: URL? = nil
+
     var body: some View {
         HStack(spacing: 10) {
-            if volumes, thumb {
+            if volumes, let localThumb {
+                Color.clear
+                    .frame(width: 40, height: 56)
+                    .overlay(LocalImage(url: localThumb))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else if volumes, thumb {
                 Color.clear
                     .frame(width: 40, height: 56)
                     .overlay(ServerImage(path: "/api/v1/volumes/\(chapter.id)/cover"))

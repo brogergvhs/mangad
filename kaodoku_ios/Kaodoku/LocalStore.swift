@@ -63,6 +63,7 @@ final class LocalStore {
     private(set) var chapters: [Int64: Entry] = [:]
     private(set) var titleInfo: [Int64: TitleInfo] = [:]
     private(set) var pending: [Int64: Pending] = [:]
+    private(set) var activeDownload: Int64?
     private var queue: [QueuedMark] = []
     private var flushing = false
 
@@ -169,8 +170,17 @@ final class LocalStore {
         for p in items { pending[key(p.id, volume: p.volume)] = p }
     }
 
+    func markActive(_ id: Int64, volume: Bool) {
+        activeDownload = key(id, volume: volume)
+    }
+
+    func isActive(_ p: Pending) -> Bool {
+        activeDownload == key(p.id, volume: p.volume)
+    }
+
     func clearPending(titleId: Int64) {
         pending = pending.filter { $0.value.titleId != titleId }
+        activeDownload = nil
         prune()
     }
 
@@ -253,6 +263,11 @@ final class LocalStore {
                   let h = props[kCGImagePropertyPixelHeight] as? Double, w > 0, h > 0 else { return 0 }
             return w / h
         }
+        if volume, let first = zip.data(for: images[0]),
+           let img = UIImage.downsampled(first, maxDimension: 240),
+           let jpeg = img.jpegData(compressionQuality: 0.7) {
+            try? jpeg.write(to: dest.appendingPathExtension("thumb.jpg"))
+        }
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path))?[.size] as? Int64 ?? 0
         chapters[key(chapterID, volume: volume)] = Entry(
             id: chapterID, titleId: titleId, titleName: titleName,
@@ -273,10 +288,16 @@ final class LocalStore {
         return taken ? "\(base) (\(titleId))" : base
     }
 
+    func thumbURL(_ e: Entry) -> URL? {
+        let u = Self.root.appendingPathComponent(e.path).appendingPathExtension("thumb.jpg")
+        return FileManager.default.fileExists(atPath: u.path) ? u : nil
+    }
+
     func delete(_ id: Int64, volume: Bool = false) {
         guard let e = chapters.removeValue(forKey: key(id, volume: volume)) else { return }
         let file = Self.root.appendingPathComponent(e.path)
         try? FileManager.default.removeItem(at: file)
+        try? FileManager.default.removeItem(at: file.appendingPathExtension("thumb.jpg"))
         if !chapters.values.contains(where: { $0.titleId == e.titleId }) {
             titleInfo.removeValue(forKey: e.titleId)
             try? FileManager.default.removeItem(at: file.deletingLastPathComponent())

@@ -88,6 +88,7 @@ extension LocalTitleCard {
 // TitleDetailView: header, content header with the Read button, chapter rows.
 struct LocalTitleView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.dismiss) private var dismiss
     let titleId: Int64
     @State private var reading: LocalStore.Entry?
     @State private var showRemoveRange = false
@@ -111,7 +112,8 @@ struct LocalTitleView: View {
                         Button {
                             reading = entry
                         } label: {
-                            ChapterRow(chapter: chapterProgress(entry), volumes: volumesTab, local: true)
+                            ChapterRow(chapter: chapterProgress(entry), volumes: volumesTab, local: true,
+                                       localThumb: app.store.thumbURL(entry))
                         }
                     }
                     .onDelete { offsets in
@@ -123,7 +125,11 @@ struct LocalTitleView: View {
                             Text(volumesTab && Double(p.label) == nil ? p.label : "\(volumesTab ? "Volume" : "Chapter") \(p.label)")
                                 .foregroundStyle(.tertiary)
                             Spacer()
-                            ProgressView().controlSize(.small)
+                            if app.store.isActive(p) {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("queued").font(.caption2).foregroundStyle(.tertiary)
+                            }
                         }
                     }
                 }
@@ -135,12 +141,18 @@ struct LocalTitleView: View {
             if let t = title, t.chapterEntries.isEmpty, t.pendingChapters.isEmpty,
                !(t.volumeEntries.isEmpty && t.pendingVolumes.isEmpty) { volumesTab = true }
         }
+        .onChange(of: title == nil) { _, gone in
+            if gone { dismiss() }
+        }
         .navigationTitle(title?.info.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             Menu {
                 Menu {
-                    Button("All chapters", role: .destructive) { app.store.deleteTitle(titleId) }
+                    Button("All chapters", role: .destructive) {
+                        app.store.deleteTitle(titleId)
+                        dismiss()
+                    }
                     Button("Range…") { showRemoveRange = true }
                 } label: {
                     Label("Remove downloads", systemImage: "trash")
