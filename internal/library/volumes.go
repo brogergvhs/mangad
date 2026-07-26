@@ -311,6 +311,7 @@ func (r *Repository) VolumesReaderProgress(ctx context.Context, title Title) (Ti
 		st := ChapterReadStatus{
 			Downloaded: true,
 			OutputFile: v.File,
+			Bytes:      v.Bytes,
 			Pages:      v.Pages,
 			TotalPages: v.Pages,
 			ReadPages:  v.ReadPages,
