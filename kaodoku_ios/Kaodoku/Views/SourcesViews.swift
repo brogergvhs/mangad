@@ -71,7 +71,8 @@ struct TitleSourcesSheet: View {
                                     link(match)
                                 } label: {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(match.title.isEmpty ? match.sourceId : match.title)
+                                        Text(match.sourceUrl.isEmpty ? match.sourceId : match.sourceUrl)
+                                            .lineLimit(1).truncationMode(.middle)
                                         Text("\(match.sourceId) · \(match.chaptersFound) chapters · \(Int(match.confidence * 100))%")
                                             .font(.caption).foregroundStyle(.secondary)
                                     }

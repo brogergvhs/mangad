@@ -204,6 +204,7 @@ struct TagOption: Decodable, Identifiable, Hashable {
 struct Match: Decodable, Identifiable, Hashable {
     var id: Int64
     var sourceId: String
+    var sourceUrl: String
     var title: String
     var confidence: Double
     var chaptersFound: Int

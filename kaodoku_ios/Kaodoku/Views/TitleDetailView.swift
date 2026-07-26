@@ -16,6 +16,7 @@ struct TitleDetailView: View {
     @State private var showSettings = false
     @State private var showCollections = false
     @State private var showRemove = false
+    @State private var autoTabbed = false
 
     private var canManage: Bool { app.me?.can("library.manage") == true }
 
@@ -28,6 +29,10 @@ struct TitleDetailView: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
                 Section(volumes ? "Volumes" : "Chapters") {
+                    if p.chapters.isEmpty {
+                        Text(volumes ? "No volumes yet." : "No chapters yet.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     ForEach(p.chapters) { ch in
                         Button {
                             readerChapter = ch
@@ -302,6 +307,10 @@ struct TitleDetailView: View {
         await app.store.flush(api)
         let mode = volumes ? "?mode=volumes" : ""
         progress = try? await api.get("/api/v1/reader/titles/\(titleID)\(mode)")
+        if let p = progress, !autoTabbed {
+            autoTabbed = true
+            if p.title.discoveredCount == 0 && p.title.volumeCount > 0 { volumes = true }
+        }
         if let p = progress { app.store.syncRead(p.chapters, volumes: volumes) }
         if canManage, let status: AniListStatus = try? await api.get("/api/v1/anilist") {
             anilistConnected = status.connected
