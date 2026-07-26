@@ -87,6 +87,10 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermLibraryManage
 	case p == "/api/v1/tags": // filter vocabulary, needed by library viewers too
 		return auth.PermLibraryView
+	case strings.HasPrefix(p, "/api/v1/sources/"):
+		return auth.PermSourcesManage
+	case strings.HasPrefix(p, "/api/v1/library/") && strings.Contains(p, "/sources"):
+		return auth.PermLibraryManage
 	case strings.HasPrefix(p, "/api/v1/wanted") || p == "/api/v1/library/add":
 		return auth.PermLibraryAdd
 	case strings.HasPrefix(p, "/api/v1/anilist"):

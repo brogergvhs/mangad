@@ -1791,11 +1791,6 @@ func (s *JobService) ReadProgressIDs(ctx context.Context) ([]int64, []int64, err
 	return s.lib.ReadProgressIDs(ctx)
 }
 
-// TitleOwners maps title id to the user that added it (0 = env admin).
-func (s *JobService) TitleOwners(ctx context.Context) (map[int64]int64, error) {
-	return s.lib.TitleOwners(ctx)
-}
-
 func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) error {
 	return s.lib.SetVolumeRead(ctx, id, read)
 }

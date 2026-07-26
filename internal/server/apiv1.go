@@ -88,6 +88,15 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(con
 
 	mux.HandleFunc("GET /api/v1/wanted/search", a.wantedSearch)
 	mux.HandleFunc("GET /api/v1/tags", a.tagOptions)
+
+	mux.HandleFunc("GET /api/v1/library/{id}/sources", a.titleSources)
+	mux.HandleFunc("POST /api/v1/library/{id}/sources/find", a.sourcesFind)
+	mux.HandleFunc("POST /api/v1/library/{id}/sources/link", a.sourcesLink)
+	mux.HandleFunc("POST /api/v1/library/{id}/sources/link-url", a.sourcesLinkURL)
+	mux.HandleFunc("POST /api/v1/library/{id}/sources/unlink", a.sourcesUnlink)
+	mux.HandleFunc("GET /api/v1/sources/manage", a.sourcesManage)
+	mux.HandleFunc("POST /api/v1/sources/{id}/enabled", a.sourceSetEnabled)
+	mux.HandleFunc("POST /api/v1/sources/{id}/verify", a.sourceVerify)
 	mux.HandleFunc("POST /api/v1/library/add", a.libraryAdd)
 	mux.HandleFunc("GET /api/v1/wanted/trending", a.wantedTrending)
 	mux.HandleFunc("GET /api/v1/wanted", a.wantedList)

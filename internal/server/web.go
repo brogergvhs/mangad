@@ -3840,8 +3840,13 @@ func titleVerb(typ string) string {
 
 // jobStateFor reports the newest job of one type matching payload.
 func (u *webUI) jobStateFor(ctx context.Context, typ string, payload service.JobPayload) (active, failed bool, msg string) {
+	return jobStateForSvc(ctx, u.svc, typ, payload)
+}
+
+func jobStateForSvc(ctx context.Context, svc *service.JobService, typ string, payload service.JobPayload) (active, failed bool, msg string) {
 	want, _ := json.Marshal(payload)
-	for _, j := range u.jobs(ctx) {
+	all, _ := svc.List(ctx)
+	for _, j := range all {
 		if j.Type == typ && j.Payload == string(want) {
 			active, failed = jobState(j.Status)
 			return active, failed, j.LastError
