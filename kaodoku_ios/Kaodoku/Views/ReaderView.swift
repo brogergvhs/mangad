@@ -19,6 +19,7 @@ struct ReaderView: View {
         var total: Int
         var url: String
         var localURL: URL?
+        var volume = false
     }
 
     @State private var pages: [PageRef] = []
@@ -98,7 +99,9 @@ struct ReaderView: View {
                 Button("Close") { dismiss() }
                 Spacer()
                 if pages.indices.contains(index) {
-                    Text("\(volumes ? "Vol" : "Ch") \(pages[index].label) · \(pages[index].page)/\(pages[index].total)")
+                    let p = pages[index]
+                    let name = volumes && Double(p.label) == nil ? p.label : "\(volumes ? "Vol" : "Ch") \(p.label)"
+                    Text("\(name) · \(p.page)/\(p.total)").lineLimit(1)
                 }
                 Spacer()
                 Button {
@@ -149,16 +152,16 @@ struct ReaderView: View {
 
     private func load(chapter: Int64, resume: Bool) async {
         if let localChapters {
-            markBase = "/api/v1/reader/chapters/"
+            markBase = volumes ? "/api/v1/reader/volumes/" : "/api/v1/reader/chapters/"
             noMore = true
             pages = localChapters.compactMap { e -> [PageRef]? in
-                guard let local = app.store.url(for: e.id), e.pages > 0 else { return nil }
+                guard let local = app.store.url(for: e.id, volume: volumes), e.pages > 0 else { return nil }
                 for (pi, a) in (e.pageAspects ?? []).enumerated() where a > 0 {
-                    ReaderPage.aspects["\(e.id)-\(pi + 1)"] = a
+                    ReaderPage.aspects["\(volumes ? "v" : "c")\(e.id)-\(pi + 1)"] = a
                 }
                 return (1...e.pages).map {
                     PageRef(chapterID: e.id, label: e.label, page: $0, total: e.pages,
-                            url: "", localURL: local)
+                            url: "", localURL: local, volume: volumes)
                 }
             }.flatMap { $0 }
             // Resume at the first unread page from the LOCAL read state —
@@ -197,9 +200,10 @@ struct ReaderView: View {
     private func append(_ chapters: [Manifest.Chapter]) {
         var added = false
         for ch in chapters where !pages.contains(where: { $0.chapterID == ch.id }) {
-            let local = volumes ? nil : app.store.url(for: ch.id)
+            let local = app.store.url(for: ch.id, volume: volumes)
             pages.append(contentsOf: ch.pages.map {
-                PageRef(chapterID: ch.id, label: ch.label, page: $0.page, total: ch.pageCount, url: $0.url, localURL: local)
+                PageRef(chapterID: ch.id, label: ch.label, page: $0.page, total: ch.pageCount,
+                        url: $0.url, localURL: local, volume: volumes)
             })
             lastChapterID = ch.id
             added = true
@@ -218,7 +222,7 @@ struct ReaderView: View {
     }
 
     private func mark(_ p: PageRef) {
-        if !volumes { app.store.markLocal(chapterID: p.chapterID, page: p.page, total: p.total) }
+        app.store.markLocal(chapterID: p.chapterID, page: p.page, total: p.total, volume: volumes)
         Task {
             do {
                 guard let api = app.api else { throw APIError.badURL }
@@ -328,7 +332,7 @@ struct ReaderPage: View {
         }
     }
 
-    private var aspectKey: String { "\(ref.chapterID)-\(ref.page)" }
+    private var aspectKey: String { "\(ref.volume ? "v" : "c")\(ref.chapterID)-\(ref.page)" }
 
     private func setImage(_ img: UIImage) {
         if img.size.height > 0 { Self.aspects[aspectKey] = img.size.width / img.size.height }

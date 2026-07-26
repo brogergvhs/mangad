@@ -19,8 +19,10 @@ final class LocalStore {
         var readPages: Int?
         var completed: Bool?
         var pageAspects: [Double]?
+        var volume: Bool?
 
         var isRead: Bool { completed ?? false }
+        var isVolume: Bool { volume ?? false }
     }
 
     // TitleInfo snapshots the server title at download time so the Downloads
@@ -72,7 +74,8 @@ final class LocalStore {
     init() {
         if let data = try? Data(contentsOf: Self.indexURL) {
             if let idx = try? JSONDecoder().decode(Index.self, from: data) {
-                chapters = Dictionary(uniqueKeysWithValues: idx.chapters.map { ($0.id, $0) })
+                chapters = Dictionary(idx.chapters.map { (key($0.id, volume: $0.isVolume), $0) },
+                                      uniquingKeysWith: { a, _ in a })
                 titleInfo = Dictionary(uniqueKeysWithValues: idx.titles.map { ($0.id, $0) })
             } else if let legacy = try? JSONDecoder().decode([LegacyEntry].self, from: data) {
                 chapters = Dictionary(uniqueKeysWithValues: legacy.map { e in
@@ -96,18 +99,20 @@ final class LocalStore {
         let dead = chapters.values.filter {
             $0.pages == 0 || !FileManager.default.fileExists(atPath: Self.root.appendingPathComponent($0.path).path)
         }
-        for e in dead { chapters.removeValue(forKey: e.id) }
+        for e in dead { chapters.removeValue(forKey: key(e.id, volume: e.isVolume)) }
         let orphans = titleInfo.keys.filter { id in !chapters.values.contains { $0.titleId == id } }
         for id in orphans { titleInfo.removeValue(forKey: id) }
         if !dead.isEmpty || !orphans.isEmpty { persistIndex() }
     }
 
-    func isDownloaded(_ chapterID: Int64) -> Bool { url(for: chapterID) != nil }
+    private func key(_ id: Int64, volume: Bool) -> Int64 { volume ? -id : id }
+
+    func isDownloaded(_ id: Int64, volume: Bool = false) -> Bool { url(for: id, volume: volume) != nil }
 
     // url returns the local CBZ if the entry exists and the file survived
     // (users can delete files through the Files app).
-    func url(for chapterID: Int64) -> URL? {
-        guard let e = chapters[chapterID] else { return nil }
+    func url(for id: Int64, volume: Bool = false) -> URL? {
+        guard let e = chapters[key(id, volume: volume)] else { return nil }
         let u = Self.root.appendingPathComponent(e.path)
         return FileManager.default.fileExists(atPath: u.path) ? u : nil
     }
@@ -121,6 +126,8 @@ final class LocalStore {
         var id: Int64
         var info: TitleInfo
         var entries: [Entry]
+        var chapterEntries: [Entry] { entries.filter { !$0.isVolume } }
+        var volumeEntries: [Entry] { entries.filter(\.isVolume) }
         var size: Int64 { entries.reduce(0) { $0 + $1.size } }
         var coverURL: URL? {
             info.cover.map(LocalStore.root.appendingPathComponent).flatMap {
@@ -157,31 +164,32 @@ final class LocalStore {
         persistIndex()
     }
 
-    // markLocal records read progress on a downloaded chapter so Downloads
-    // stays accurate offline.
-    func markLocal(chapterID: Int64, page: Int, total: Int) {
-        guard var e = chapters[chapterID] else { return }
+    // markLocal records read progress on a downloaded chapter/volume so
+    // Downloads stays accurate offline.
+    func markLocal(chapterID: Int64, page: Int, total: Int, volume: Bool = false) {
+        guard var e = chapters[key(chapterID, volume: volume)] else { return }
         let read = max(e.readPages ?? 0, page)
         let done = total > 0 && read >= total
         guard read != e.readPages ?? 0 || done != e.isRead else { return }
         e.readPages = read
         e.completed = done
-        chapters[chapterID] = e
+        chapters[key(chapterID, volume: volume)] = e
         persistIndex()
     }
 
     // syncRead refreshes local read state from the server's chapter list.
     // Chapters with queued (unflushed) offline marks are skipped — the local
     // state is newer than what the server knows.
-    func syncRead(_ list: [ChapterProgress]) {
+    func syncRead(_ list: [ChapterProgress], volumes: Bool = false) {
         var changed = false
-        let pending = Set(queue.map(\.chapterId))
+        let pending = volumes ? Set(queue.compactMap(\.volumeId)) : Set(queue.map(\.chapterId))
         for ch in list {
             guard !pending.contains(ch.id) else { continue }
-            guard var e = chapters[ch.id], e.readPages ?? -1 != ch.readPages || e.isRead != ch.completed else { continue }
+            let k = key(ch.id, volume: volumes)
+            guard var e = chapters[k], e.readPages ?? -1 != ch.readPages || e.isRead != ch.completed else { continue }
             e.readPages = ch.readPages
             e.completed = ch.completed
-            chapters[ch.id] = e
+            chapters[k] = e
             changed = true
         }
         if changed { persistIndex() }
@@ -190,13 +198,16 @@ final class LocalStore {
     // save moves a downloaded temp file into place; sanitized names that would
     // collide across titles or chapters get an id suffix.
     func save(file src: URL, chapterID: Int64, titleId: Int64, titleName: String, label: String,
-              readPages: Int = 0, completed: Bool = false) throws {
+              readPages: Int = 0, completed: Bool = false, volume: Bool = false) throws {
         let dirName = dirName(titleId: titleId, titleName: titleName)
         try FileManager.default.createDirectory(at: Self.root.appendingPathComponent(dirName, isDirectory: true),
                                                 withIntermediateDirectories: true)
-        var path = "\(dirName)/Chapter \(Self.safe(label)).cbz"
-        if chapters.values.contains(where: { $0.path == path && $0.id != chapterID }) {
-            path = "\(dirName)/Chapter \(Self.safe(label)) (\(chapterID)).cbz"
+        let base = volume
+            ? (Double(label) == nil ? Self.safe(label) : "Volume \(Self.safe(label))")
+            : "Chapter \(Self.safe(label))"
+        var path = "\(dirName)/\(base).cbz"
+        if chapters.values.contains(where: { $0.path == path && ($0.id != chapterID || $0.isVolume != volume) }) {
+            path = "\(dirName)/\(base) (\(chapterID)).cbz"
         }
         let dest = Self.root.appendingPathComponent(path)
         try? FileManager.default.removeItem(at: dest)
@@ -215,9 +226,11 @@ final class LocalStore {
             return w / h
         }
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path))?[.size] as? Int64 ?? 0
-        chapters[chapterID] = Entry(id: chapterID, titleId: titleId, titleName: titleName,
-                                    label: label, path: path, pages: images.count, size: size,
-                                    readPages: readPages, completed: completed, pageAspects: aspects)
+        chapters[key(chapterID, volume: volume)] = Entry(
+            id: chapterID, titleId: titleId, titleName: titleName,
+            label: label, path: path, pages: images.count, size: size,
+            readPages: readPages, completed: completed, pageAspects: aspects,
+            volume: volume ? true : nil)
         persistIndex()
     }
 
@@ -231,8 +244,8 @@ final class LocalStore {
         return taken ? "\(base) (\(titleId))" : base
     }
 
-    func delete(_ chapterID: Int64) {
-        guard let e = chapters.removeValue(forKey: chapterID) else { return }
+    func delete(_ id: Int64, volume: Bool = false) {
+        guard let e = chapters.removeValue(forKey: key(id, volume: volume)) else { return }
         let file = Self.root.appendingPathComponent(e.path)
         try? FileManager.default.removeItem(at: file)
         if !chapters.values.contains(where: { $0.titleId == e.titleId }) {
@@ -243,7 +256,7 @@ final class LocalStore {
     }
 
     func deleteTitle(_ titleId: Int64) {
-        for e in chapters.values where e.titleId == titleId { delete(e.id) }
+        for e in chapters.values where e.titleId == titleId { delete(e.id, volume: e.isVolume) }
     }
 
     func queueMark(id: Int64, volume: Bool, page: Int, totalPages: Int) {

@@ -33,13 +33,14 @@ struct TitleDetailView: View {
                             readerChapter = ch
                         } label: {
                             ChapterRow(chapter: ch, volumes: volumes,
-                                       local: !volumes && app.store.isDownloaded(ch.id))
+                                       local: app.store.isDownloaded(ch.id, volume: volumes),
+                                       thumb: volumes)
                         }
                         .disabled(!volumes && !ch.downloaded && !app.store.isDownloaded(ch.id))
                         .swipeActions {
-                            if !volumes, app.store.isDownloaded(ch.id) {
+                            if app.store.isDownloaded(ch.id, volume: volumes) {
                                 Button("Remove from device", systemImage: "iphone.slash", role: .destructive) {
-                                    app.store.delete(ch.id)
+                                    app.store.delete(ch.id, volume: volumes)
                                 }
                             }
                         }
@@ -85,6 +86,7 @@ struct TitleDetailView: View {
                     app.store.isDownloaded($0.id) && $0.numberMain >= from && $0.numberMain <= to
                 }
                 for ch in todo { app.store.delete(ch.id) }
+
                 note = "Removed \(todo.count) chapters from device"
             }
         }
@@ -187,27 +189,31 @@ struct TitleDetailView: View {
     // scopes; management actions stay gated like the web.
     private func actionsMenu(_ p: TitleReadProgress) -> some View {
         Menu {
-            if !volumes {
-                Menu {
-                    Button("All chapters") { downloadToDevice(p) { _ in true } }
-                    Button("Unread only") { downloadToDevice(p) { !$0.completed } }
+            Menu {
+                Button(volumes ? "All volumes" : "All chapters") { downloadToDevice(p) { _ in true } }
+                Button("Unread only") { downloadToDevice(p) { !$0.completed } }
+                if !volumes {
                     Button("Range…") { showRange = true }
-                } label: {
-                    Label("Download to device", systemImage: "arrow.down.to.line")
                 }
-                .disabled(downloading || !p.chapters.contains { $0.downloaded && !app.store.isDownloaded($0.id) })
-                if !app.store.entries(titleId: titleID).isEmpty {
-                    Menu {
-                        Button("All chapters", role: .destructive) {
-                            app.store.deleteTitle(titleID)
-                            note = "Device downloads removed"
+            } label: {
+                Label("Download to device", systemImage: "arrow.down.to.line")
+            }
+            .disabled(downloading || !p.chapters.contains { (volumes || $0.downloaded) && !app.store.isDownloaded($0.id, volume: volumes) })
+            if app.store.entries(titleId: titleID).contains(where: { $0.isVolume == volumes }) {
+                Menu {
+                    Button(volumes ? "All volumes" : "All chapters", role: .destructive) {
+                        for e in app.store.entries(titleId: titleID) where e.isVolume == volumes {
+                            app.store.delete(e.id, volume: volumes)
                         }
-                        Button("Range…") { showRemoveRange = true }
-                    } label: {
-                        Label("Remove device downloads", systemImage: "trash")
+                        note = "Device downloads removed"
                     }
-                    .disabled(downloading)
+                    if !volumes {
+                        Button("Range…") { showRemoveRange = true }
+                    }
+                } label: {
+                    Label("Remove device downloads", systemImage: "trash")
                 }
+                .disabled(downloading)
             }
             if canManage {
                 Divider()
@@ -251,7 +257,10 @@ struct TitleDetailView: View {
     // scope that isn't on the device yet, then snapshots the title card.
     private func downloadToDevice(_ p: TitleReadProgress, scope: @escaping (ChapterProgress) -> Bool) {
         guard let api = app.api, !downloading else { return }
-        let todo = p.chapters.filter { $0.downloaded && !app.store.isDownloaded($0.id) && scope($0) }
+        let volumes = volumes
+        let todo = p.chapters.filter {
+            (volumes || $0.downloaded) && !app.store.isDownloaded($0.id, volume: volumes) && scope($0)
+        }
         guard !todo.isEmpty else { note = "Nothing to download"; return }
         downloading = true
         Task {
@@ -259,10 +268,12 @@ struct TitleDetailView: View {
             for (i, ch) in todo.enumerated() {
                 note = "Downloading \(i + 1)/\(todo.count)…"
                 do {
-                    let tmp = try await api.download("/api/v1/reader/chapters/\(ch.id)/archive")
+                    let kind = volumes ? "volumes" : "chapters"
+                    let name = volumes && !ch.title.isEmpty ? ch.title : ch.label
+                    let tmp = try await api.download("/api/v1/reader/\(kind)/\(ch.id)/archive")
                     try app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,
-                                       titleName: p.title.displayTitle, label: ch.label,
-                                       readPages: ch.readPages, completed: ch.completed)
+                                       titleName: p.title.displayTitle, label: name,
+                                       readPages: ch.readPages, completed: ch.completed, volume: volumes)
                 } catch {
                     note = error.localizedDescription
                     return
@@ -274,7 +285,7 @@ struct TitleDetailView: View {
                 readCount: p.title.readCount, completedCount: p.title.completedCount,
                 discoveredCount: p.title.discoveredCount, missingCount: p.title.missingCount
             ), coverData: cover)
-            note = "Downloaded \(todo.count) chapters"
+            note = "Downloaded \(todo.count) \(volumes ? "volumes" : "chapters")"
         }
     }
 
@@ -283,7 +294,7 @@ struct TitleDetailView: View {
         await app.store.flush(api)
         let mode = volumes ? "?mode=volumes" : ""
         progress = try? await api.get("/api/v1/reader/titles/\(titleID)\(mode)")
-        if let p = progress, !volumes { app.store.syncRead(p.chapters) }
+        if let p = progress { app.store.syncRead(p.chapters, volumes: volumes) }
         if canManage, let status: AniListStatus = try? await api.get("/api/v1/anilist") {
             anilistConnected = status.connected
         }
@@ -579,18 +590,35 @@ struct ChapterRow: View {
     let chapter: ChapterProgress
     var volumes = false
     var local = false
+    var thumb = false
+
+    private var volumeName: String {
+        chapter.title.isEmpty ? "Volume \(chapter.label)" : chapter.title
+    }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text("\(volumes ? "Volume" : "Chapter") \(chapter.label)")
-                    .foregroundStyle(volumes || chapter.downloaded || local ? .primary : .secondary)
-                if !chapter.title.isEmpty {
-                    Text(chapter.title).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            if volumes, thumb {
+                Color.clear
+                    .frame(width: 40, height: 56)
+                    .overlay(ServerImage(path: "/api/v1/volumes/\(chapter.id)/cover"))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                if volumes {
+                    Text(volumeName).foregroundStyle(.primary)
+                    Text("\(chapter.totalPages) pages · \(humanBytes(chapter.bytes))")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Chapter \(chapter.label)")
+                        .foregroundStyle(chapter.downloaded || local ? .primary : .secondary)
+                    if !chapter.title.isEmpty {
+                        Text(chapter.title).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Spacer()
-            if chapter.bytes > 0 {
+            if !volumes, chapter.bytes > 0 {
                 Text(humanBytes(chapter.bytes)).font(.caption2).foregroundStyle(.tertiary)
             }
             if local {
