@@ -65,21 +65,17 @@ struct ReaderView: View {
                         if let i = scrollID, pages.indices.contains(i) { onSettle(i) }
                     }
                 } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(pages.indices, id: \.self) { i in
-                                    ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
-                                        .onAppear { onSettle(i) }
-                                }
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(pages.indices, id: \.self) { i in
+                                ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
+                                    .onAppear { onSettle(i) }
                             }
                         }
-                        .ignoresSafeArea()
-                        .onChange(of: scrollID) { _, id in
-                            guard let id, !settled else { return }
-                            Task { proxy.scrollTo(id, anchor: .top) }
-                        }
+                        .scrollTargetLayout()
                     }
+                    .scrollPosition(id: $scrollID, anchor: settled ? nil : .top)
+                    .ignoresSafeArea()
                 }
                 if showBar { bar }
             }
@@ -143,7 +139,7 @@ struct ReaderView: View {
     // (a strip's top rows fire onAppear first) so they aren't marked read.
     private func onSettle(_ i: Int) {
         if !settled {
-            guard i == index else { return }
+            guard abs(i - index) <= 4 else { return }
             settled = true
         }
         index = i
