@@ -290,7 +290,10 @@ struct TitleDetailView: View {
                 do {
                     let kind = volumes ? "volumes" : "chapters"
                     let name = volumes && !ch.title.isEmpty ? ch.title : ch.label
-                    let tmp = try await api.download("/api/v1/reader/\(kind)/\(ch.id)/archive")
+                    let store = app.store
+                    let tmp = try await api.download("/api/v1/reader/\(kind)/\(ch.id)/archive") { p in
+                        Task { @MainActor in store.setProgress(p) }
+                    }
                     try app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,
                                        titleName: p.title.displayTitle, label: name,
                                        readPages: ch.readPages, completed: ch.completed, volume: volumes)
@@ -628,6 +631,10 @@ struct ChapterRow: View {
                     .frame(width: 40, height: 56)
                     .overlay(ServerImage(path: "/api/v1/volumes/\(chapter.id)/cover"))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else if volumes, local {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.quaternary)
+                    .frame(width: 40, height: 56)
             }
             VStack(alignment: .leading, spacing: 2) {
                 if volumes {

@@ -170,8 +170,16 @@ final class LocalStore {
         for p in items { pending[key(p.id, volume: p.volume)] = p }
     }
 
+    private(set) var downloadProgress: Double = 0
+
     func markActive(_ id: Int64, volume: Bool) {
         activeDownload = key(id, volume: volume)
+        downloadProgress = 0
+    }
+
+    func setProgress(_ p: Double) {
+        guard p >= 1 || abs(p - downloadProgress) >= 0.01 else { return }
+        downloadProgress = p
     }
 
     func isActive(_ p: Pending) -> Bool {

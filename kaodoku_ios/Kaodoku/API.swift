@@ -62,15 +62,35 @@ struct APIClient {
         }
     }
 
-    // download streams a response to a temp file (large CBZs never sit in memory).
-    func download(_ path: String) async throws -> URL {
-        let (url, resp) = try await Self.session.download(for: request("GET", path))
+    // download streams a response to a temp file (large CBZs never sit in
+    // memory), reporting byte progress when the length is known.
+    func download(_ path: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
+        let (bytes, resp) = try await Self.session.bytes(for: request("GET", path))
         guard let http = resp as? HTTPURLResponse else { throw APIError.server("no response") }
         switch http.statusCode {
-        case 200..<300: return url
+        case 200..<300: break
         case 401: throw APIError.unauthorized
         default: throw APIError.server("HTTP \(http.statusCode)")
         }
+        let total = resp.expectedContentLength
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        FileManager.default.createFile(atPath: tmp.path, contents: nil)
+        let fh = try FileHandle(forWritingTo: tmp)
+        defer { try? fh.close() }
+        var buf = Data(capacity: 128 << 10)
+        var written: Int64 = 0
+        for try await b in bytes {
+            buf.append(b)
+            if buf.count >= 128 << 10 {
+                try fh.write(contentsOf: buf)
+                written += Int64(buf.count)
+                buf.removeAll(keepingCapacity: true)
+                if total > 0 { progress(Double(written) / Double(total)) }
+            }
+        }
+        try fh.write(contentsOf: buf)
+        progress(1)
+        return tmp
     }
 
     func get<T: Decodable>(_ path: String) async throws -> T {

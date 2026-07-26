@@ -34,6 +34,34 @@ struct DownloadsView: View {
     }
 }
 
+// PendingRow is a queued/active device download: greyed while queued, live
+// progress bar + percentage while downloading, never tappable.
+struct PendingRow: View {
+    let item: LocalStore.Pending
+    let volumes: Bool
+    let active: Bool
+    let progress: Double
+
+    private var name: String {
+        volumes && Double(item.label) == nil ? item.label : "\(volumes ? "Volume" : "Chapter") \(item.label)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(name)
+                .foregroundStyle(active ? .primary : .tertiary)
+                .lineLimit(1)
+            HStack(spacing: 8) {
+                BarView(read: 0, full: active ? progress : 0)
+                Text("\(Int((active ? progress : 0) * 100))%")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, alignment: .trailing)
+            }
+        }
+    }
+}
+
 // LocalTitleCard matches TitleCard's web-card layout. The bar covers only the
 // downloaded chapters: green = read share of what's on the device.
 struct LocalTitleCard: View {
@@ -121,16 +149,9 @@ struct LocalTitleView: View {
                         for i in offsets { app.store.delete(list[i].id, volume: volumesTab) }
                     }
                     ForEach(volumesTab ? title.pendingVolumes : title.pendingChapters) { p in
-                        HStack {
-                            Text(volumesTab && Double(p.label) == nil ? p.label : "\(volumesTab ? "Volume" : "Chapter") \(p.label)")
-                                .foregroundStyle(.tertiary)
-                            Spacer()
-                            if app.store.isActive(p) {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text("queued").font(.caption2).foregroundStyle(.tertiary)
-                            }
-                        }
+                        PendingRow(item: p, volumes: volumesTab,
+                                   active: app.store.isActive(p),
+                                   progress: app.store.isActive(p) ? app.store.downloadProgress : 0)
                     }
                 }
                 .nordRows()
