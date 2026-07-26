@@ -193,7 +193,7 @@ struct TitleDetailView: View {
                     Button("Unread only") { downloadToDevice(p) { !$0.completed } }
                     Button("Range…") { showRange = true }
                 } label: {
-                    Label("Download to device", systemImage: "iphone.and.arrow.down")
+                    Label("Download to device", systemImage: "arrow.down.to.line")
                 }
                 .disabled(downloading || !p.chapters.contains { $0.downloaded && !app.store.isDownloaded($0.id) })
                 if !app.store.entries(titleId: titleID).isEmpty {

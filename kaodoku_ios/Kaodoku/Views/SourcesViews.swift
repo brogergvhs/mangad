@@ -26,17 +26,27 @@ struct TitleSourcesSheet: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             ForEach(data.linked) { link in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack {
-                                        Text(link.name)
-                                        if link.active {
-                                            Badge(text: "active", style: .soft)
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Text(link.name)
+                                            if link.active {
+                                                Badge(text: "active", style: .soft)
+                                            }
                                         }
+                                        Text(link.url).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                                     }
-                                    Text(link.url).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                    Spacer()
+                                    Button {
+                                        unlink(link)
+                                    } label: {
+                                        Image(systemName: "xmark.circle").foregroundStyle(Theme.error)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .disabled(busy)
                                 }
                                 .swipeActions {
-                                    Button("Unlink", systemImage: "link.badge.minus", role: .destructive) {
+                                    Button("Unlink", systemImage: "minus.circle", role: .destructive) {
                                         unlink(link)
                                     }
                                 }
