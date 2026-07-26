@@ -598,12 +598,30 @@ func New(
 	return gzipMiddleware(handler)
 }
 
+// gzipCompressible reports whether a path's responses benefit from gzip.
+// Page images, CBZ archives, and covers are already compressed — recoding
+// them wastes CPU and drops Content-Length (breaking client progress).
+func gzipCompressible(p string) bool {
+	for _, skip := range []string{
+		"/api/reader/chapters/",
+		"/api/v1/reader/chapters/",
+		"/api/v1/reader/volumes/",
+		"/api/v1/covers/",
+		"/api/v1/volumes/",
+	} {
+		if strings.HasPrefix(p, skip) {
+			return false
+		}
+	}
+	return true
+}
+
 // gzipMiddleware compresses textual responses (HTML fragments, CSS, JS,
-// JSON). Reader page images are already compressed and are passed through.
+// JSON). Already-compressed binaries are passed through.
 func gzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") ||
-			strings.HasPrefix(r.URL.Path, "/api/reader/chapters/") {
+			!gzipCompressible(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
