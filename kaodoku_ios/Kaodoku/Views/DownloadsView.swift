@@ -9,7 +9,7 @@ struct DownloadsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if app.store.chapters.isEmpty {
+                if app.store.titles.isEmpty {
                     Text("Nothing downloaded yet. Use a title's ⋯ menu to download chapters to this device.")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -64,6 +64,9 @@ extension LocalStore.LocalTitle {
 
 extension LocalTitleCard {
     var cardLine: String {
+        if title.entries.isEmpty, !title.pending.isEmpty {
+            return "downloading \(title.pending.count)…"
+        }
         let ch = title.chapterEntries, vols = title.volumeEntries
         if !vols.isEmpty && !ch.isEmpty {
             return "\(ch.count) ch · \(vols.count) vols"
@@ -115,13 +118,22 @@ struct LocalTitleView: View {
                         let list = rows(title)
                         for i in offsets { app.store.delete(list[i].id, volume: volumesTab) }
                     }
+                    ForEach(volumesTab ? title.pendingVolumes : title.pendingChapters) { p in
+                        HStack {
+                            Text(volumesTab && Double(p.label) == nil ? p.label : "\(volumesTab ? "Volume" : "Chapter") \(p.label)")
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                            ProgressView().controlSize(.small)
+                        }
+                    }
                 }
                 .nordRows()
             }
         }
         .nordScreen()
         .onAppear {
-            if let t = title, t.chapterEntries.isEmpty, !t.volumeEntries.isEmpty { volumesTab = true }
+            if let t = title, t.chapterEntries.isEmpty, t.pendingChapters.isEmpty,
+               !(t.volumeEntries.isEmpty && t.pendingVolumes.isEmpty) { volumesTab = true }
         }
         .navigationTitle(title?.info.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
@@ -178,7 +190,9 @@ struct LocalTitleView: View {
 
     private func contentHeader(_ title: LocalStore.LocalTitle) -> some View {
         VStack(spacing: 10) {
-            if !title.volumeEntries.isEmpty && !title.chapterEntries.isEmpty {
+            let hasCh = !title.chapterEntries.isEmpty || !title.pendingChapters.isEmpty
+            let hasVols = !title.volumeEntries.isEmpty || !title.pendingVolumes.isEmpty
+            if hasCh && hasVols {
                 Picker("Content", selection: $volumesTab) {
                     Text("\(title.chapterEntries.count) Chapters").tag(false)
                     Text("\(title.volumeEntries.count) Volumes").tag(true)

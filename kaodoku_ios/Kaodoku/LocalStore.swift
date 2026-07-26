@@ -52,8 +52,17 @@ final class LocalStore {
         var readAt: Date
     }
 
+    struct Pending: Identifiable {
+        var id: Int64
+        var titleId: Int64
+        var label: String
+        var pages: Int
+        var volume: Bool
+    }
+
     private(set) var chapters: [Int64: Entry] = [:]
     private(set) var titleInfo: [Int64: TitleInfo] = [:]
+    private(set) var pending: [Int64: Pending] = [:]
     private var queue: [QueuedMark] = []
     private var flushing = false
 
@@ -100,7 +109,9 @@ final class LocalStore {
             $0.pages == 0 || !FileManager.default.fileExists(atPath: Self.root.appendingPathComponent($0.path).path)
         }
         for e in dead { chapters.removeValue(forKey: key(e.id, volume: e.isVolume)) }
-        let orphans = titleInfo.keys.filter { id in !chapters.values.contains { $0.titleId == id } }
+        let orphans = titleInfo.keys.filter { id in
+            !chapters.values.contains { $0.titleId == id } && !pending.values.contains { $0.titleId == id }
+        }
         for id in orphans { titleInfo.removeValue(forKey: id) }
         if !dead.isEmpty || !orphans.isEmpty { persistIndex() }
     }
@@ -126,8 +137,11 @@ final class LocalStore {
         var id: Int64
         var info: TitleInfo
         var entries: [Entry]
+        var pending: [Pending] = []
         var chapterEntries: [Entry] { entries.filter { !$0.isVolume } }
         var volumeEntries: [Entry] { entries.filter(\.isVolume) }
+        var pendingChapters: [Pending] { pending.filter { !$0.volume } }
+        var pendingVolumes: [Pending] { pending.filter(\.volume) }
         var size: Int64 { entries.reduce(0) { $0 + $1.size } }
         var coverURL: URL? {
             info.cover.map(LocalStore.root.appendingPathComponent).flatMap {
@@ -137,13 +151,27 @@ final class LocalStore {
     }
 
     var titles: [LocalTitle] {
-        Dictionary(grouping: chapters.values, by: \.titleId)
+        var groups = Dictionary(grouping: chapters.values, by: \.titleId)
+        for id in titleInfo.keys where groups[id] == nil { groups[id] = [] }
+        for p in pending.values where groups[p.titleId] == nil { groups[p.titleId] = [] }
+        return groups
             .map { id, list in
                 LocalTitle(id: id,
-                           info: titleInfo[id] ?? TitleInfo(id: id, name: list[0].titleName),
-                           entries: list.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending })
+                           info: titleInfo[id] ?? TitleInfo(id: id, name: list.first?.titleName ?? "…"),
+                           entries: list.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending },
+                           pending: pending.values.filter { $0.titleId == id }
+                               .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending })
             }
             .sorted { $0.info.name.localizedStandardCompare($1.info.name) == .orderedAscending }
+    }
+
+    func beginPending(_ items: [Pending]) {
+        for p in items { pending[key(p.id, volume: p.volume)] = p }
+    }
+
+    func clearPending(titleId: Int64) {
+        pending = pending.filter { $0.value.titleId != titleId }
+        prune()
     }
 
     // saveTitle snapshots the title card data and writes the cover image next
@@ -231,6 +259,7 @@ final class LocalStore {
             label: label, path: path, pages: images.count, size: size,
             readPages: readPages, completed: completed, pageAspects: aspects,
             volume: volume ? true : nil)
+        pending.removeValue(forKey: key(chapterID, volume: volume))
         persistIndex()
     }
 

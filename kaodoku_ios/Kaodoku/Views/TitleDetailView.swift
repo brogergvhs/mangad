@@ -264,7 +264,21 @@ struct TitleDetailView: View {
         guard !todo.isEmpty else { note = "Nothing to download"; return }
         downloading = true
         Task {
-            defer { downloading = false }
+            defer {
+                downloading = false
+                app.store.clearPending(titleId: titleID)
+            }
+            let cover = try? await api.data("GET", p.title.coverImage)
+            app.store.saveTitle(LocalStore.TitleInfo(
+                id: titleID, name: p.title.displayTitle, isAdult: p.title.isAdult, detail: p.manga,
+                readCount: p.title.readCount, completedCount: p.title.completedCount,
+                discoveredCount: p.title.discoveredCount, missingCount: p.title.missingCount
+            ), coverData: cover)
+            app.store.beginPending(todo.map {
+                LocalStore.Pending(id: $0.id, titleId: titleID,
+                                   label: volumes && !$0.title.isEmpty ? $0.title : $0.label,
+                                   pages: $0.totalPages, volume: volumes)
+            })
             for (i, ch) in todo.enumerated() {
                 note = "Downloading \(i + 1)/\(todo.count)…"
                 do {
@@ -279,12 +293,6 @@ struct TitleDetailView: View {
                     return
                 }
             }
-            let cover = try? await api.data("GET", p.title.coverImage)
-            app.store.saveTitle(LocalStore.TitleInfo(
-                id: titleID, name: p.title.displayTitle, isAdult: p.title.isAdult, detail: p.manga,
-                readCount: p.title.readCount, completedCount: p.title.completedCount,
-                discoveredCount: p.title.discoveredCount, missingCount: p.title.missingCount
-            ), coverData: cover)
             note = "Downloaded \(todo.count) \(volumes ? "volumes" : "chapters")"
         }
     }
