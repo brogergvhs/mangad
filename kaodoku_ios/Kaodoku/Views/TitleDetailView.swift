@@ -12,6 +12,7 @@ struct TitleDetailView: View {
     @State private var anilistConnected = false
     @State private var showRange = false
     @State private var showRemoveRange = false
+    @State private var showSources = false
     @State private var showSettings = false
     @State private var showCollections = false
     @State private var showRemove = false
@@ -69,6 +70,12 @@ struct TitleDetailView: View {
         .sheet(isPresented: $showRange) {
             RangeSheet(title: "Download range", action: "Download to device") { from, to in
                 if let p = progress { downloadToDevice(p) { $0.numberMain >= from && $0.numberMain <= to } }
+            }
+        }
+        .sheet(isPresented: $showSources) {
+            TitleSourcesSheet(titleID: titleID) {
+                note = "Source linked"
+                Task { await load() }
             }
         }
         .sheet(isPresented: $showRemoveRange) {
@@ -134,6 +141,18 @@ struct TitleDetailView: View {
     // full-width Read/Continue button above the list.
     private func contentHeader(_ p: TitleReadProgress) -> some View {
         VStack(spacing: 10) {
+            if !p.title.linked && canManage {
+                Button {
+                    showSources = true
+                } label: {
+                    Label("Link a source to fetch chapters", systemImage: "link")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.warning)
+            }
             if p.title.volumeCount > 0 {
                 Picker("Content", selection: $volumes) {
                     Text("\(p.title.discoveredCount) Chapters").tag(false)
@@ -206,6 +225,7 @@ struct TitleDetailView: View {
                 Button("Scan files", systemImage: "internaldrive") {
                     enqueue("scan_downloads", done: "Scan queued")
                 }
+                Button("Sources…", systemImage: "link") { showSources = true }
                 if anilistConnected {
                     Button("Sync AniList", systemImage: "arrow.triangle.2.circlepath") {
                         post("/api/v1/anilist/sync", body: ["title_id": titleID], done: "AniList synced")

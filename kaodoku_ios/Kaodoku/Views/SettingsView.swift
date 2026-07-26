@@ -53,6 +53,11 @@ struct SettingsView: View {
                             LabeledContent("Status", value: "…")
                         }
                     }
+                    if app.me?.can("sources.manage") == true {
+                        Section("Management") {
+                            NavigationLink("Sources") { SourcesManageView() }
+                        }
+                    }
                     Section("Device storage") {
                         LabeledContent("Downloads",
                                        value: "\(app.store.chapters.count) chapters · \(humanBytes(totalSize))")
