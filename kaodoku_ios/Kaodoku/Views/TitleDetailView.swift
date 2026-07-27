@@ -291,7 +291,8 @@ struct TitleDetailView: View {
                     let kind = volumes ? "volumes" : "chapters"
                     let name = volumes && !ch.title.isEmpty ? ch.title : ch.label
                     let store = app.store
-                    let tmp = try await api.download("/api/v1/reader/\(kind)/\(ch.id)/archive") { p in
+                    let tmp = try await api.download("/api/v1/reader/\(kind)/\(ch.id)/archive",
+                                                     expectedBytes: ch.bytes) { p in
                         Task { @MainActor in store.setProgress(p) }
                     }
                     try app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,

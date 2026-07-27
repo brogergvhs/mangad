@@ -47,16 +47,23 @@ struct PendingRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(name)
-                .foregroundStyle(active ? .primary : .tertiary)
-                .lineLimit(1)
-            HStack(spacing: 8) {
-                BarView(read: 0, full: active ? progress : 0)
-                Text("\(Int((active ? progress : 0) * 100))%")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 34, alignment: .trailing)
+        HStack(spacing: 10) {
+            if volumes {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.quaternary)
+                    .frame(width: 40, height: 56)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(name)
+                    .foregroundStyle(active ? .primary : .tertiary)
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    BarView(read: 0, full: active ? progress : 0)
+                    Text("\(Int((active ? progress : 0) * 100))%")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .trailing)
+                }
             }
         }
     }

@@ -64,7 +64,8 @@ struct APIClient {
 
     // download streams a response to a temp file (large CBZs never sit in
     // memory), reporting byte progress when the length is known.
-    func download(_ path: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
+    func download(_ path: String, expectedBytes: Int64 = 0,
+                  progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
         let (bytes, resp) = try await Self.session.bytes(for: request("GET", path))
         guard let http = resp as? HTTPURLResponse else { throw APIError.server("no response") }
         switch http.statusCode {
@@ -72,7 +73,7 @@ struct APIClient {
         case 401: throw APIError.unauthorized
         default: throw APIError.server("HTTP \(http.statusCode)")
         }
-        let total = resp.expectedContentLength
+        let total = resp.expectedContentLength > 0 ? resp.expectedContentLength : expectedBytes
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: tmp.path, contents: nil)
         let fh = try FileHandle(forWritingTo: tmp)
