@@ -2,7 +2,6 @@ import SwiftUI
 
 struct TitleDetailView: View {
     @Environment(AppState.self) private var app
-    @Environment(\.dismiss) private var dismiss
     let titleID: Int64
     @State private var progress: TitleReadProgress?
     @State private var volumes = false
@@ -374,7 +373,8 @@ struct TitleDetailView: View {
             do {
                 _ = try await api.data("DELETE",
                     "/api/v1/library/\(titleID)?delete_files=\(deleteFiles ? 1 : 0)&delete_anilist=\(deleteAniList ? 1 : 0)")
-                dismiss()
+                app.tab = 0
+                app.libraryNav = .root
             } catch { note = error.localizedDescription }
         }
     }

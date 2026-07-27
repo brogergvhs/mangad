@@ -224,9 +224,16 @@ struct MangaDetailSheet: View {
                 let title: Title = try await api.post("/api/v1/library/add", body: ["provider_id": pid])
                 manga.titleId = title.id
                 onUpdate(manga)
+                openInLibrary(title.id)
             } catch { self.error = error.localizedDescription }
             busy = false
         }
+    }
+
+    private func openInLibrary(_ id: Int64) {
+        dismiss()
+        app.tab = 0
+        app.libraryNav = .title(id)
     }
 
     private func findMatches() {
@@ -253,6 +260,7 @@ struct MangaDetailSheet: View {
                 let title: Title = try await api.post("/api/v1/wanted/track", body: ["match_id": match.id])
                 manga.titleId = title.id
                 onUpdate(manga)
+                openInLibrary(title.id)
             } catch { self.error = error.localizedDescription }
             busy = false
         }

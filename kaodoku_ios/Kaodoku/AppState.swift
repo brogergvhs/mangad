@@ -5,10 +5,17 @@ import Observation
 // the Keychain. connected == usable client (token present or single-user).
 @Observable @MainActor
 final class AppState {
+    enum LibraryNav: Equatable {
+        case title(Int64)
+        case root
+    }
+
     var api: APIClient?
     var me: Me?
     var settings = UserSettings()
     var errorMessage: String?
+    var tab = 0
+    var libraryNav: LibraryNav?
     let store = LocalStore()
 
     private static let serverKey = "server_url"

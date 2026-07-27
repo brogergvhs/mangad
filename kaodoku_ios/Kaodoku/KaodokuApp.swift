@@ -8,11 +8,12 @@ struct KaodokuApp: App {
         WindowGroup {
             Group {
                 if app.connected {
-                    TabView {
-                        LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }
-                        SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }
-                        DownloadsView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
-                        SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }
+                    @Bindable var app = app
+                    TabView(selection: $app.tab) {
+                        LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }.tag(0)
+                        SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(1)
+                        DownloadsView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }.tag(2)
+                        SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
                     }
                     .task { await app.loadMe() }
                 } else {

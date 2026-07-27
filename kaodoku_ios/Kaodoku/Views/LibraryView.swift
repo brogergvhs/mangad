@@ -193,6 +193,7 @@ struct LibraryView: View {
     @State private var excludeTags: Set<String> = []
     @State private var showFilters = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var path: [Int64] = []
 
     private var filtersActive: Bool {
         fav || !monitored.isEmpty || progress != "all" || content != "all"
@@ -200,7 +201,7 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 if loading {
                     ProgressView().padding(.top, 80)
@@ -211,7 +212,7 @@ struct LibraryView: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
                     ForEach(titles) { title in
-                        NavigationLink(value: title) {
+                        NavigationLink(value: title.id) {
                             TitleCard(title: title)
                         }
                         .buttonStyle(.plain)
@@ -226,7 +227,9 @@ struct LibraryView: View {
             }
             .nordScreen()
             .navigationTitle("Library")
-            .navigationDestination(for: Title.self) { TitleDetailView(titleID: $0.id) }
+            .navigationDestination(for: Int64.self) { TitleDetailView(titleID: $0) }
+            .onChange(of: app.libraryNav) { _, nav in handleNav(nav) }
+            .onAppear { handleNav(app.libraryNav) }
             .searchable(text: $query)
             .onChange(of: query) { debounceReload() }
             .refreshable { await load() }
@@ -245,6 +248,16 @@ struct LibraryView: View {
                                     includeTags: $includeTags, excludeTags: $excludeTags)
             }
         }
+    }
+
+    private func handleNav(_ nav: AppState.LibraryNav?) {
+        guard let nav else { return }
+        app.libraryNav = nil
+        switch nav {
+        case .title(let id): path = [id]
+        case .root: path = []
+        }
+        Task { await load() }
     }
 
     private func debounceReload() {
