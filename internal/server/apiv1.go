@@ -502,6 +502,15 @@ func (a *apiV1) readerTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dto := toTitleReadProgressDTO(p)
+	if r.URL.Query().Get("mode") != "volumes" {
+		if all, err := a.svc.TitleReadStatuses(r.Context(), id); err == nil {
+			dto.Chapters = make([]chapterProgressDTO, len(all))
+			for i, c := range all {
+				dto.Chapters[i] = toChapterProgressDTO(c)
+			}
+			dto.TotalChapters = len(all)
+		}
+	}
 	if p.Title.CatalogMangaID != nil {
 		if m, err := a.svc.GetManga(r.Context(), *p.Title.CatalogMangaID); err == nil {
 			dto.Manga = toMangaDetailDTO(m)

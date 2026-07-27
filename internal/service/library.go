@@ -272,6 +272,11 @@ func (s *LibraryService) RenameChapter(ctx context.Context, chapterID int64, tit
 	return s.repo.RenameChapter(ctx, chapterID, title)
 }
 
+// TitleReadStatuses lists all discovered chapters with download + read state.
+func (s *LibraryService) TitleReadStatuses(ctx context.Context, titleID int64) ([]library.ChapterReadStatus, error) {
+	return s.repo.TitleReadStatuses(ctx, titleID)
+}
+
 // TitleOwners maps title id to the user that added it.
 func (s *LibraryService) TitleOwners(ctx context.Context) (map[int64]int64, error) {
 	return s.repo.TitleOwners(ctx)

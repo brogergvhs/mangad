@@ -722,6 +722,11 @@ func (r *Repository) ReaderProgress(ctx context.Context, titleID int64) (TitleRe
 	return out, nil
 }
 
+// TitleReadStatuses lists all discovered chapters with download + read state.
+func (r *Repository) TitleReadStatuses(ctx context.Context, titleID int64) ([]ChapterReadStatus, error) {
+	return r.listReadChapters(ctx, `WHERE c.title_id = ?`, titleID)
+}
+
 // MarkPageRead records one completed page and updates the chapter read summary.
 func (r *Repository) MarkPageRead(ctx context.Context, chapterID int64, page, totalPages int) (ChapterReadStatus, error) {
 	return r.MarkPageReadAt(ctx, chapterID, page, totalPages, "")

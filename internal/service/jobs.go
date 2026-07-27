@@ -606,6 +606,11 @@ func (s *JobService) GetTitle(ctx context.Context, id int64) (library.Title, err
 	return s.lib.GetTitle(ctx, id)
 }
 
+// TitleReadStatuses returns all discovered chapters with download + read state.
+func (s *JobService) TitleReadStatuses(ctx context.Context, id int64) ([]library.ChapterReadStatus, error) {
+	return s.lib.TitleReadStatuses(ctx, id)
+}
+
 // TitleChapters returns all discovered chapters for a title with download state.
 func (s *JobService) TitleChapters(ctx context.Context, id int64) ([]library.ChapterStatus, error) {
 	return s.lib.ListChapters(ctx, id)
