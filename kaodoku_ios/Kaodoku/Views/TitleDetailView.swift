@@ -17,6 +17,8 @@ struct TitleDetailView: View {
     @State private var showCollections = false
     @State private var showRemove = false
     @State private var autoTabbed = false
+    @State private var activity: TitleActivity?
+    @State private var pollGen = 0
 
     private var canManage: Bool { app.me?.can("library.manage") == true }
 
@@ -59,7 +61,14 @@ struct TitleDetailView: View {
         .nordScreen()
         .navigationTitle(progress?.title.displayTitle ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: volumes) { await load() }
+        .task(id: volumes) { pollGen += 1 }
+        .task(id: pollGen) {
+            await load()
+            while !Task.isCancelled, activity?.busy == true {
+                try? await Task.sleep(for: .seconds(2))
+                await load()
+            }
+        }
         .fullScreenCover(item: $readerChapter, onDismiss: { Task { await load() } }) { ch in
             ReaderView(titleID: titleID, startChapter: ch.id, volumes: volumes)
         }
@@ -81,7 +90,7 @@ struct TitleDetailView: View {
         .sheet(isPresented: $showSources) {
             TitleSourcesSheet(titleID: titleID) {
                 note = "Source linked"
-                Task { await load() }
+                pollGen += 1
             }
         }
         .sheet(isPresented: $showRemoveRange) {
@@ -146,8 +155,35 @@ struct TitleDetailView: View {
 
     // contentHeader is the web titleContent header: tab switcher plus the
     // full-width Read/Continue button above the list.
+    @ViewBuilder private var activityBanner: some View {
+        if let a = activity, a.busy {
+            HStack(spacing: 8) {
+                if !a.active.isEmpty {
+                    ProgressView().controlSize(.small)
+                    Text("\(a.active)…").font(.subheadline)
+                }
+                if !a.queued.isEmpty {
+                    Image(systemName: "clock").font(.caption).foregroundStyle(.secondary)
+                    Text("queued: \(a.queued.joined(separator: " · "))")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(10)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10))
+        } else if let a = activity, a.failed {
+            Text("failed\(a.error.map { " — \($0)" } ?? "")")
+                .font(.subheadline)
+                .foregroundStyle(Theme.error)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Theme.error.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
     private func contentHeader(_ p: TitleReadProgress) -> some View {
         VStack(spacing: 10) {
+            activityBanner
             if !p.title.linked && canManage {
                 Button {
                     showSources = true
@@ -312,6 +348,7 @@ struct TitleDetailView: View {
         await app.store.flush(api)
         let mode = volumes ? "?mode=volumes" : ""
         progress = try? await api.get("/api/v1/reader/titles/\(titleID)\(mode)")
+        activity = try? await api.get("/api/v1/library/\(titleID)/activity")
         if let p = progress, !autoTabbed {
             autoTabbed = true
             if p.title.discoveredCount == 0 && p.title.volumeCount > 0 { volumes = true }
@@ -364,6 +401,7 @@ struct TitleDetailView: View {
             do {
                 _ = try await api.data("POST", path, body: body)
                 note = done
+                pollGen += 1
             } catch { note = error.localizedDescription }
         }
     }

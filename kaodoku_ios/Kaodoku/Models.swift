@@ -110,6 +110,15 @@ struct AniListStatus: Decodable {
     var connected: Bool
 }
 
+struct TitleActivity: Decodable {
+    var active: String
+    var queued: [String]
+    var failed: Bool
+    var error: String?
+
+    var busy: Bool { !active.isEmpty || !queued.isEmpty }
+}
+
 struct CollectionItem: Decodable, Identifiable, Hashable {
     var id: Int64
     var name: String

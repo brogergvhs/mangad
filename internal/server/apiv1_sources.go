@@ -228,6 +228,28 @@ func (a *apiV1) sourceVerify(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// titleActivity reports the title's running/queued jobs and last failure,
+// mirroring the web's activity banner (shared titleActivityFrom logic).
+func (a *apiV1) titleActivity(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.guardedTitleID(w, r)
+	if !ok {
+		return
+	}
+	title, err := a.svc.GetTitle(r.Context(), id)
+	if err != nil {
+		v1err(w, http.StatusNotFound, "not_found", "title not found")
+		return
+	}
+	js, _ := a.svc.List(r.Context())
+	_, label, queued, failed, msg := titleActivityFrom(js, title)
+	if queued == nil {
+		queued = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"active": label, "queued": queued, "failed": failed, "error": msg,
+	})
+}
+
 // kick runs the job loop in the background so queued work starts immediately.
 func (a *apiV1) kick() {
 	if a.runJobs == nil {
