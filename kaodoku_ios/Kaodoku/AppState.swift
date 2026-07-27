@@ -38,11 +38,16 @@ final class AppState {
     // the session. Returns true when fully connected.
     func connect(server: String, username: String, password: String) async -> Bool {
         errorMessage = nil
-        guard var url = URL(string: server.trimmingCharacters(in: .whitespaces)) else {
+        let server = server.trimmingCharacters(in: .whitespaces)
+        guard var url = URL(string: server) else {
             errorMessage = APIError.badURL.localizedDescription
             return false
         }
-        if url.scheme == nil { url = URL(string: "http://\(server)") ?? url }
+        if url.scheme == nil { url = URL(string: "https://\(server)") ?? url }
+        if url.scheme?.lowercased() == "http", !isPrivateHost(url.host) {
+            errorMessage = "Use https:// for a public server — plaintext http would expose your password and token on the network."
+            return false
+        }
         var client = APIClient(baseURL: url, token: nil)
         do {
             let meta: Meta = try await client.get("/api/v1/meta")
@@ -101,7 +106,20 @@ final class AppState {
         Keychain.delete(account: Self.tokenAccount)
         UserDefaults.standard.removeObject(forKey: Self.serverKey)
         UserDefaults.standard.removeObject(forKey: Self.settingsKey)
+        APIClient.clearCache()
         api = nil
         me = nil
+    }
+}
+
+func isPrivateHost(_ host: String?) -> Bool {
+    guard let host = host?.lowercased() else { return false }
+    if host == "localhost" || host.hasSuffix(".local") { return true }
+    let p = host.split(separator: ".").compactMap { Int($0) }
+    guard p.count == 4 else { return host.hasPrefix("127.") || host == "::1" }
+    switch (p[0], p[1]) {
+    case (127, _), (10, _), (192, 168), (169, 254): return true
+    case (172, 16...31): return true
+    default: return false
     }
 }

@@ -92,9 +92,11 @@ func (s *JobService) MarkNotificationsRead(ctx context.Context, sc NotificationS
 	return err
 }
 
-// DeleteNotification removes one notification.
-func (s *JobService) DeleteNotification(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM notifications WHERE id = ?`, id)
+// DeleteNotification removes one notification the caller may see in scope.
+func (s *JobService) DeleteNotification(ctx context.Context, sc NotificationScope, id int64) error {
+	where, args := sc.where()
+	_, err := s.db.ExecContext(ctx, `DELETE FROM notifications WHERE id = ? AND `+where,
+		append([]any{id}, args...)...)
 	return err
 }
 

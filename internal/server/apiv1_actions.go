@@ -33,6 +33,22 @@ func (a *apiV1) guardedTitleID(w http.ResponseWriter, r *http.Request) (int64, b
 	return id, true
 }
 
+// guardedChapterID resolves a chapter id and enforces the content guard on its
+// title, so read-state routes can't mutate or leak restricted chapters.
+func (a *apiV1) guardedChapterID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid chapter id")
+		return 0, false
+	}
+	status, err := a.svc.ChapterReadStatus(r.Context(), id)
+	if err != nil || !titleAllowed(r.Context(), a.svc, status.TitleID) {
+		v1err(w, http.StatusNotFound, "not_found", "chapter not found")
+		return 0, false
+	}
+	return id, true
+}
+
 func (a *apiV1) setFavourite(want bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := a.guardedTitleID(w, r)
@@ -807,7 +823,7 @@ func (a *apiV1) notificationDelete(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	if err := a.svc.DeleteNotification(r.Context(), id); err != nil {
+	if err := a.svc.DeleteNotification(r.Context(), notificationScope(userFrom(r.Context())), id); err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

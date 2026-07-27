@@ -23,6 +23,7 @@ import (
 )
 
 const maxPageBytes = 64 << 20 // per-image download cap
+const appTokenTTLDays = 90
 
 type apiV1 struct {
 	svc     *service.JobService
@@ -234,7 +235,7 @@ func (a *apiV1) login(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "iOS app"
 	}
-	token, err := a.svc.Auth().CreateAPIToken(r.Context(), id, name, 0)
+	token, err := a.svc.Auth().CreateAPIToken(r.Context(), id, name, appTokenTTLDays)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -558,9 +559,8 @@ func rebaseManifest(m *readerManifestResponse) {
 }
 
 func (a *apiV1) markPage(w http.ResponseWriter, r *http.Request) {
-	id, err := parseInt64Path(r, "id")
-	if err != nil {
-		v1err(w, http.StatusBadRequest, "bad_request", "invalid chapter id")
+	id, ok := a.guardedChapterID(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -588,9 +588,8 @@ func (a *apiV1) markUnread(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *apiV1) chapterMark(w http.ResponseWriter, r *http.Request, fn func(context.Context, int64) (library.ChapterReadStatus, error)) {
-	id, err := parseInt64Path(r, "id")
-	if err != nil {
-		v1err(w, http.StatusBadRequest, "bad_request", "invalid chapter id")
+	id, ok := a.guardedChapterID(w, r)
+	if !ok {
 		return
 	}
 	cs, err := fn(r.Context(), id)

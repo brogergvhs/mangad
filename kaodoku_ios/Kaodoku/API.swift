@@ -20,12 +20,16 @@ struct APIClient {
     var baseURL: URL
     var token: String?
 
+    private static let redirectGuard = RedirectGuard()
     private static let session: URLSession = {
         let cfg = URLSessionConfiguration.default
         cfg.urlCache = URLCache(memoryCapacity: 64 << 20, diskCapacity: 512 << 20)
         cfg.requestCachePolicy = .useProtocolCachePolicy
-        return URLSession(configuration: cfg)
+        return URLSession(configuration: cfg, delegate: redirectGuard, delegateQueue: nil)
     }()
+
+    // clearCache drops cached authenticated responses (covers, pages) on sign-out.
+    static func clearCache() { session.configuration.urlCache?.removeAllCachedResponses() }
 
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -37,7 +41,7 @@ struct APIClient {
         guard let url = URL(string: path, relativeTo: baseURL) else { throw APIError.badURL }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        if let token, url.host == baseURL.host {
+        if let token, sameOrigin(url, baseURL) {
             req.setValue(token, forHTTPHeaderField: "X-API-Key")
         }
         if let body {
@@ -103,6 +107,34 @@ struct APIClient {
     }
 }
 
+// sameOrigin compares scheme, host, and port — the token is bound to the exact
+// configured origin, so an http downgrade or a different port doesn't match.
+func sameOrigin(_ a: URL, _ b: URL) -> Bool {
+    a.scheme?.lowercased() == b.scheme?.lowercased()
+        && a.host?.lowercased() == b.host?.lowercased()
+        && (a.port ?? defaultPort(a.scheme)) == (b.port ?? defaultPort(b.scheme))
+}
+
+private func defaultPort(_ scheme: String?) -> Int {
+    scheme?.lowercased() == "https" ? 443 : 80
+}
+
+// RedirectGuard drops the X-API-Key header when a redirect crosses to a
+// different origin, so a malicious/compromised server can't replay the token.
+final class RedirectGuard: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let orig = task.originalRequest?.url, let dest = request.url, !sameOrigin(orig, dest) else {
+            completionHandler(request)
+            return
+        }
+        var stripped = request
+        stripped.setValue(nil, forHTTPHeaderField: "X-API-Key")
+        completionHandler(stripped)
+    }
+}
+
 // Keychain stores the device API token.
 enum Keychain {
     private static func query(_ account: String) -> [String: Any] {
@@ -115,6 +147,8 @@ enum Keychain {
         var q = query(account)
         SecItemDelete(q as CFDictionary)
         q[kSecValueData as String] = Data(value.utf8)
+        // ThisDeviceOnly keeps the token out of backups and iCloud Keychain.
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         SecItemAdd(q as CFDictionary, nil)
     }
 

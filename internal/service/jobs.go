@@ -1880,8 +1880,26 @@ func (s *JobService) AttachVolumesFolder(ctx context.Context, folder string, tit
 	return title, nil
 }
 
+func (s *JobService) sourceAllowed(ctx context.Context, sourceID string) error {
+	u := auth.FromContext(ctx)
+	if u == nil || u.AllowAdult {
+		return nil
+	}
+	if src, err := s.src.GetSource(ctx, sourceID); err == nil && src.NSFW {
+		return fmt.Errorf("that source is not available for this account")
+	}
+	return nil
+}
+
 // LinkTitleSource links a tracked title to a matched source.
 func (s *JobService) LinkTitleSource(ctx context.Context, titleID, matchID int64) (library.Title, error) {
+	match, err := s.GetMatch(ctx, matchID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.sourceAllowed(ctx, match.SourceID); err != nil {
+		return library.Title{}, err
+	}
 	title, err := s.want.LinkTitleSource(ctx, titleID, matchID)
 	if err != nil {
 		return library.Title{}, err
@@ -2011,6 +2029,9 @@ func (s *JobService) LinkTitleSourceURL(ctx context.Context, titleID int64, sour
 	if err != nil {
 		return library.Title{}, err
 	}
+	if err := s.sourceAllowed(ctx, src.ID); err != nil {
+		return library.Title{}, err
+	}
 	title, err := s.want.LinkTitleURL(ctx, titleID, strings.TrimSpace(rawURL), src.ID)
 	if err != nil {
 		return library.Title{}, err
@@ -2042,6 +2063,9 @@ func (s *JobService) sourceForURL(ctx context.Context, sourceID, rawURL string) 
 func (s *JobService) LinkTitleToSource(ctx context.Context, titleID int64, sourceID string) (library.Title, error) {
 	src, err := s.src.GetSource(ctx, sourceID)
 	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.sourceAllowed(ctx, src.ID); err != nil {
 		return library.Title{}, err
 	}
 	if _, err := url.ParseRequestURI(src.SampleMangaURL); err != nil {

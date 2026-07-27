@@ -54,7 +54,7 @@ func (u *webUI) notificationDelete(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
-	if err := u.svc.DeleteNotification(r.Context(), id); err != nil {
+	if err := u.svc.DeleteNotification(r.Context(), notificationScope(userFrom(r.Context())), id); err != nil {
 		u.fail(w, err)
 		return
 	}
