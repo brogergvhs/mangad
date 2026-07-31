@@ -3,16 +3,17 @@ import SwiftUI
 // ReaderView shows pages in paged (LTR/RTL) or vertical strip mode. Online it
 // follows the server manifest window; with localChapters it reads device CBZs
 // fully offline. Pages downloaded to the device always load locally first.
-// Each settled page is marked; marks made offline queue for batch replay.
+// Each settled page is marked locally and queued for a batched upload.
 struct ReaderView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.displayScale) private var displayScale
     let titleID: Int64
     let startChapter: Int64
     var volumes = false
     var localChapters: [LocalStore.Entry]? = nil
 
-    struct PageRef: Hashable {
+    struct PageRef: Hashable, Sendable {
         var chapterID: Int64
         var label: String
         var page: Int
@@ -22,9 +23,12 @@ struct ReaderView: View {
         var volume = false
     }
 
+    // Per-page width/height ratios, so the strip reader knows each page's exact
+    // height up front. Seeded from downloads on load, cleared per session.
+    @MainActor static var aspects: [String: CGFloat] = [:]
+
     @State private var pages: [PageRef] = []
     @State private var index = 0
-    @State private var markBase = ""
     @State private var extendBase = ""
     @State private var lastChapterID: Int64 = 0
     @State private var noMore = false
@@ -32,13 +36,31 @@ struct ReaderView: View {
     @State private var showSettings = false
     @State private var scrollID: Int?
     @State private var loadFailed = false
-    @State private var settled = false
+    @State private var extendChapter: Int64?
+
+    // stripLoader fetches a page for the UICollectionView reader: the device
+    // CBZ first, then the network, downsampled off the main thread.
+    private var stripLoader: (PageRef, CGSize) async -> UIImage? {
+        let api = app.api
+        return { ref, size in
+            if let local = ref.localURL,
+               let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size) {
+                return img
+            }
+            guard let api, !ref.url.isEmpty, let data = try? await api.data("GET", ref.url) else { return nil }
+            return await Task.detached(priority: .userInitiated) {
+                UIImage.downsampled(data, maxPixelSize: size)
+            }.value
+        }
+    }
 
     private var paged: Bool { app.settings.readerMode != "strip" }
     private var rtl: Bool { app.settings.readerDir == "rtl" }
 
     var body: some View {
         GeometryReader { geo in
+            let pixels = CGSize(width: max(1, geo.size.width * displayScale),
+                                height: max(1, geo.size.height * displayScale))
             ZStack {
                 Color.black.ignoresSafeArea()
                 if loadFailed {
@@ -47,12 +69,11 @@ struct ReaderView: View {
                 } else if pages.isEmpty {
                     ProgressView().tint(.white)
                 } else if paged {
-                    // A paging ScrollView instead of TabView(.page): TabView can
-                    // land between pages when the page array grows mid-swipe.
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 0) {
                             ForEach(pages.indices, id: \.self) { i in
-                                ReaderPage(ref: pages[i], active: abs(i - index) <= 3)
+                                ReaderPage(ref: pages[i], maxPixelSize: pixels,
+                                           active: abs(i - index) <= 1)
                                     .containerRelativeFrame([.horizontal, .vertical])
                             }
                         }
@@ -66,16 +87,14 @@ struct ReaderView: View {
                         if let i = scrollID, pages.indices.contains(i) { onSettle(i) }
                     }
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(pages.indices, id: \.self) { i in
-                                ReaderPage(ref: pages[i], strip: true, active: abs(i - index) <= 4)
-                                    .onAppear { onSettle(i) }
-                            }
-                        }
-                        .scrollTargetLayout()
-                    }
-                    .scrollPosition(id: $scrollID, anchor: settled ? .center : .top)
+                    StripReader(
+                        pages: pages,
+                        startIndex: index,
+                        maxPixelSize: CGSize(width: pixels.width, height: 8_192),
+                        estimateAspect: geo.size.width / max(geo.size.height, 1),
+                        loadImage: stripLoader,
+                        onPage: onSettle
+                    )
                     .ignoresSafeArea()
                 }
                 if showBar { bar }
@@ -86,9 +105,18 @@ struct ReaderView: View {
             }
         }
         .task { await load(chapter: startChapter, resume: true) }
+        .task(id: extendChapter) {
+            guard let last = extendChapter, let api = app.api else { return }
+            defer { extendChapter = nil }
+            guard let m: Manifest = try? await api.get(extendBase + String(last)) else { return }
+            append(m.chapters)
+        }
         .onDisappear {
-            guard let api = app.api else { return }
-            Task { await app.store.flush(api) }
+            Self.aspects.removeAll()
+            Task {
+                await app.store.flush(app.api)
+                await LocalStore.clearPageCache()
+            }
         }
         .sheet(isPresented: $showSettings) { ReaderSettingsSheet() }
     }
@@ -117,8 +145,6 @@ struct ReaderView: View {
         }
     }
 
-    // handleTap mirrors the web tap zones in paged mode: outer thirds page in
-    // the tapped physical direction, the middle toggles the bar.
     private func handleTap(_ point: CGPoint, width: CGFloat) {
         guard paged, !pages.isEmpty, width > 0 else {
             showBar.toggle()
@@ -138,13 +164,7 @@ struct ReaderView: View {
         withAnimation { scrollID = target }
     }
 
-    // onSettle ignores rows that appear before the initial resume jump lands
-    // (a strip's top rows fire onAppear first) so they aren't marked read.
     private func onSettle(_ i: Int) {
-        if !settled {
-            guard abs(i - index) <= 4 else { return }
-            settled = true
-        }
         index = i
         mark(pages[i])
         extendIfNeeded()
@@ -152,25 +172,36 @@ struct ReaderView: View {
 
     private func load(chapter: Int64, resume: Bool) async {
         if let localChapters {
-            markBase = volumes ? "/api/v1/reader/volumes/" : "/api/v1/reader/chapters/"
             noMore = true
-            pages = localChapters.compactMap { e -> [PageRef]? in
-                guard let local = app.store.url(for: e.id, volume: volumes), e.pages > 0 else { return nil }
-                for (pi, a) in (e.pageAspects ?? []).enumerated() where a > 0 {
-                    ReaderPage.aspects["\(volumes ? "v" : "c")\(e.id)-\(pi + 1)"] = a
+            let volumeMode = volumes
+            let build = Task.detached(priority: .userInitiated) {
+                var refs: [PageRef] = []
+                var aspects: [String: CGFloat] = [:]
+                for e in localChapters where e.pages > 0 {
+                    guard !Task.isCancelled else { break }
+                    let local = LocalStore.root.appendingPathComponent(e.path)
+                    guard FileManager.default.fileExists(atPath: local.path) else { continue }
+                    for (pi, aspect) in e.pageAspects.enumerated() where aspect > 0 {
+                        aspects["\(volumeMode ? "v" : "c")\(e.id)-\(pi + 1)"] = aspect
+                    }
+                    for page in 1...e.pages {
+                        refs.append(PageRef(chapterID: e.id, label: e.label, page: page,
+                                            total: e.pages, url: "", localURL: local,
+                                            volume: volumeMode))
+                    }
                 }
-                return (1...e.pages).map {
-                    PageRef(chapterID: e.id, label: e.label, page: $0, total: e.pages,
-                            url: "", localURL: local, volume: volumes)
-                }
-            }.flatMap { $0 }
-            // Resume at the first unread page from the LOCAL read state —
-            // offline progress must survive without a server. Completed
-            // chapters restart at page 1, like the web. The settle path does
-            // the marking; a missing/unreadable chapter is an error, never a
-            // silent fallback that would mark some other chapter.
+                return (refs, aspects)
+            }
+            let loaded = await withTaskCancellationHandler {
+                await build.value
+            } onCancel: {
+                build.cancel()
+            }
+            guard !Task.isCancelled else { return }
+            Self.aspects.merge(loaded.1) { _, new in new }
+            pages = loaded.0
             let entry = localChapters.first { $0.id == chapter }
-            let resumePage = entry.map { $0.isRead ? 1 : min(($0.readPages ?? 0) + 1, max($0.pages, 1)) } ?? 1
+            let resumePage = entry.map { $0.isRead ? 1 : min($0.readPages + 1, max($0.pages, 1)) } ?? 1
             guard let i = pages.firstIndex(where: { $0.chapterID == chapter && $0.page == resumePage }) else {
                 loadFailed = true
                 return
@@ -183,7 +214,6 @@ struct ReaderView: View {
         let mode = volumes ? "&mode=volumes" : ""
         do {
             let m: Manifest = try await api.get("/api/v1/reader/titles/\(titleID)/manifest?chapter=\(chapter)\(mode)")
-            markBase = m.markBase
             extendBase = m.extendBase
             append(m.chapters)
             if resume {
@@ -212,26 +242,12 @@ struct ReaderView: View {
     }
 
     private func extendIfNeeded() {
-        guard !noMore, pages.count - index < 5, lastChapterID > 0 else { return }
-        let last = lastChapterID
-        Task {
-            guard let api = app.api,
-                  let m: Manifest = try? await api.get(extendBase + String(last)) else { return }
-            append(m.chapters)
-        }
+        guard extendChapter == nil, !noMore, pages.count - index < 5, lastChapterID > 0 else { return }
+        extendChapter = lastChapterID
     }
 
     private func mark(_ p: PageRef) {
-        app.store.markLocal(chapterID: p.chapterID, page: p.page, total: p.total, volume: volumes)
-        Task {
-            do {
-                guard let api = app.api else { throw APIError.badURL }
-                _ = try await api.data("POST", markBase + "\(p.chapterID)/pages",
-                                       body: ["page": p.page, "total_pages": p.total])
-            } catch {
-                app.store.queueMark(id: p.chapterID, volume: volumes, page: p.page, totalPages: p.total)
-            }
-        }
+        app.store.recordMark(id: p.chapterID, volume: volumes, page: p.page, totalPages: p.total)
     }
 }
 
@@ -264,78 +280,57 @@ struct ReaderSettingsSheet: View {
     }
 }
 
-// ReaderPage shows one page image; fit-to-screen when paged, full-width in
-// strip. A device CBZ copy is preferred over the network. Pages outside the
-// active window release their decoded bitmap so long sessions stay bounded.
+// ReaderPage renders one page in paged mode: fit-to-screen with pinch zoom.
+// A device CBZ copy is preferred over the network; the bitmap is released when
+// the page leaves the active window so long sessions stay bounded.
 struct ReaderPage: View {
-    // aspects remembers each decoded page's width/height ratio so placeholders
-    // and evicted pages keep their true height — unstable strip row heights
-    // cause scroll jumps when scrolling upward.
-    @MainActor static var aspects: [String: CGFloat] = [:]
-
     @Environment(AppState.self) private var app
     let ref: ReaderView.PageRef
-    var strip = false
+    let maxPixelSize: CGSize
     var active = true
     @State private var image: UIImage?
     @State private var failed = false
     @State private var zoom: CGFloat = 1
 
     var body: some View {
-        Group {
-            if let image {
-                if strip {
-                    Image(uiImage: image).resizable().scaledToFit()
-                } else {
-                    ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .containerRelativeFrame([.horizontal, .vertical])
-                            .scaleEffect(zoom)
-                    }
-                    .gesture(
-                        MagnifyGesture().onChanged { zoom = max(1, min(3, $0.magnification)) }
-                    )
-                }
-            } else if failed {
-                Label("Page failed to load", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.white)
-                    .frame(minHeight: strip ? 200 : 0)
-            } else if strip, let ratio = Self.aspects[aspectKey] {
-                ZStack {
-                    Color.clear
-                    ProgressView().tint(.white)
-                }
-                .aspectRatio(ratio, contentMode: .fit)
-            } else {
-                ProgressView().tint(.white)
-                    .frame(maxWidth: .infinity, minHeight: strip ? 400 : 0)
+        content
+            .onChange(of: active) { _, a in
+                if !a { image = nil; failed = false }
             }
-        }
-        .onChange(of: active) { _, a in
-            if !a { image = nil; failed = false }
-        }
-        .task(id: active) {
-            guard active, image == nil else { return }
-            if let local = ref.localURL, let img = await LocalStore.pageImage(at: local, page: ref.page) {
-                setImage(img)
-                return
+            .task(id: active) { await loadIfNeeded() }
+    }
+
+    @ViewBuilder private var content: some View {
+        if let image {
+            ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .containerRelativeFrame([.horizontal, .vertical])
+                    .scaleEffect(zoom)
             }
-            if let api = app.api, !ref.url.isEmpty,
-               let data = try? await api.data("GET", ref.url),
-               let img = await Task.detached(priority: .userInitiated, operation: { UIImage.downsampled(data) }).value {
-                setImage(img)
-            } else {
-                failed = true
-            }
+            .gesture(MagnifyGesture().onChanged { zoom = max(1, min(3, $0.magnification)) })
+        } else if failed {
+            Label("Page failed to load", systemImage: "exclamationmark.triangle").foregroundStyle(.white)
+        } else {
+            ProgressView().tint(.white)
         }
     }
 
-    private var aspectKey: String { "\(ref.volume ? "v" : "c")\(ref.chapterID)-\(ref.page)" }
-
-    private func setImage(_ img: UIImage) {
-        if img.size.height > 0 { Self.aspects[aspectKey] = img.size.width / img.size.height }
-        image = img
+    private func loadIfNeeded() async {
+        guard active, image == nil else { return }
+        if let local = ref.localURL,
+           let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: maxPixelSize) {
+            if !Task.isCancelled { image = img }
+            return
+        }
+        guard let api = app.api, !ref.url.isEmpty, let data = try? await api.data("GET", ref.url) else {
+            if !Task.isCancelled { failed = true }
+            return
+        }
+        let decode = Task.detached(priority: .userInitiated) { UIImage.downsampled(data, maxPixelSize: maxPixelSize) }
+        let img = await withTaskCancellationHandler { await decode.value } onCancel: { decode.cancel() }
+        guard !Task.isCancelled else { return }
+        if let img { image = img } else { failed = true }
     }
 }
