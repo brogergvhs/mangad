@@ -7,9 +7,10 @@ struct DownloadsView: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
+        let titles = app.store.titles
         NavigationStack {
             ScrollView {
-                if app.store.titles.isEmpty {
+                if titles.isEmpty {
                     Text("Nothing downloaded yet. Use a title's ⋯ menu to download chapters to this device.")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -17,7 +18,7 @@ struct DownloadsView: View {
                         .padding(.top, 80)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
-                    ForEach(app.store.titles) { title in
+                    ForEach(titles) { title in
                         NavigationLink(value: title.id) {
                             LocalTitleCard(title: title)
                         }
@@ -29,13 +30,13 @@ struct DownloadsView: View {
             .nordScreen()
             .navigationTitle("Downloads")
             .navigationDestination(for: Int64.self) { LocalTitleView(titleId: $0) }
-            .onAppear { app.store.prune() }
+            .task { await app.store.prune() }
         }
     }
 }
 
-// PendingRow is a queued/active device download: greyed while queued, live
-// progress bar + percentage while downloading, never tappable.
+// PendingRow is a queued/active device download and is never tappable: greyed
+// with an empty bar while queued, a filling bar + percentage while downloading.
 struct PendingRow: View {
     let item: LocalStore.Pending
     let volumes: Bool
@@ -135,6 +136,7 @@ struct LocalTitleView: View {
     }
 
     var body: some View {
+        let title = self.title
         List {
             if let title {
                 Section { header(title) }
@@ -208,7 +210,8 @@ struct LocalTitleView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Spacer()
-                Cover(path: "", adult: title.info.isAdult, local: title.coverURL).frame(width: 170)
+                Cover(path: "", adult: title.info.isAdult, local: title.coverURL, targetWidth: 170)
+                    .frame(width: 170)
                 Spacer()
             }
             Text(title.info.name).font(.title2.bold())
@@ -244,7 +247,7 @@ struct LocalTitleView: View {
                 Button {
                     reading = next
                 } label: {
-                    Text(list.contains { ($0.readPages ?? 0) > 0 || $0.isRead } ? "Continue reading" : "Read")
+                    Text(list.contains { $0.readPages > 0 || $0.isRead } ? "Continue reading" : "Read")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
@@ -267,7 +270,7 @@ struct LocalTitleView: View {
         ChapterProgress(id: e.id, titleId: e.titleId, label: e.label,
                         title: e.isVolume ? e.label : "", numberMain: 0,
                         downloaded: true, bytes: e.size, pages: e.pages, totalPages: e.pages,
-                        readPages: e.readPages ?? 0, completed: e.isRead, manual: false,
+                        readPages: e.readPages, completed: e.isRead, manual: false,
                         firstUnreadPage: 0, lastReadAt: nil)
     }
 }

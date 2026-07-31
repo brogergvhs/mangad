@@ -9,6 +9,7 @@ struct TitleDetailView: View {
     @State private var note: String?
     @State private var downloading = false
     @State private var anilistConnected = false
+    @State private var checkedAniList = false
     @State private var showRange = false
     @State private var showRemoveRange = false
     @State private var showSources = false
@@ -35,16 +36,15 @@ struct TitleDetailView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(p.chapters) { ch in
+                        let local = app.store.isDownloaded(ch.id, volume: volumes)
                         Button {
                             readerChapter = ch
                         } label: {
-                            ChapterRow(chapter: ch, volumes: volumes,
-                                       local: app.store.isDownloaded(ch.id, volume: volumes),
-                                       thumb: volumes)
+                            ChapterRow(chapter: ch, volumes: volumes, local: local, thumb: volumes)
                         }
-                        .disabled(!volumes && !ch.downloaded && !app.store.isDownloaded(ch.id))
+                        .disabled(!volumes && !ch.downloaded && !local)
                         .swipeActions {
-                            if app.store.isDownloaded(ch.id, volume: volumes) {
+                            if local {
                                 Button("Remove from device", systemImage: "iphone.slash", role: .destructive) {
                                     app.store.delete(ch.id, volume: volumes)
                                 }
@@ -60,12 +60,19 @@ struct TitleDetailView: View {
         .nordScreen()
         .navigationTitle(progress?.title.displayTitle ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: volumes) { pollGen += 1 }
+        .onChange(of: volumes) { pollGen += 1 }
         .task(id: pollGen) {
             await load()
-            while !Task.isCancelled, activity?.busy == true {
-                try? await Task.sleep(for: .seconds(2))
-                await load()
+            while activity?.busy == true {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                guard let api = app.api,
+                      let latest: TitleActivity = try? await api.get(
+                        "/api/v1/library/\(titleID)/activity") else { return }
+                activity = latest
+                if !latest.busy {
+                    await load()
+                    return
+                }
             }
         }
         .fullScreenCover(item: $readerChapter, onDismiss: { Task { await load() } }) { ch in
@@ -138,7 +145,7 @@ struct TitleDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Spacer()
-                Cover(path: p.title.coverImage, adult: p.title.isAdult).frame(width: 170)
+                Cover(path: p.title.coverImage, adult: p.title.isAdult, targetWidth: 170).frame(width: 170)
                 Spacer()
             }
             Text(p.title.displayTitle).font(.title2.bold())
@@ -320,19 +327,23 @@ struct TitleDetailView: View {
                                    pages: $0.totalPages, volume: volumes)
             })
             for (i, ch) in todo.enumerated() {
+                let kind = volumes ? "volumes" : "chapters"
+                let name = volumes && !ch.title.isEmpty ? ch.title : ch.label
+                guard app.store.canStore(bytes: ch.bytes) else {
+                    note = "Not enough device storage for \(name)"
+                    return
+                }
                 note = "Downloading \(i + 1)/\(todo.count)…"
                 app.store.markActive(ch.id, volume: volumes)
+                let store = app.store
                 do {
-                    let kind = volumes ? "volumes" : "chapters"
-                    let name = volumes && !ch.title.isEmpty ? ch.title : ch.label
-                    let store = app.store
                     let tmp = try await api.download("/api/v1/reader/\(kind)/\(ch.id)/archive",
-                                                     expectedBytes: ch.bytes) { p in
-                        Task { @MainActor in store.setProgress(p) }
+                                                     expectedBytes: ch.bytes) { fraction in
+                        Task { @MainActor in store.setProgress(fraction) }
                     }
-                    try app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,
-                                       titleName: p.title.displayTitle, label: name,
-                                       readPages: ch.readPages, completed: ch.completed, volume: volumes)
+                    try await app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,
+                                             titleName: p.title.displayTitle, label: name,
+                                             readPages: ch.readPages, completed: ch.completed, volume: volumes)
                 } catch {
                     note = error.localizedDescription
                     return
@@ -350,11 +361,17 @@ struct TitleDetailView: View {
         activity = try? await api.get("/api/v1/library/\(titleID)/activity")
         if let p = progress, !autoTabbed {
             autoTabbed = true
-            if p.title.discoveredCount == 0 && p.title.volumeCount > 0 { volumes = true }
+            if p.title.discoveredCount == 0 && p.title.volumeCount > 0 {
+                volumes = true
+                return
+            }
         }
         if let p = progress { app.store.syncRead(p.chapters, volumes: volumes) }
-        if canManage, let status: AniListStatus = try? await api.get("/api/v1/anilist") {
-            anilistConnected = status.connected
+        if canManage, !checkedAniList {
+            checkedAniList = true
+            if let status: AniListStatus = try? await api.get("/api/v1/anilist") {
+                anilistConnected = status.connected
+            }
         }
     }
 
@@ -647,6 +664,7 @@ enum JSONValue: Encodable {
 }
 
 struct ChapterRow: View {
+    @Environment(\.displayScale) private var displayScale
     let chapter: ChapterProgress
     var volumes = false
     var local = false
@@ -659,16 +677,19 @@ struct ChapterRow: View {
     var localThumb: URL? = nil
 
     var body: some View {
+        let width = min(40 * displayScale, 512)
+        let maxPixelSize = CGSize(width: width, height: width * 7 / 5)
         HStack(spacing: 10) {
             if volumes, let localThumb {
                 Color.clear
                     .frame(width: 40, height: 56)
-                    .overlay(LocalImage(url: localThumb))
+                    .overlay(LocalImage(url: localThumb, maxPixelSize: maxPixelSize))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             } else if volumes, thumb {
                 Color.clear
                     .frame(width: 40, height: 56)
-                    .overlay(ServerImage(path: "/api/v1/volumes/\(chapter.id)/cover"))
+                    .overlay(ServerImage(path: "/api/v1/volumes/\(chapter.id)/cover",
+                                         maxPixelSize: maxPixelSize))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             } else if volumes, local {
                 RoundedRectangle(cornerRadius: 6)
