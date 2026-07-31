@@ -35,7 +35,7 @@ struct SearchView: View {
                 } else if items.isEmpty {
                     Text("Nothing found.").foregroundStyle(.secondary).padding(.top, 60)
                 } else if hasMore && !browsing {
-                    Button("Load more") { search(page: page + 1) }
+                    Button("Load more") { startSearch(page: page + 1) }
                         .buttonStyle(.bordered)
                         .padding()
                 }
@@ -52,7 +52,8 @@ struct SearchView: View {
                 }
             }
             .onChange(of: query) { debounceSearch() }
-            .task { await initial() }
+            .task { startSearch(page: 1) }
+            .onDisappear { searchTask?.cancel() }
             .sheet(item: $selected) { manga in
                 MangaDetailSheet(manga: manga) { updated in
                     if let i = items.firstIndex(where: { $0.id == updated.id }) { items[i] = updated }
@@ -65,57 +66,56 @@ struct SearchView: View {
         }
     }
 
-    private func initial() async {
-        guard items.isEmpty else { return }
-        await loadTrending()
-    }
-
     private func loadTrending() async {
         guard let api = app.api else { return }
         if trendingCache.isEmpty {
-            busy = true
             let list: SearchPage? = try? await api.get("/api/v1/wanted/trending")
+            guard !Task.isCancelled else { return }
             trendingCache = list?.items ?? []
-            busy = false
         }
         items = trendingCache
         hasMore = false
     }
 
     private func debounceSearch(immediate: Bool = false) {
+        startSearch(page: 1, delayed: !immediate)
+    }
+
+    private func startSearch(page: Int, delayed: Bool = false) {
         searchTask?.cancel()
         searchTask = Task {
-            if !immediate { try? await Task.sleep(for: .milliseconds(400)) }
+            if delayed { try? await Task.sleep(for: .milliseconds(400)) }
             guard !Task.isCancelled else { return }
+            busy = true
             if browsing {
                 await loadTrending()
             } else {
-                search(page: 1)
+                await search(page: page)
             }
+            if !Task.isCancelled { busy = false }
         }
     }
 
-    private func search(page requested: Int) {
+    private func search(page requested: Int) async {
         guard let api = app.api else { return }
-        busy = true
-        Task {
-            defer { busy = false }
-            var params = ["page=\(requested)"]
-            if let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), !query.isEmpty {
-                params.append("q=\(q)")
-            }
-            if !includeTags.isEmpty { params.append("include_tags=\(csv(includeTags))") }
-            if !excludeTags.isEmpty { params.append("exclude_tags=\(csv(excludeTags))") }
-            if !sort.isEmpty { params.append("sort=\(sort)&dir=\(dir)") }
-            guard let result: SearchPage = try? await api.get("/api/v1/wanted/search?" + params.joined(separator: "&")) else { return }
-            items = requested > 1 ? items + result.items : result.items
-            hasMore = result.hasMore ?? false
-            page = result.page ?? requested
+        let q = query
+        let included = includeTags
+        let excluded = excludeTags
+        let ordering = sort
+        let direction = dir
+        var params = ["page=\(requested)"]
+        if let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), !q.isEmpty {
+            params.append("q=\(encoded)")
         }
-    }
-
-    private func csv(_ set: Set<String>) -> String {
-        set.sorted().joined(separator: ",").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if !included.isEmpty { params.append("include_tags=\(csvTags(included))") }
+        if !excluded.isEmpty { params.append("exclude_tags=\(csvTags(excluded))") }
+        if !ordering.isEmpty { params.append("sort=\(ordering)&dir=\(direction)") }
+        guard let result: SearchPage = try? await api.get("/api/v1/wanted/search?" + params.joined(separator: "&")),
+              !Task.isCancelled, q == query, included == includeTags, excluded == excludeTags,
+              ordering == sort, direction == dir else { return }
+        items = requested > 1 ? items + result.items : result.items
+        hasMore = result.hasMore ?? false
+        page = result.page ?? requested
     }
 }
 
@@ -168,7 +168,7 @@ struct MangaDetailSheet: View {
             List {
                 Section {
                     HStack(alignment: .top, spacing: 12) {
-                        Cover(path: manga.coverImage).frame(width: 90)
+                        Cover(path: manga.coverImage, targetWidth: 90).frame(width: 90)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(manga.name).font(.headline)
                             Text(manga.caption).font(.caption).foregroundStyle(.secondary)

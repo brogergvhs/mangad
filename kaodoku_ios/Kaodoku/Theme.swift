@@ -4,17 +4,13 @@ import SwiftUI
 enum Theme {
     static let bg = Color(hex: 0x2E3440)       // base-200 page background
     static let surface = Color(hex: 0x3B4252)  // base-100 cards/rows
-    static let deep = Color(hex: 0x272C36)     // base-300
     static let neutral = Color(hex: 0x434C5E)
     static let line = Color(hex: 0x4C566A)
     static let mutedText = Color(hex: 0x9AA5BC)
-    static let ink = Color(hex: 0xECEFF4)      // base-content
     static let primary = Color(hex: 0x88C0D0)
-    static let secondary = Color(hex: 0x81A1C1)
     static let info = Color(hex: 0x5E81AC)
     static let success = Color(hex: 0xA3BE8C)
     static let warning = Color(hex: 0xEBCB8B)
-    static let yellow = Color(hex: 0xEBCB8B)
     static let error = Color(hex: 0xBF616A)
 }
 

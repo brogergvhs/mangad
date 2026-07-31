@@ -60,7 +60,7 @@ struct Title: Decodable, Identifiable, Hashable {
 // MangaDetail is the catalog metadata block the web title page shows
 // (badges, description, authors, genres). Codable: it's also snapshotted
 // into the offline index.
-struct MangaDetail: Codable, Hashable {
+struct MangaDetail: Codable, Hashable, Sendable {
     var description: String?
     var status: String?
     var format: String?

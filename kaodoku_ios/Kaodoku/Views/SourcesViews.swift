@@ -116,14 +116,13 @@ struct TitleSourcesSheet: View {
     private func refreshLoop() async {
         await load()
         while !Task.isCancelled, data?.finding == true {
-            try? await Task.sleep(for: .seconds(2))
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
             await load()
         }
     }
 
-    // find kicks the match job, then bumps pollGen so the VIEW-LIFETIME task
-    // restarts the poll loop — a detached poller would outlive the sheet, and
-    // holding `busy` across the whole search would lock the manual-link form.
+    // find kicks the match job, then bumps pollGen to restart the poll loop on
+    // the view's task (a detached poller would outlive the sheet).
     private func find() {
         guard let api = app.api else { return }
         busy = true

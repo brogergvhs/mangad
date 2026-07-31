@@ -5,6 +5,7 @@ import SwiftUI
 struct ServerImage: View {
     @Environment(AppState.self) private var app
     let path: String
+    let maxPixelSize: CGSize
     @State private var image: UIImage?
 
     var body: some View {
@@ -16,8 +17,17 @@ struct ServerImage: View {
             }
         }
         .task(id: path) {
-            guard let api = app.api, image == nil else { return }
-            image = (try? await api.data("GET", path)).flatMap(UIImage.init)
+            guard let api = app.api, !path.isEmpty, image == nil else { return }
+            guard let data = try? await api.data("GET", path) else { return }
+            let decoded = await withTaskGroup(of: UIImage?.self) { group in
+                group.addTask {
+                    guard !Task.isCancelled else { return nil }
+                    return UIImage.downsampled(data, maxPixelSize: maxPixelSize)
+                }
+                return await group.next() ?? nil
+            }
+            guard !Task.isCancelled else { return }
+            image = decoded
         }
     }
 }
@@ -26,18 +36,22 @@ struct ServerImage: View {
 // of the image's own size: the clear frame owns the layout, the image only
 // fills and clips. Adult titles get the web's red outline.
 struct Cover: View {
+    @Environment(\.displayScale) private var displayScale
     let path: String
     var adult = false
     var local: URL? = nil
+    var targetWidth: CGFloat = 128
 
     var body: some View {
+        let width = min(targetWidth * displayScale, 512)
+        let maxPixelSize = CGSize(width: width, height: width * 7 / 5)
         Color.clear
             .aspectRatio(5 / 7, contentMode: .fit)
             .overlay {
                 if let local {
-                    LocalImage(url: local)
+                    LocalImage(url: local, maxPixelSize: maxPixelSize)
                 } else {
-                    ServerImage(path: path)
+                    ServerImage(path: path, maxPixelSize: maxPixelSize)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -48,6 +62,7 @@ struct Cover: View {
 // LocalImage loads a file-backed image (offline covers).
 struct LocalImage: View {
     let url: URL
+    let maxPixelSize: CGSize
     @State private var image: UIImage?
 
     var body: some View {
@@ -58,7 +73,18 @@ struct LocalImage: View {
                 Rectangle().fill(.quaternary)
             }
         }
-        .task(id: url) { image = UIImage(contentsOfFile: url.path) }
+        .task(id: url) {
+            let decoded = await withTaskGroup(of: UIImage?.self) { group in
+                group.addTask {
+                    guard !Task.isCancelled,
+                          let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+                    return UIImage.downsampled(data, maxPixelSize: maxPixelSize)
+                }
+                return await group.next() ?? nil
+            }
+            guard !Task.isCancelled else { return }
+            image = decoded
+        }
     }
 }
 
@@ -100,7 +126,7 @@ struct Badge: View {
                 switch style {
                 case .soft: Capsule().fill(Theme.primary.opacity(0.18))
                 case .ghost: Capsule().fill(Theme.neutral)
-                case .warning: Capsule().fill(Theme.yellow.opacity(0.2))
+                case .warning: Capsule().fill(Theme.warning.opacity(0.2))
                 case .outline: Capsule().strokeBorder(Theme.line)
                 }
             }
@@ -192,7 +218,6 @@ struct LibraryView: View {
     @State private var includeTags: Set<String> = []
     @State private var excludeTags: Set<String> = []
     @State private var showFilters = false
-    @State private var searchTask: Task<Void, Never>?
     @State private var path: [Int64] = []
 
     private var filtersActive: Bool {
@@ -231,9 +256,13 @@ struct LibraryView: View {
             .onChange(of: app.libraryNav) { _, nav in handleNav(nav) }
             .onAppear { handleNav(app.libraryNav) }
             .searchable(text: $query)
-            .onChange(of: query) { debounceReload() }
             .refreshable { await load() }
-            .task { await load() }
+            .task(id: query) {
+                if !query.isEmpty {
+                    do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                }
+                await load()
+            }
             .toolbar {
                 Button {
                     showFilters = true
@@ -260,15 +289,6 @@ struct LibraryView: View {
         Task { await load() }
     }
 
-    private func debounceReload() {
-        searchTask?.cancel()
-        searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
-            await load()
-        }
-    }
-
     private func load(more: Bool = false) async {
         guard let api = app.api else { return }
         var params = ["limit=100", "sort=\(sort)", "dir=\(dir)"]
@@ -284,11 +304,13 @@ struct LibraryView: View {
         if !excludeTags.isEmpty { params.append("exclude_tags=\(csvTags(excludeTags))") }
         do {
             let page: TitlePage = try await api.get("/api/v1/library?" + params.joined(separator: "&"))
+            guard !Task.isCancelled else { return }
             titles = more ? titles + page.items : page.items
             nextCursor = page.nextCursor
         } catch APIError.unauthorized {
             app.signOut()
         } catch {
+            guard !Task.isCancelled else { return }
             app.errorMessage = error.localizedDescription
         }
         loading = false
