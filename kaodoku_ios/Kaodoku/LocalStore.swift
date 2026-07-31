@@ -350,7 +350,7 @@ final class LocalStore {
         for ch in list {
             guard !pending.contains(ch.id) else { continue }
             let k = key(ch.id, volume: volumes)
-            guard var e = chapters[k], e.readPages ?? -1 != ch.readPages || e.isRead != ch.completed else { continue }
+            guard var e = chapters[k], e.readPages != ch.readPages || e.isRead != ch.completed else { continue }
             e.readPages = ch.readPages
             e.completed = ch.completed
             chapters[k] = e

@@ -101,7 +101,9 @@ struct StripReader: UIViewRepresentable {
         func collectionView(_ cv: UICollectionView, layout: UICollectionViewLayout,
                              sizeForItemAt indexPath: IndexPath) -> CGSize {
             let w = cv.bounds.width
-            return CGSize(width: w, height: w / StripReader.aspect(pages[indexPath.item], estimate: parent.estimateAspect))
+            let scale = cv.traitCollection.displayScale > 0 ? cv.traitCollection.displayScale : 1
+            let h = (w / StripReader.aspect(pages[indexPath.item], estimate: parent.estimateAspect) * scale).rounded() / scale
+            return CGSize(width: w, height: h)
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -131,7 +133,7 @@ final class StripCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        imageView.contentMode = .scaleAspectFit
+        imageView.contentMode = .scaleToFill
         imageView.backgroundColor = .black
         imageView.frame = contentView.bounds
         imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
