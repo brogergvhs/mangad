@@ -1,0 +1,36 @@
+name: iOS
+
+on:
+  push:
+    paths:
+      - "kaodoku_ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "kaodoku_ios/**"
+      - ".github/workflows/ios.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Release
+        run: >-
+          xcodebuild -quiet
+          -project kaodoku_ios/Kaodoku.xcodeproj
+          -scheme Kaodoku
+          -configuration Release
+          -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO build
+      - name: Test
+        run: >-
+          xcodebuild test -quiet
+          -project kaodoku_ios/Kaodoku.xcodeproj
+          -scheme Kaodoku
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest'
+          CODE_SIGNING_ALLOWED=NO
