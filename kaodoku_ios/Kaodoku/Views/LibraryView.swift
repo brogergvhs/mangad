@@ -1,7 +1,19 @@
 import SwiftUI
 
-// ServerImage loads an image through the authed client (AsyncImage can't send
-// the X-API-Key header); URLCache handles the caching.
+enum CoverCache {
+    nonisolated(unsafe) static let shared: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = 300
+        return c
+    }()
+
+    static func key(_ id: String, _ size: CGSize) -> NSString {
+        "\(id)|\(Int(size.width))x\(Int(size.height))" as NSString
+    }
+}
+
+// ServerImage loads an image through the authed client 
+// (AsyncImage can't send the X-API-Key header).
 struct ServerImage: View {
     @Environment(AppState.self) private var app
     let path: String
@@ -17,16 +29,18 @@ struct ServerImage: View {
             }
         }
         .task(id: path) {
-            guard let api = app.api, !path.isEmpty, image == nil else { return }
-            guard let data = try? await api.data("GET", path) else { return }
-            let decoded = await withTaskGroup(of: UIImage?.self) { group in
-                group.addTask {
-                    guard !Task.isCancelled else { return nil }
-                    return UIImage.downsampled(data, maxPixelSize: maxPixelSize)
-                }
-                return await group.next() ?? nil
+            guard !path.isEmpty, image == nil else { return }
+            let cacheKey = CoverCache.key(path, maxPixelSize)
+            if let cached = CoverCache.shared.object(forKey: cacheKey) {
+                image = cached
+                return
             }
-            guard !Task.isCancelled else { return }
+            guard let api = app.api, let data = try? await api.data("GET", path) else { return }
+            let decoded = await Task.detached(priority: .utility) {
+                UIImage.downsampled(data, maxPixelSize: maxPixelSize)
+            }.value
+            guard !Task.isCancelled, let decoded else { return }
+            CoverCache.shared.setObject(decoded, forKey: cacheKey)
             image = decoded
         }
     }
@@ -74,15 +88,17 @@ struct LocalImage: View {
             }
         }
         .task(id: url) {
-            let decoded = await withTaskGroup(of: UIImage?.self) { group in
-                group.addTask {
-                    guard !Task.isCancelled,
-                          let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
-                    return UIImage.downsampled(data, maxPixelSize: maxPixelSize)
-                }
-                return await group.next() ?? nil
+            let cacheKey = CoverCache.key(url.path, maxPixelSize)
+            if let cached = CoverCache.shared.object(forKey: cacheKey) {
+                image = cached
+                return
             }
-            guard !Task.isCancelled else { return }
+            let decoded = await Task.detached(priority: .utility) {
+                guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return UIImage?.none }
+                return UIImage.downsampled(data, maxPixelSize: maxPixelSize)
+            }.value
+            guard !Task.isCancelled, let decoded else { return }
+            CoverCache.shared.setObject(decoded, forKey: cacheKey)
             image = decoded
         }
     }
@@ -235,21 +251,14 @@ struct LibraryView: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, 80)
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
-                    ForEach(titles) { title in
-                        NavigationLink(value: title.id) {
-                            TitleCard(title: title)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal)
+                LibraryGrid(titles: titles).equatable()
                 if !nextCursor.isEmpty && !loading {
                     Button("Load more") { Task { await load(more: true) } }
                         .buttonStyle(.bordered)
                         .padding()
                 }
             }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
             .nordScreen()
             .navigationTitle("Library")
             .navigationDestination(for: Int64.self) { TitleDetailView(titleID: $0) }
@@ -419,6 +428,26 @@ struct LibraryFiltersSheet: View {
                 options = ((try? await api.get("/api/v1/tags") as TagList) ?? TagList(items: [])).items
             }
         }
+    }
+}
+
+struct LibraryGrid: View, Equatable {
+    let titles: [Title]
+
+    nonisolated static func == (lhs: LibraryGrid, rhs: LibraryGrid) -> Bool {
+        lhs.titles == rhs.titles
+    }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
+            ForEach(titles) { title in
+                NavigationLink(value: title.id) {
+                    TitleCard(title: title)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal)
     }
 }
 

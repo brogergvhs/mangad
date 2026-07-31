@@ -1,4 +1,15 @@
 import SwiftUI
+import UIKit
+
+@MainActor func prewarmKeyboard() {
+    guard let window = UIApplication.shared.connectedScenes
+        .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return }
+    let field = UITextField()
+    window.addSubview(field)
+    field.becomeFirstResponder()
+    field.resignFirstResponder()
+    field.removeFromSuperview()
+}
 
 @main
 struct KaodokuApp: App {
@@ -24,6 +35,7 @@ struct KaodokuApp: App {
                         SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
                     }
                     .task { await app.loadSession() }
+                    .task { prewarmKeyboard() }
                 } else {
                     ConnectView()
                 }

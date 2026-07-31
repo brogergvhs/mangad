@@ -24,12 +24,8 @@ struct SearchView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
-                    ForEach(items) { manga in
-                        MangaCard(manga: manga) { selected = manga }
-                    }
-                }
-                .padding(.horizontal)
+                SearchResultsGrid(items: items) { selected = $0 }
+                    .equatable()
                 if busy {
                     ProgressView().padding()
                 } else if items.isEmpty {
@@ -40,6 +36,7 @@ struct SearchView: View {
                         .padding()
                 }
             }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
             .nordScreen()
             .navigationTitle(browsing ? "For you" : "Search")
             .searchable(text: $query, prompt: "Search AniList")
@@ -116,6 +113,24 @@ struct SearchView: View {
         items = requested > 1 ? items + result.items : result.items
         hasMore = result.hasMore ?? false
         page = result.page ?? requested
+    }
+}
+
+struct SearchResultsGrid: View, Equatable {
+    let items: [Manga]
+    let onSelect: (Manga) -> Void
+
+    nonisolated static func == (lhs: SearchResultsGrid, rhs: SearchResultsGrid) -> Bool {
+        lhs.items == rhs.items
+    }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
+            ForEach(items) { manga in
+                MangaCard(manga: manga) { onSelect(manga) }
+            }
+        }
+        .padding(.horizontal)
     }
 }
 
