@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,6 +62,55 @@ func TestHTTPClientRateLimitsPerHost(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed < 20*time.Millisecond {
 		t.Fatalf("two requests took %s, want rate-limited delay", elapsed)
+	}
+}
+
+func TestHTTPClientBlocksPrivateNetworks(t *testing.T) {
+	t.Parallel()
+
+	var called bool
+	client, err := NewHTTPClient(HTTPClientOptions{
+		BlockPrivateNetworks: true,
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			called = true
+			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"http://127.0.0.1/", "http://10.0.0.1/", "http://[::1]/", "http://localhost/"} {
+		called = false
+		if _, err := client.Get(target); err == nil || !strings.Contains(err.Error(), "private network") {
+			t.Fatalf("GET %s err = %v, want private network block", target, err)
+		}
+		if called {
+			t.Fatalf("transport called for blocked target %s", target)
+		}
+	}
+}
+
+func TestHTTPClientAllowsPublicLiteral(t *testing.T) {
+	t.Parallel()
+
+	var called bool
+	client, err := NewHTTPClient(HTTPClientOptions{
+		BlockPrivateNetworks: true,
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			called = true
+			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Get("http://93.184.216.34/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if !called {
+		t.Fatal("transport was not called for public target")
 	}
 }
 

@@ -12,6 +12,30 @@
       <span id="reader-position">{{.PagePosition}}</span>
     </div>
     <div class="reader-nav-right">
+      {{if not .Empty}}
+      <details class="dropdown dropdown-end reader-settings">
+        <summary class="btn btn-outline btn-sm btn-square" aria-label="Reader settings">{{template "iconSettings"}}</summary>
+        <div class="dropdown-content reader-settings-menu">
+          <div class="reader-set-row"><span>Layout</span><div class="join">
+            <button class="btn btn-xs join-item" data-set="mode=strip">Strip</button>
+            <button class="btn btn-xs join-item" data-set="mode=paged">Paged</button>
+          </div></div>
+          <div class="reader-set-row"><span>Direction</span><div class="join">
+            <button class="btn btn-xs join-item" data-set="dir=ltr">L&rarr;R</button>
+            <button class="btn btn-xs join-item" data-set="dir=rtl">R&rarr;L</button>
+          </div></div>
+          <div class="reader-set-row"><span>Fit</span><div class="join">
+            <button class="btn btn-xs join-item" data-set="fit=contain">Screen</button>
+            <button class="btn btn-xs join-item" data-set="fit=width">Width</button>
+          </div></div>
+          <div class="reader-set-row"><span>Zoom</span><div class="join">
+            <button class="btn btn-xs join-item" data-zoom="-1" aria-label="Zoom out">&minus;</button>
+            <span class="btn btn-xs join-item no-animation pointer-events-none" data-zoom-label>100%</span>
+            <button class="btn btn-xs join-item" data-zoom="1" aria-label="Zoom in">+</button>
+          </div></div>
+        </div>
+      </details>
+      {{end}}
       {{if .NextURL}}<a class="btn btn-outline btn-sm" data-reader-next href="{{.NextURL}}">Next chapter</a>{{end}}
     </div>
   </div>
@@ -19,7 +43,7 @@
   <div class="reader-empty">{{.Empty}}</div>
   {{else}}
   <script type="application/json" id="reader-manifest">{{.ManifestJSON}}</script>
-  <div class="reader-strip" id="reader-strip"></div>
+  <div class="reader-strip" id="reader-strip"><div class="reader-track" id="reader-track"></div></div>
   <div class="reader-loading" id="reader-loading"><span class="spin"></span></div>
   {{end}}
 </div>

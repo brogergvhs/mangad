@@ -20,6 +20,7 @@ type Config struct {
 	ChapterWorkers int      `yaml:"chapter_workers"`
 	KeepFolders    bool     `yaml:"keep_folders"`
 	Debug          bool     `yaml:"debug"`
+	LogFormat      string   `yaml:"log_format"`
 	AllowExt       []string `yaml:"allow_ext"`
 	Languages      []string `yaml:"languages"`
 	LanguageMode   string   `yaml:"-"`
@@ -95,6 +96,7 @@ func DefaultConfig() *Config {
 		ChapterWorkers:      2,
 		KeepFolders:         false,
 		Debug:               false,
+		LogFormat:           "text",
 		DefaultURL:          "",
 		DefaultRange:        "",
 		DefaultExcludeRange: "",

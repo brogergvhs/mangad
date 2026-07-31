@@ -1,7 +1,7 @@
 package util
 
 import (
-	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,9 +19,9 @@ func CleanupUnfinishedTempFolders(outputDir string) {
 			full := filepath.Join(outputDir, name)
 
 			if err := os.RemoveAll(full); err != nil {
-				fmt.Printf("Error cleaning up %s: %v\n", full, err)
+				log.Printf("error cleaning up %s: %v", full, err)
 			} else {
-				fmt.Printf("Removed %s\n", full)
+				log.Printf("removed unfinished temp folder %s", full)
 			}
 		}
 	}
@@ -35,7 +35,7 @@ func RemoveIfEmpty(dir string) {
 
 	if len(entries) == 0 {
 		if err := os.Remove(dir); err == nil {
-			fmt.Printf("Removed empty output folder: %s\n", dir)
+			log.Printf("removed empty output folder %s", dir)
 		}
 	}
 }

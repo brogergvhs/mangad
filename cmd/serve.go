@@ -7,15 +7,38 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/server"
 	"github.com/brogergvhs/kaodoku/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/util"
 
 	"github.com/spf13/cobra"
 )
+
+// warnDownloadDir surfaces a bad download directory at startup instead of
+// letting every download/import/delete fail silently later.
+func warnDownloadDir(cmd *cobra.Command) {
+	cfg, _, err := runtimeConfig()
+	if err != nil {
+		return
+	}
+	dir, _ := filepath.Abs(cfg.DownloadDir)
+	if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: download directory %q does not exist — downloads and imports will fail until it is created or mounted\n", dir)
+		return
+	}
+	f, werr := os.CreateTemp(dir, ".kaodoku-write-*")
+	if werr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: download directory %q is not writable: %v\n", dir, werr)
+		return
+	}
+	_ = f.Close()
+	_ = os.Remove(f.Name())
+}
 
 var (
 	flagServeDB            string
@@ -23,6 +46,7 @@ var (
 	flagServeRefreshEvery  time.Duration
 	flagServeScanEvery     time.Duration
 	flagServeDownloadEvery time.Duration
+	flagServeBackupEvery   time.Duration
 	flagServeRunEvery      time.Duration
 )
 
@@ -38,6 +62,7 @@ func init() {
 	serveCmd.Flags().DurationVar(&flagServeRefreshEvery, "refresh-every", 0, "refresh schedule, e.g. 1h; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeScanEvery, "scan-every", 0, "download file scan schedule, e.g. 30m; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeDownloadEvery, "download-every", 0, "missing download schedule, e.g. 10m; 0 disables")
+	serveCmd.Flags().DurationVar(&flagServeBackupEvery, "backup-every", 0, "user data backup schedule, e.g. 24h; 0 disables")
 	serveCmd.Flags().DurationVar(&flagServeRunEvery, "run-every", 0, "job runner interval, e.g. 5s")
 	rootCmd.AddCommand(serveCmd)
 }
@@ -52,6 +77,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer closeDB()
 	svc.SetRuntimeConfig(runtimeConfig)
+	warnDownloadDir(cmd)
+	cleanupDownloadTemps()
 
 	// Make built-in sources available immediately (registry sync stays manual).
 	if err := svc.SyncSources(ctx, ""); err != nil {
@@ -65,6 +92,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if err := seedServeSetting(cmd, svc, ctx, "download-every", service.SettingServeDownloadEvery, flagServeDownloadEvery); err != nil {
+		return err
+	}
+	if err := seedServeSetting(cmd, svc, ctx, "backup-every", service.SettingServeBackupEvery, flagServeBackupEvery); err != nil {
 		return err
 	}
 	if err := seedServeSetting(cmd, svc, ctx, "run-every", service.SettingServeRunEvery, flagServeRunEvery); err != nil {
@@ -100,22 +130,26 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	nextRefresh := time.Now()
 	nextScan := time.Now()
 	nextDownload := time.Now()
+	nextSourceVerify := time.Now()
+	nextBackup := time.Now()
 	nextAniList := time.Now()
 	nextCatalog := time.Now()
-	var refreshEvery, scanEvery, downloadEvery, anilistEvery, catalogEvery, runEvery time.Duration
+	var refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, backupEvery, anilistEvery, catalogEvery, runEvery time.Duration
 
 	for {
-		oldRefresh, oldScan, oldDownload, oldAniList, oldCatalog, oldRun := refreshEvery, scanEvery, downloadEvery, anilistEvery, catalogEvery, runEvery
+		oldRefresh, oldScan, oldDownload, oldSourceVerify, oldBackup, oldAniList, oldCatalog, oldRun := refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, backupEvery, anilistEvery, catalogEvery, runEvery
 		refreshEvery = serveDuration(svc, ctx, service.SettingServeRefreshEvery)
 		scanEvery = serveDuration(svc, ctx, service.SettingServeScanEvery)
 		downloadEvery = serveDuration(svc, ctx, service.SettingServeDownloadEvery)
+		sourceVerifyEvery = serveDuration(svc, ctx, service.SettingServeSourceVerifyEvery)
+		backupEvery = serveDuration(svc, ctx, service.SettingServeBackupEvery)
 		anilistEvery = serveDuration(svc, ctx, service.SettingServeAniListSyncEvery)
 		catalogEvery = serveDuration(svc, ctx, service.SettingServeCatalogEvery)
 		runEvery = serveDuration(svc, ctx, service.SettingServeRunEvery)
 		if runEvery <= 0 {
 			runEvery = fallbackDuration(service.SettingDefault(service.SettingServeRunEvery))
 		}
-		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldAniList != anilistEvery || oldCatalog != catalogEvery || oldRun != runEvery
+		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldSourceVerify != sourceVerifyEvery || oldBackup != backupEvery || oldAniList != anilistEvery || oldCatalog != catalogEvery || oldRun != runEvery
 		if oldRefresh != refreshEvery {
 			nextRefresh = time.Now().Add(refreshEvery)
 		}
@@ -125,6 +159,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		if oldDownload != downloadEvery {
 			nextDownload = time.Now().Add(downloadEvery)
 		}
+		if oldSourceVerify != sourceVerifyEvery {
+			nextSourceVerify = time.Now().Add(sourceVerifyEvery)
+		}
+		if oldBackup != backupEvery {
+			nextBackup = time.Now().Add(backupEvery)
+		}
 		if oldAniList != anilistEvery {
 			nextAniList = time.Now().Add(anilistEvery)
 		}
@@ -132,12 +172,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			nextCatalog = time.Now().Add(catalogEvery)
 		}
 		if changed {
-			fmt.Printf("Serving: refresh=%s scan=%s download=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, runEvery)
+			fmt.Printf("Serving: refresh=%s scan=%s download=%s source_verify=%s backup=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, backupEvery, runEvery)
 		}
 
-		// Transient failures (e.g. SQLITE_BUSY) must not kill the daemon;
-		// shutdown is handled by the ctx.Done select below.
-		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery), nextDue(&nextAniList, anilistEvery), nextDue(&nextCatalog, catalogEvery)); err != nil && ctx.Err() == nil {
+		if err := serveTick(ctx, svc, nextDue(&nextRefresh, refreshEvery), nextDue(&nextScan, scanEvery), nextDue(&nextDownload, downloadEvery), nextDue(&nextSourceVerify, sourceVerifyEvery), nextDue(&nextBackup, backupEvery), nextDue(&nextAniList, anilistEvery), nextDue(&nextCatalog, catalogEvery)); err != nil && ctx.Err() == nil {
 			fmt.Fprintf(os.Stderr, "serve tick: %v\n", err)
 		}
 		if _, err := runDue(ctx, svc); err != nil && ctx.Err() == nil {
@@ -157,7 +195,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 }
 
-func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, download, anilist, catalogRefresh bool) error {
+func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, download, sourceVerify, backup, anilist, catalogRefresh bool) error {
 	now := time.Now()
 	if refresh {
 		if _, err := svc.Enqueue(ctx, jobs.TypeRefreshTitle, 0, now); err != nil {
@@ -171,6 +209,16 @@ func serveTick(ctx context.Context, svc *service.JobService, refresh, scan, down
 	}
 	if download {
 		if _, err := svc.Enqueue(ctx, jobs.TypeDownloadMissing, 0, now); err != nil {
+			return err
+		}
+	}
+	if sourceVerify {
+		if _, err := svc.EnqueueSourceVerification(ctx, now); err != nil {
+			return err
+		}
+	}
+	if backup {
+		if _, err := svc.Enqueue(ctx, jobs.TypeBackupUserData, 0, now); err != nil {
 			return err
 		}
 	}
@@ -207,6 +255,13 @@ func seedServeSetting(cmd *cobra.Command, svc *service.JobService, ctx context.C
 		return nil
 	}
 	return svc.SetSetting(ctx, key, value.String())
+}
+
+func cleanupDownloadTemps() {
+	cfg, _, err := runtimeConfig()
+	if err == nil {
+		util.CleanupUnfinishedTempFolders(cfg.DownloadDir)
+	}
 }
 
 func serveDuration(svc *service.JobService, ctx context.Context, key string) time.Duration {

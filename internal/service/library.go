@@ -222,6 +222,26 @@ func (s *LibraryService) MarkPageRead(ctx context.Context, chapterID int64, page
 	return s.repo.MarkPageRead(ctx, chapterID, page, totalPages)
 }
 
+// MarkPageReadAt marks a page read at an explicit time (offline replay).
+func (s *LibraryService) MarkPageReadAt(ctx context.Context, chapterID int64, page, totalPages int, readAt string) (library.ChapterReadStatus, error) {
+	return s.repo.MarkPageReadAt(ctx, chapterID, page, totalPages, readAt)
+}
+
+// ChaptersReadSince returns chapter progress touched after since.
+func (s *LibraryService) ChaptersReadSince(ctx context.Context, since string) ([]library.ChapterReadStatus, error) {
+	return s.repo.ChaptersReadSince(ctx, since)
+}
+
+// ReadProgressIDs returns all chapter/volume ids with progress rows.
+func (s *LibraryService) ReadProgressIDs(ctx context.Context) ([]int64, []int64, error) {
+	return s.repo.ReadProgressIDs(ctx)
+}
+
+// VolumesReadSince returns volume progress touched after since.
+func (s *LibraryService) VolumesReadSince(ctx context.Context, since string) ([]library.Volume, error) {
+	return s.repo.VolumesReadSince(ctx, since)
+}
+
 // MarkChapterRead records a completed chapter.
 func (s *LibraryService) MarkChapterRead(ctx context.Context, chapterID int64) (library.ChapterReadStatus, error) {
 	return s.repo.MarkChapterRead(ctx, chapterID)
@@ -250,6 +270,11 @@ func (s *LibraryService) RemoveChapterDownload(ctx context.Context, chapterID in
 // RenameChapter updates a chapter's descriptive title.
 func (s *LibraryService) RenameChapter(ctx context.Context, chapterID int64, title string) error {
 	return s.repo.RenameChapter(ctx, chapterID, title)
+}
+
+// TitleReadStatuses lists all discovered chapters with download + read state.
+func (s *LibraryService) TitleReadStatuses(ctx context.Context, titleID int64) ([]library.ChapterReadStatus, error) {
+	return s.repo.TitleReadStatuses(ctx, titleID)
 }
 
 // TitleOwners maps title id to the user that added it.
@@ -311,6 +336,7 @@ func (s *LibraryService) RefreshTitle(
 	logSvc ui.Log,
 	title library.Title,
 ) (RefreshResult, error) {
+	logSvc = logSvc.With("title_id", title.ID, "title", title.DisplayTitle)
 	if !strings.HasPrefix(title.SourceURL, "http") {
 		return RefreshResult{}, fmt.Errorf("title %q has no linked source to refresh from", title.DisplayTitle)
 	}
@@ -727,7 +753,7 @@ func configForTitle(cfg *config.Config, title library.Title) (*config.Config, er
 		if err != nil {
 			return nil, fmt.Errorf("resolve output path: %w", err)
 		}
-		if output != root && !strings.HasPrefix(output, root+string(os.PathSeparator)) {
+		if _, ok := withinRoot(root, output); !ok {
 			return nil, fmt.Errorf("output path %q is outside download root %q", title.OutputPath, next.DownloadDir)
 		}
 		next.Output = output
@@ -749,10 +775,18 @@ func (s *LibraryService) TitleFilesDir(cfg *config.Config, title library.Title) 
 		return "", err
 	}
 	dir := titleCfg.Output
-	if dir == root || !strings.HasPrefix(dir, root+string(os.PathSeparator)) {
+	if rel, ok := withinRoot(root, dir); !ok || rel == "." {
 		return "", fmt.Errorf("refusing to touch %q: not strictly inside the download root", dir)
 	}
 	return dir, nil
+}
+
+func withinRoot(root, dir string) (rel string, ok bool) {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return rel, false
+	}
+	return rel, true
 }
 
 func titleOutputDir(title library.Title) string {

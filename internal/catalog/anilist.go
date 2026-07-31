@@ -21,6 +21,15 @@ const AniListProvider = "anilist"
 // already-absent entry can be treated as success.
 var errAniListNotFound = errors.New("anilist: not found")
 
+// IsNotFound reports whether err is an AniList 404 (entry deleted upstream).
+func IsNotFound(err error) bool { return errors.Is(err, errAniListNotFound) }
+
+// ErrAniListUnauthorized marks an expired or revoked AniList token.
+var ErrAniListUnauthorized = errors.New("anilist: unauthorized")
+
+// IsUnauthorized reports whether err means the stored AniList token is invalid.
+func IsUnauthorized(err error) bool { return errors.Is(err, ErrAniListUnauthorized) }
+
 // AniListClient queries AniList GraphQL.
 type AniListClient struct {
 	endpoint string
@@ -345,6 +354,9 @@ func (c *AniListClient) do(ctx context.Context, query string, variables map[stri
 	if resp.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("anilist HTTP 404: %w", errAniListNotFound)
 	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("anilist HTTP 401: %w", ErrAniListUnauthorized)
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("anilist HTTP %d", resp.StatusCode)
 	}
@@ -360,12 +372,21 @@ func (c *AniListClient) do(ctx context.Context, query string, variables map[stri
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(data, &failure); err == nil && len(failure.Errors) > 0 {
-		return fmt.Errorf("anilist: %s", failure.Errors[0].Message)
+		msg := failure.Errors[0].Message
+		if aniListUnauthorizedMessage(msg) {
+			return fmt.Errorf("anilist: %s: %w", msg, ErrAniListUnauthorized)
+		}
+		return fmt.Errorf("anilist: %s", msg)
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("decode anilist response: %w", err)
 	}
 	return nil
+}
+
+func aniListUnauthorizedMessage(msg string) bool {
+	msg = strings.ToLower(msg)
+	return strings.Contains(msg, "invalid token") || strings.Contains(msg, "unauthorized") || strings.Contains(msg, "not authenticated")
 }
 
 type anilistSearchResponse struct {

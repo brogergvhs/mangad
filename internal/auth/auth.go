@@ -22,6 +22,7 @@ const (
 	PermSettingsAppearance = "settings.appearance" // own theme settings
 	PermSettingsManage     = "settings.manage"     // global settings sections
 	PermUsersManage        = "users.manage"        // users & roles administration
+	PermMetricsUsers       = "metrics.users"       // view other users' reading metrics
 )
 
 // Permissions lists every known permission (stable order, for UIs).
@@ -30,7 +31,7 @@ func Permissions() []string {
 		PermLibraryView, PermStatsView, PermServicesView, PermSessionsView, PermJobsView,
 		PermReaderUse, PermLibraryAdd, PermLibraryManage, PermImportUse,
 		PermSourcesManage, PermJobsManage,
-		PermSettingsAppearance, PermSettingsManage, PermUsersManage,
+		PermSettingsAppearance, PermSettingsManage, PermUsersManage, PermMetricsUsers,
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"html/template"
@@ -25,6 +26,7 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/auth"
 	"github.com/brogergvhs/kaodoku/internal/catalog"
 	"github.com/brogergvhs/kaodoku/internal/config"
+	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/providers/registry"
@@ -74,18 +76,19 @@ type dashData struct {
 	User       *auth.User
 }
 type libraryView struct {
-	Controls       libraryControls
-	Table          libraryResults
-	Screen         *library.Screen
-	ShowEditor     bool
-	OpenEditor     bool
-	TagOptions     []catalog.ContentTag
-	IncludeTags    []string
-	ExcludeTags    []string
-	Cfg            library.ScreenConfig
-	CollectionName string
-	CollectionIDs  string
-	CollectionID   int64
+	Controls           libraryControls
+	Table              libraryResults
+	Screen             *library.Screen
+	ShowEditor         bool
+	OpenEditor         bool
+	TagOptions         []catalog.ContentTag
+	IncludeTags        []string
+	ExcludeTags        []string
+	Cfg                library.ScreenConfig
+	CollectionName     string
+	CollectionIDs      string
+	CollectionID       int64
+	CollectionSmartKey string
 }
 type libraryControls struct {
 	Q           string
@@ -202,6 +205,10 @@ func settingMeta(key string) (label, desc string) {
 		return "Re-scan downloaded files", "How often the download folders are re-checked to reconcile which chapters are already on disk."
 	case service.SettingServeDownloadEvery:
 		return "Download missing chapters", "How often missing chapters of monitored manga are downloaded automatically."
+	case service.SettingServeSourceVerifyEvery:
+		return "Verify sources", "How often enabled source definitions are re-checked against their sites. Use 0 to disable."
+	case service.SettingServeBackupEvery:
+		return "Back up user data", "How often user data is backed up. User data only: progress, settings, users, roles, library metadata, collections and sources. Empty disables scheduled backups."
 	case service.SettingServeRunEvery:
 		return "Background task interval", "How often the background worker wakes to run queued jobs. Lower is more responsive, higher is less busy."
 	case service.SettingBrowserSolverEnabled:
@@ -281,6 +288,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /collections/view", u.collectionMembersPage)
 	mux.HandleFunc("GET /{$}", u.homePage)
 	mux.HandleFunc("GET /management", u.management)
+	mux.HandleFunc("GET /metrics", u.metricsPage)
+	mux.HandleFunc("GET /ui/metrics", u.metricsBody)
 	mux.HandleFunc("GET /search", u.searchPage)
 	mux.HandleFunc("GET /library", u.libraryPage)
 	mux.HandleFunc("GET /library/{id}", u.titlePage)
@@ -288,10 +297,12 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /reader/{id}", u.readerPage)
 	mux.HandleFunc("GET /import", u.importPage)
 	mux.HandleFunc("GET /sources", u.sourcesPage)
+	mux.HandleFunc("GET /backups", u.backupsPage)
 	mux.HandleFunc("GET /settings", u.settingsPage)
 
 	mux.HandleFunc("POST /ui/search", u.search)
 	mux.HandleFunc("POST /ui/library/add", u.addToLibrary)
+	mux.HandleFunc("POST /ui/library/bulk", u.libraryBulk)
 	mux.HandleFunc("POST /ui/library/{id}/refresh", u.libAction(jobs.TypeRefreshTitle, "refreshing"))
 	mux.HandleFunc("POST /ui/library/{id}/download", u.libAction(jobs.TypeDownloadMissing, "downloading"))
 	mux.HandleFunc("POST /ui/library/{id}/scan", u.libAction(jobs.TypeScanDownloads, "scanning"))
@@ -317,6 +328,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/collections/{id}/delete", u.collectionDelete)
 	mux.HandleFunc("POST /ui/collections/{id}/remove", u.collectionRemoveMember)
 	mux.HandleFunc("GET /ui/collections/{id}/manage", u.collectionManage)
+	mux.HandleFunc("GET /ui/collections/smart/{key}/manage", u.smartCollectionManage)
+	mux.HandleFunc("POST /ui/collections/smart/{key}/remove", u.smartCollectionRemovePin)
 	mux.HandleFunc("GET /ui/library/{id}/collections", u.libCollectionsDialog)
 	mux.HandleFunc("POST /ui/library/{id}/collections/add", u.libAddToCollection)
 	mux.HandleFunc("GET /ui/library/{id}/content", u.titleContentFrag)
@@ -355,6 +368,12 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/jobs/table", u.jobsTable)
 	mux.HandleFunc("POST /ui/jobs/start", u.jobStart)
 	mux.HandleFunc("POST /ui/jobs/{id}/cancel", u.jobCancel)
+	mux.HandleFunc("GET /ui/backups", u.backupsFrag)
+	mux.HandleFunc("POST /ui/backups", u.backupCreate)
+	mux.HandleFunc("POST /ui/backups/upload", u.backupUpload)
+	mux.HandleFunc("GET /ui/backups/{name}/download", u.backupDownload)
+	mux.HandleFunc("POST /ui/backups/{name}/restore", u.backupRestore)
+	mux.HandleFunc("POST /ui/backups/{name}/delete", u.backupDelete)
 	mux.HandleFunc("GET /ui/sessions", u.sessionsFrag)
 	mux.HandleFunc("GET /ui/health", u.health)
 	mux.HandleFunc("GET /ui/import/candidates", u.importCandidates)
@@ -372,6 +391,11 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/account/sessions/revoke", u.accountRevokeSessions)
 	mux.HandleFunc("POST /ui/account/tokens", u.accountTokenCreate)
 	mux.HandleFunc("POST /ui/account/tokens/{id}/delete", u.accountTokenDelete)
+	mux.HandleFunc("GET /ui/notifications", u.notificationsCard)
+	mux.HandleFunc("GET /ui/notifications/badge", u.notificationsBadge)
+	mux.HandleFunc("POST /ui/notifications/read", u.notificationsRead)
+	mux.HandleFunc("POST /ui/notifications/clear", u.notificationsClear)
+	mux.HandleFunc("POST /ui/notifications/{id}/delete", u.notificationDelete)
 	mux.HandleFunc("GET /users", u.usersPage)
 	mux.HandleFunc("GET /ui/users", u.usersFrag)
 	mux.HandleFunc("POST /ui/users", u.userCreate)
@@ -426,7 +450,13 @@ func (u *webUI) mangaResultsView(ctx context.Context, heading, view string, item
 }
 
 func (u *webUI) stripItems(ctx context.Context, items []catalog.Manga) []searchResultView {
-	inLibrary, _ := u.svc.TitlesByProvider(ctx, catalog.AniListProvider)
+	return stripItems(ctx, u.svc, items)
+}
+
+// stripItems guards manga for the acting user and maps tracked ones to their
+// library title id.
+func stripItems(ctx context.Context, svc *service.JobService, items []catalog.Manga) []searchResultView {
+	inLibrary, _ := svc.TitlesByProvider(ctx, catalog.AniListProvider)
 	views := make([]searchResultView, 0, len(items))
 	for _, m := range items {
 		if !contentAllowed(ctx, m.IsAdult, mangaContentTags(m)) {
@@ -513,12 +543,19 @@ func (u *webUI) trendingManga(w http.ResponseWriter, r *http.Request) {
 // guardedBrowse fills an empty suggestions grid with a popularity browse
 // pre-filtered by the acting user's tag guards.
 func (u *webUI) guardedBrowse(ctx context.Context, c searchControls) mangaResults {
-	filter := catalog.SearchFilter{Sort: anilistSort(c.Sort, c.Dir)}
+	items := guardedBrowseManga(ctx, u.svc, c.Sort, c.Dir)
+	return u.mangaResultsView(ctx, "", c.View, items)
+}
+
+// guardedBrowseManga is a popularity browse pre-filtered by the acting user's
+// tag guards, shared by the web and v1 trending fallbacks.
+func guardedBrowseManga(ctx context.Context, svc *service.JobService, sort, dir string) []catalog.Manga {
+	filter := catalog.SearchFilter{Sort: anilistSort(sort, dir)}
 	if filter.Sort == "" {
 		filter.Sort = "POPULARITY_DESC"
 	}
 	if usr := auth.FromContext(ctx); usr != nil {
-		if options, err := u.svc.ContentTagOptions(ctx); err == nil && len(options) > 0 {
+		if options, err := svc.ContentTagOptions(ctx); err == nil && len(options) > 0 {
 			genres, tags := splitByKind(usr.AllowedTags, options)
 			if len(genres) == 0 || len(tags) == 0 {
 				filter.GenreIn, filter.TagIn = genres, tags
@@ -526,11 +563,11 @@ func (u *webUI) guardedBrowse(ctx context.Context, c searchControls) mangaResult
 			filter.GenreNotIn, filter.TagNotIn = splitByKind(usr.BlockedTags, options)
 		}
 	}
-	items, _, err := u.svc.SearchAniList(ctx, "", 18, filter)
+	items, _, err := svc.SearchAniList(ctx, "", 18, filter)
 	if err != nil {
-		return mangaResults{}
+		return nil
 	}
-	return u.mangaResultsView(ctx, "", c.View, items)
+	return items
 }
 
 // filterNSFWSources hides NSFW-only sources from users without adult access.
@@ -700,8 +737,9 @@ func (u *webUI) healthView(ctx context.Context) healthView {
 }
 
 const (
-	libraryPerPage = 20
-	jobsPerPage    = 15
+	libraryPerPage     = 20
+	jobsPerPage        = 15
+	collectionsPerPage = 24
 )
 
 func (u *webUI) libraryPage(w http.ResponseWriter, r *http.Request) {
@@ -743,6 +781,7 @@ type collectionCard struct {
 	Name      string
 	URL       string // link to the members subpage
 	CustomID  int64  // >0 enables the rename/delete menu on the card
+	SmartKey  string
 	Count     int
 	Chapters  int64
 	Volumes   int64
@@ -759,11 +798,42 @@ type collectionsView struct {
 	Mode         string // "author" | "smart" | "custom"
 	Cards        []collectionCard
 	HasRelations bool
+	Page         int
+	PerPage      int
+	Total        int
+}
+
+func (v collectionsView) TotalPages() int {
+	if v.PerPage <= 0 {
+		return 1
+	}
+	pages := (v.Total + v.PerPage - 1) / v.PerPage
+	if pages < 1 {
+		return 1
+	}
+	return pages
+}
+
+func (v collectionsView) HasPrev() bool { return v.Page > 1 }
+func (v collectionsView) HasNext() bool { return v.Page < v.TotalPages() }
+func (v collectionsView) Prev() int     { return v.Page - 1 }
+func (v collectionsView) Next() int     { return v.Page + 1 }
+
+func (v collectionsView) PageURL(page int) template.URL {
+	q := url.Values{}
+	if v.Mode == "smart" {
+		q.Set("by", "relation")
+	} else if v.Mode != "author" {
+		q.Set("by", v.Mode)
+	}
+	q.Set("page", strconv.Itoa(page))
+	return template.URL("/collections?" + q.Encode())
 }
 
 func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	author, smart, custom, hasRelations := u.buildAllCollections(ctx)
+	page, _, _ := tableParams(r.URL.Query(), collectionsPerPage)
 	mode := r.URL.Query().Get("by")
 	var cols []collection
 	switch mode {
@@ -776,10 +846,17 @@ func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 		mode = "author"
 		cols = author
 	}
+	pageCols, total := paginate(cols, page, collectionsPerPage)
+	if pages := (total + collectionsPerPage - 1) / collectionsPerPage; pages > 0 && page > pages {
+		page = pages
+	}
 	u.page(w, r, "collections", "Collections", collectionsView{
 		Mode:         mode,
-		Cards:        collectionCards(cols),
+		Cards:        collectionCards(pageCols),
 		HasRelations: hasRelations,
+		Page:         page,
+		PerPage:      collectionsPerPage,
+		Total:        total,
 	})
 }
 
@@ -849,11 +926,12 @@ func (u *webUI) collectionMembersPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := libraryView{
-		Table:          u.buildLibraryTable(ctx, values),
-		Controls:       libraryControlsFrom(values),
-		CollectionName: name,
-		CollectionIDs:  values.Get("ids"),
-		CollectionID:   collectionID,
+		Table:              u.buildLibraryTable(ctx, values),
+		Controls:           libraryControlsFrom(values),
+		CollectionName:     name,
+		CollectionIDs:      values.Get("ids"),
+		CollectionID:       collectionID,
+		CollectionSmartKey: values.Get("smart"),
 	}
 	u.page(w, r, "library", name, view)
 }
@@ -872,9 +950,10 @@ type addToCollectionView struct {
 }
 
 type collectionManageView struct {
-	ID      int64
-	Name    string
-	Members []library.Title
+	ID       int64
+	SmartKey string
+	Name     string
+	Members  []library.Title
 }
 
 func collectionHasTitle(c collection, id int64) bool {
@@ -1000,6 +1079,20 @@ func (u *webUI) collectionRemoveMember(w http.ResponseWriter, r *http.Request) {
 	u.renderCollectionManage(w, r, id)
 }
 
+func (u *webUI) smartCollectionRemovePin(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.PathValue("key"))
+	tid, _ := strconv.ParseInt(r.FormValue("title"), 10, 64)
+	if key == "" || tid <= 0 {
+		u.fail(w, fmt.Errorf("pinned title not found"))
+		return
+	}
+	if err := u.svc.RemoveSmartPin(r.Context(), key, tid); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.renderSmartCollectionManage(w, r, key)
+}
+
 func (u *webUI) collectionManage(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -1007,6 +1100,15 @@ func (u *webUI) collectionManage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.renderCollectionManage(w, r, id)
+}
+
+func (u *webUI) smartCollectionManage(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.PathValue("key"))
+	if key == "" {
+		u.fail(w, fmt.Errorf("smart collection not found"))
+		return
+	}
+	u.renderSmartCollectionManage(w, r, key)
 }
 
 func (u *webUI) renderCollectionManage(w http.ResponseWriter, r *http.Request, id int64) {
@@ -1040,6 +1142,25 @@ func (u *webUI) renderCollectionManage(w http.ResponseWriter, r *http.Request, i
 	u.frag(w, "collectionManage", collectionManageView{ID: id, Name: name, Members: mem})
 }
 
+func (u *webUI) renderSmartCollectionManage(w http.ResponseWriter, r *http.Request, key string) {
+	ctx := r.Context()
+	pins, _ := u.svc.SmartPins(ctx)
+	titles, _ := u.svc.ListTitles(ctx)
+	titles = filterRestrictedTitles(ctx, titles)
+	byID := make(map[int64]library.Title, len(titles))
+	for _, t := range titles {
+		byID[t.ID] = t
+	}
+	var mem []library.Title
+	for _, tid := range pins[key] {
+		if t, ok := byID[tid]; ok {
+			mem = append(mem, t)
+		}
+	}
+	sortByTitle(mem)
+	u.frag(w, "collectionManage", collectionManageView{SmartKey: key, Name: "Pinned titles", Members: mem})
+}
+
 func restrictToIDs(titles []library.Title, csv string) []library.Title {
 	want := map[int64]bool{}
 	for _, s := range strings.Split(csv, ",") {
@@ -1059,7 +1180,7 @@ func restrictToIDs(titles []library.Title, csv string) []library.Title {
 func collectionCards(cols []collection) []collectionCard {
 	out := make([]collectionCard, 0, len(cols))
 	for _, c := range cols {
-		card := collectionCard{Name: c.Name, Count: len(c.Members), CustomID: c.CustomID}
+		card := collectionCard{Name: c.Name, Count: len(c.Members), CustomID: c.CustomID, SmartKey: c.SmartKey}
 		var total, read int64
 		ids := make([]string, 0, len(c.Members))
 		for _, m := range c.Members {
@@ -1074,6 +1195,9 @@ func collectionCards(cols []collection) []collectionCard {
 		q := url.Values{"name": {c.Name}, "ids": {strings.Join(ids, ",")}}
 		if c.CustomID > 0 {
 			q.Set("cid", strconv.FormatInt(c.CustomID, 10))
+		}
+		if c.SmartKey != "" {
+			q.Set("smart", c.SmartKey)
 		}
 		card.URL = "/collections/view?" + q.Encode()
 		card.ReadPct = percent(read, total)
@@ -1482,16 +1606,19 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 	}
 
 	t := libraryResults{Screen: screenID, View: controls.View, CanManage: auth.FromContext(ctx).Can(auth.PermLibraryManage)}
+	columns := []tableColumn{
+		{Label: ""},
+		{Label: "Title"},
+		{Label: "Chapters"},
+	}
+	if t.CanManage {
+		columns = append([]tableColumn{{Label: ""}}, columns...)
+	}
 	t.tableData = tableData{
 		ID: "library-table", BaseURL: "/ui/library/table",
 		Page: page, PerPage: libraryPerPage, Total: total, Sort: controls.Sort, Dir: controls.Dir,
 		Params: libraryTableParams(values),
-		Empty:  empty,
-		Columns: []tableColumn{
-			{Label: ""},
-			{Label: "Title"},
-			{Label: "Chapters"},
-		},
+		Empty:  empty, Columns: columns,
 	}
 	t.Cards = pageTitles
 	catalogIDs := make([]int64, 0, len(pageTitles))
@@ -1521,14 +1648,18 @@ func (u *webUI) buildLibraryTable(ctx context.Context, values url.Values) librar
 		if tl.IsAdult {
 			rowClass = "outline outline-1 -outline-offset-1 outline-error"
 		}
+		cells := []template.HTML{
+			u.renderToHTML("cellCover", tl),
+			u.renderToHTML("cellTitle", view),
+			u.renderToHTML("progressBar", tl),
+		}
+		if t.CanManage {
+			cells = append([]template.HTML{u.renderToHTML("bulkTitleCheckbox", tl)}, cells...)
+		}
 		t.Rows = append(t.Rows, tableRow{
-			ID:    strconv.FormatInt(tl.ID, 10),
-			Class: rowClass,
-			Cells: []template.HTML{
-				u.renderToHTML("cellCover", tl),
-				u.renderToHTML("cellTitle", view),
-				u.renderToHTML("progressBar", tl),
-			},
+			ID:     strconv.FormatInt(tl.ID, 10),
+			Class:  rowClass,
+			Cells:  cells,
 			Detail: detail,
 		})
 	}
@@ -1726,6 +1857,7 @@ var globalJobTypes = []string{
 	jobs.TypeDownloadMissing,
 	jobs.TypeCatalogRefresh,
 	jobs.TypeSyncAniList,
+	jobs.TypeBackupUserData,
 }
 
 func (u *webUI) jobStart(w http.ResponseWriter, r *http.Request) {
@@ -1907,6 +2039,9 @@ func (u *webUI) buildTitleContent(r *http.Request, title library.Title, tab stri
 	vols, _ := u.svc.Volumes(ctx, title.ID)
 	running, _, queued, _, _ := titleActivityFrom(u.jobs(ctx), title)
 	attaching := running[jobs.TypeAttachVolumes] || slices.Contains(queued, "attaching volumes")
+	if tab == "" && title.DiscoveredCount == 0 && (len(vols) > 0 || attaching) {
+		tab = "volumes"
+	}
 	if tab != "volumes" || (len(vols) == 0 && !attaching) {
 		tab = "chapters"
 	}
@@ -2144,7 +2279,11 @@ func fetchCover(ctx context.Context, coverURL string) (name string, data []byte,
 	if err != nil {
 		return "", nil, false
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client, err := util.NewHTTPClient(util.HTTPClientOptions{Timeout: 20 * time.Second, BlockPrivateNetworks: true})
+	if err != nil {
+		return "", nil, false
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, false
 	}
@@ -2505,6 +2644,76 @@ type sourcesPageView struct {
 	Scrapers []string
 }
 
+type backupsView struct {
+	Backups []service.BackupInfo
+}
+
+func (u *webUI) backupsPage(w http.ResponseWriter, r *http.Request) {
+	u.page(w, r, "backups", "Backups", u.backupsView(r.Context()))
+}
+
+func (u *webUI) backupsFrag(w http.ResponseWriter, r *http.Request) {
+	u.frag(w, "backupsContent", u.backupsView(r.Context()))
+}
+
+func (u *webUI) backupsView(ctx context.Context) backupsView {
+	backups, _ := u.svc.ListBackups(ctx)
+	return backupsView{Backups: backups}
+}
+
+func (u *webUI) backupCreate(w http.ResponseWriter, r *http.Request) {
+	if _, err := u.svc.CreateBackup(r.Context()); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupUpload(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		u.fail(w, err)
+		return
+	}
+	file, header, err := r.FormFile("backup")
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	defer file.Close()
+	if err := u.svc.UploadBackup(r.Context(), header.Filename, file); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupRestore(w http.ResponseWriter, r *http.Request) {
+	if err := u.svc.RestoreBackup(r.Context(), r.PathValue("name")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupDelete(w http.ResponseWriter, r *http.Request) {
+	if err := u.svc.DeleteBackup(r.Context(), r.PathValue("name")); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.backupsFrag(w, r)
+}
+
+func (u *webUI) backupDownload(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	p, err := u.svc.BackupPath(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	http.ServeFile(w, r, p)
+}
+
 func (u *webUI) settingsPage(w http.ResponseWriter, r *http.Request) {
 	view := u.settings(r.Context())
 	view.AniList = u.svc.AniListConnectionFor(r.Context(), auth.UserID(r.Context()))
@@ -2761,6 +2970,73 @@ func (u *webUI) libAction(typ, label string) http.HandlerFunc {
 		}
 		u.frag(w, "titleActivity", view)
 	}
+}
+
+func (u *webUI) libraryBulk(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		u.fail(w, err)
+		return
+	}
+	ids, err := selectedTitleIDs(r.Form["title_id"])
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	action := r.FormValue("action")
+	switch action {
+	case "refresh", "download", "scan", "monitor-on", "monitor-off", "remove":
+	default:
+		u.fail(w, fmt.Errorf("unknown bulk action"))
+		return
+	}
+	var errs []error
+	for _, id := range ids {
+		title, err := u.svc.GetTitle(r.Context(), id)
+		if err != nil || !contentAllowed(r.Context(), title.IsAdult, title.ContentTags) {
+			errs = append(errs, fmt.Errorf("title %d not found", id))
+			continue
+		}
+		switch action {
+		case "refresh":
+			_, err = u.svc.Enqueue(r.Context(), jobs.TypeRefreshTitle, id, time.Now())
+		case "download":
+			_, err = u.svc.Enqueue(r.Context(), jobs.TypeDownloadMissing, id, time.Now())
+		case "scan":
+			_, err = u.svc.Enqueue(r.Context(), jobs.TypeScanDownloads, id, time.Now())
+		case "monitor-on":
+			err = u.svc.SetMonitored(r.Context(), id, true)
+		case "monitor-off":
+			err = u.svc.SetMonitored(r.Context(), id, false)
+		case "remove":
+			_, err = u.svc.RemoveTitleFiles(r.Context(), id, false, false)
+		}
+		errs = append(errs, err)
+	}
+	if err := errors.Join(errs...); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.kick()
+	u.frag(w, "libraryResults", u.buildLibraryTable(r.Context(), r.Form))
+}
+
+func selectedTitleIDs(values []string) ([]int64, error) {
+	if len(values) == 0 {
+		return nil, fmt.Errorf("select at least one title")
+	}
+	seen := map[int64]bool{}
+	var ids []int64
+	for _, value := range values {
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("invalid title id %q", value)
+		}
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (u *webUI) libActivity(w http.ResponseWriter, r *http.Request) {
@@ -3342,6 +3618,9 @@ func (u *webUI) settingsSave(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		value := strings.TrimSpace(r.FormValue(key))
+		if key == service.SettingAniListClientSecret && value == redactedSecret {
+			continue
+		}
 		// Personal appearance values are always stored explicitly: "equals the
 		// built-in default" must not clear them, or a differing pre-multi-user
 		// global value (e.g. an old ui.theme) silently takes over again.
@@ -3412,6 +3691,9 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 			f.Kind = "color"
 		case key == service.SettingAniListClientID, key == service.SettingAniListClientSecret:
 			f.Kind = "secret"
+			if key == service.SettingAniListClientSecret && f.Value != "" {
+				f.Value = redactedSecret
+			}
 		}
 		return f
 	}
@@ -3435,7 +3717,8 @@ func (u *webUI) settings(ctx context.Context) settingsView {
 		groups = append(groups,
 			settingGroup{Title: "Scheduling", Fields: fields(
 				service.SettingServeRefreshEvery, service.SettingServeScanEvery,
-				service.SettingServeDownloadEvery, service.SettingServeRunEvery,
+				service.SettingServeDownloadEvery, service.SettingServeSourceVerifyEvery,
+				service.SettingServeBackupEvery, service.SettingServeRunEvery,
 				service.SettingServeAniListSyncEvery,
 				service.SettingServeCatalogEvery)},
 			settingGroup{Title: "Jobs & downloads", Fields: fields(
@@ -3545,6 +3828,8 @@ func titleVerb(typ string) string {
 		return "refreshing"
 	case jobs.TypeDownloadMissing:
 		return "downloading"
+	case jobs.TypeBackupUserData:
+		return "backing up"
 	case jobs.TypeScanDownloads:
 		return "scanning"
 	case jobs.TypeAttachVolumes:
@@ -3555,8 +3840,13 @@ func titleVerb(typ string) string {
 
 // jobStateFor reports the newest job of one type matching payload.
 func (u *webUI) jobStateFor(ctx context.Context, typ string, payload service.JobPayload) (active, failed bool, msg string) {
+	return jobStateForSvc(ctx, u.svc, typ, payload)
+}
+
+func jobStateForSvc(ctx context.Context, svc *service.JobService, typ string, payload service.JobPayload) (active, failed bool, msg string) {
 	want, _ := json.Marshal(payload)
-	for _, j := range u.jobs(ctx) {
+	all, _ := svc.List(ctx)
+	for _, j := range all {
 		if j.Type == typ && j.Payload == string(want) {
 			active, failed = jobState(j.Status)
 			return active, failed, j.LastError
@@ -3585,6 +3875,8 @@ func navFor(path string) string {
 		return "home"
 	case strings.HasPrefix(path, "/management"):
 		return "management"
+	case strings.HasPrefix(path, "/metrics"):
+		return "metrics"
 	case strings.HasPrefix(path, "/search"):
 		return "search"
 	case strings.HasPrefix(path, "/library"):
@@ -3595,6 +3887,8 @@ func navFor(path string) string {
 		return "import"
 	case strings.HasPrefix(path, "/sources"):
 		return "sources"
+	case strings.HasPrefix(path, "/backups"):
+		return "backups"
 	case strings.HasPrefix(path, "/users"):
 		return "users"
 	case strings.HasPrefix(path, "/settings"):
@@ -3611,6 +3905,44 @@ func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
 		"assetVer":  func() string { return u.assetVer },
 		"jobLabel":  jobLabel,
+		"tokenExpired": func(expiresAt string) bool {
+			t, err := database.ParseTime(expiresAt)
+			return err == nil && !t.IsZero() && t.Before(time.Now())
+		},
+		"lineChart":  lineChart,
+		"heatmap":    heatmap,
+		"donut":      donut,
+		"donutColor": donutColor,
+		"f1":         func(x float64) string { return fmt.Sprintf("%.1f", x) },
+		"mul60":      func(m int64) int64 { return m * 60 },
+		"hdur": func(sec int64) string {
+			switch {
+			case sec >= 86400:
+				return fmt.Sprintf("%dd %dh", sec/86400, (sec%86400)/3600)
+			case sec >= 3600:
+				return fmt.Sprintf("%dh %dm", sec/3600, (sec%3600)/60)
+			default:
+				return fmt.Sprintf("%dm", sec/60)
+			}
+		},
+		"maxCount": func(list []service.NamedCount) int64 {
+			var m int64 = 1
+			for _, c := range list {
+				if c.Count > m {
+					m = c.Count
+				}
+			}
+			return m
+		},
+		"peakDay": func(list []service.DayCount) int64 {
+			var m int64
+			for _, c := range list {
+				if c.Count > m {
+					m = c.Count
+				}
+			}
+			return m
+		},
 		"permLabel": func(p string) string { l, _ := permMeta(p); return l },
 		"cardView": func(t library.Title, canManage bool, screen int64) map[string]any {
 			return map[string]any{"Title": t, "CanManage": canManage, "Screen": screen}
@@ -3810,6 +4142,8 @@ func jobLabel(typ string) string {
 		return "Verify source"
 	case jobs.TypeMatchSources:
 		return "Match sources"
+	case jobs.TypeBackupUserData:
+		return "Back up user data"
 	}
 	return typ
 }

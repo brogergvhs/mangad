@@ -91,35 +91,7 @@ func (u *webUI) volumesRange(w http.ResponseWriter, r *http.Request) {
 // else the raw first page. URLs carry a version query so responses can be
 // cached hard; uploads and resets change the version.
 func (u *webUI) volumeCover(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	vol, err := u.svc.GetVolume(r.Context(), id)
-	if err != nil || !titleAllowed(r.Context(), u.svc, vol.TitleID) {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Cache-Control", "private, max-age=604800")
-	if blob, mime, err := u.svc.VolumeCover(r.Context(), id); err == nil && len(blob) > 0 {
-		w.Header().Set("Content-Type", mime)
-		_, _ = w.Write(blob)
-		return
-	}
-	if blob, mime, err := u.svc.VolumeThumb(r.Context(), id); err == nil && len(blob) > 0 {
-		w.Header().Set("Content-Type", mime)
-		_, _ = w.Write(blob)
-		return
-	}
-	entry, rc, err := cbzPage(vol.File, 1)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer rc.Close()
-	w.Header().Set("Content-Type", imageMime(entry.Name))
-	_, _ = io.Copy(w, rc)
+	serveVolumeCover(w, r, u.svc)
 }
 
 func imageMime(name string) string {

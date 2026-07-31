@@ -87,7 +87,7 @@ func runWantedAdd(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid AniList id %q", args[0])
 	}
 	return withWanted(func(ctx context.Context, svc *service.WantedService) error {
-		item, err := svc.AddAniListWanted(ctx, id)
+		item, err := svc.AddAniListWanted(ctx, id, nil)
 		if err != nil {
 			return err
 		}

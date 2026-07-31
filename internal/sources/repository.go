@@ -240,6 +240,29 @@ func (r *Repository) UpdateCheck(ctx context.Context, id string, res CheckResult
 	return nil
 }
 
+func (r *Repository) UpdateHealth(ctx context.Context, id, status, lastError string) error {
+	id = strings.ToLower(strings.TrimSpace(id))
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE sources SET
+			status = ?,
+			last_checked_at = CURRENT_TIMESTAMP,
+			last_error = ?,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, status, lastError, id)
+	if err != nil {
+		return fmt.Errorf("update source health %s: %w", id, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check source health update %s: %w", id, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("source %q not found", id)
+	}
+	return nil
+}
+
 func sourceSelect() string {
 	return `
 		SELECT

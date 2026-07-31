@@ -722,17 +722,28 @@ func (r *Repository) ReaderProgress(ctx context.Context, titleID int64) (TitleRe
 	return out, nil
 }
 
+// TitleReadStatuses lists all discovered chapters with download + read state.
+func (r *Repository) TitleReadStatuses(ctx context.Context, titleID int64) ([]ChapterReadStatus, error) {
+	return r.listReadChapters(ctx, `WHERE c.title_id = ?`, titleID)
+}
+
 // MarkPageRead records one completed page and updates the chapter read summary.
 func (r *Repository) MarkPageRead(ctx context.Context, chapterID int64, page, totalPages int) (ChapterReadStatus, error) {
+	return r.MarkPageReadAt(ctx, chapterID, page, totalPages, "")
+}
+
+// MarkPageReadAt marks a page read with an explicit read_at ("" = now) so
+// offline reads replay with their original timestamps.
+func (r *Repository) MarkPageReadAt(ctx context.Context, chapterID int64, page, totalPages int, readAt string) (ChapterReadStatus, error) {
 	if page <= 0 {
 		return ChapterReadStatus{}, fmt.Errorf("page must be positive")
 	}
 	return retryBusy(ctx, func() (ChapterReadStatus, error) {
-		return r.markPageRead(ctx, chapterID, page, totalPages)
+		return r.markPageRead(ctx, chapterID, page, totalPages, readAt)
 	})
 }
 
-func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, totalPages int) (ChapterReadStatus, error) {
+func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, totalPages int, readAt string) (ChapterReadStatus, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("begin read progress: %w", err)
@@ -763,13 +774,15 @@ func (r *Repository) markPageRead(ctx context.Context, chapterID int64, page, to
 		totalPages = page
 	}
 
-	if _, err = tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page)
-		VALUES (?, ?, ?)
-	`, auth.UserID(ctx), chapterID, page); err != nil {
+	res, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO chapter_read_pages (user_id, chapter_id, page, read_at)
+		VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), CURRENT_TIMESTAMP))
+	`, auth.UserID(ctx), chapterID, page, readAt)
+	if err != nil {
 		return ChapterReadStatus{}, fmt.Errorf("mark page read: %w", err)
 	}
-	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, false); err != nil {
+	inserted, _ := res.RowsAffected()
+	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, false, inserted == 0); err != nil {
 		return ChapterReadStatus{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -817,7 +830,7 @@ func (r *Repository) markChapterRead(ctx context.Context, chapterID int64) (Chap
 			return ChapterReadStatus{}, fmt.Errorf("mark chapter page %d read: %w", page, err)
 		}
 	}
-	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, true); err != nil {
+	if err = r.updateReadProgress(ctx, tx, chapterID, totalPages, true, true); err != nil {
 		return ChapterReadStatus{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -896,7 +909,7 @@ func (r *Repository) MarkChapterRangeRead(ctx context.Context, titleID int64, fr
 					return 0, fmt.Errorf("mark chapter %d pages read: %w", ch.ID, err)
 				}
 			}
-			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true); err != nil {
+			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true, true); err != nil {
 				return 0, err
 			}
 			count++
@@ -934,7 +947,7 @@ func (r *Repository) MarkChaptersReadThrough(ctx context.Context, titleID int64,
 			if total <= 0 {
 				total = ch.Pages
 			}
-			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true); err != nil {
+			if err = r.updateReadProgress(ctx, tx, ch.ID, total, true, true); err != nil {
 				return 0, err
 			}
 			count++
@@ -1077,7 +1090,6 @@ func (r *Repository) ReconcileStartedDownloads(ctx context.Context) (int64, erro
 		UPDATE downloads
 		SET status = 'failed',
 			error = 'download interrupted before completion',
-			attempts = attempts + 1,
 			completed_at = NULL,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE status = 'started'
@@ -1174,7 +1186,7 @@ func (r *Repository) markDownload(ctx context.Context, chapterID int64, status, 
 	return nil
 }
 
-func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapterID int64, totalPages int, forceComplete bool) error {
+func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapterID int64, totalPages int, forceComplete, manual bool) error {
 	var readPages int
 	var lastPage int
 	if err := tx.QueryRowContext(ctx, `
@@ -1193,6 +1205,10 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 			lastPage = totalPages
 		}
 	}
+	manualInt := 0
+	if manual {
+		manualInt = 1
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO chapter_read_progress (
 			user_id,
@@ -1201,23 +1217,56 @@ func (r *Repository) updateReadProgress(ctx context.Context, tx *sql.Tx, chapter
 			read_pages,
 			total_pages,
 			completed,
+			manual,
 			last_read_at,
 			completed_at
-		) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END)
 		ON CONFLICT(user_id, chapter_id) DO UPDATE SET
 			last_page = MAX(chapter_read_progress.last_page, excluded.last_page),
 			read_pages = excluded.read_pages,
 			total_pages = MAX(chapter_read_progress.total_pages, excluded.total_pages),
 			completed = CASE WHEN excluded.completed = 1 THEN 1 ELSE chapter_read_progress.completed END,
+			-- genuine page reading (manual=0) always wins over a prior bulk mark
+			manual = MIN(chapter_read_progress.manual, excluded.manual),
 			last_read_at = CURRENT_TIMESTAMP,
 			completed_at = CASE
 				WHEN excluded.completed = 1 THEN COALESCE(chapter_read_progress.completed_at, CURRENT_TIMESTAMP)
 				ELSE chapter_read_progress.completed_at
 			END
-	`, auth.UserID(ctx), chapterID, lastPage, readPages, totalPages, completedInt, completedInt); err != nil {
+	`, auth.UserID(ctx), chapterID, lastPage, readPages, totalPages, completedInt, manualInt, completedInt); err != nil {
 		return fmt.Errorf("update read progress: %w", err)
 	}
 	return nil
+}
+
+// ReadProgressIDs returns every chapter and volume id the user has progress
+// rows for, so delta clients can prune local state deleted by unread marks.
+func (r *Repository) ReadProgressIDs(ctx context.Context) (chapters, volumes []int64, err error) {
+	scan := func(q string) ([]int64, error) {
+		rows, err := r.db.QueryContext(ctx, q, auth.UserID(ctx))
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := []int64{}
+		for rows.Next() {
+			var id int64
+			if rows.Scan(&id) == nil {
+				out = append(out, id)
+			}
+		}
+		return out, rows.Err()
+	}
+	if chapters, err = scan(`SELECT chapter_id FROM chapter_read_progress WHERE user_id = ?`); err != nil {
+		return nil, nil, err
+	}
+	volumes, err = scan(`SELECT volume_id FROM volume_read_progress WHERE user_id = ?`)
+	return chapters, volumes, err
+}
+
+// ChaptersReadSince returns the user's chapter progress rows touched after since.
+func (r *Repository) ChaptersReadSince(ctx context.Context, since string) ([]ChapterReadStatus, error) {
+	return r.listReadChapters(ctx, `WHERE rp.last_read_at >= ?`, since)
 }
 
 func (r *Repository) listReadChapters(ctx context.Context, where string, args ...any) ([]ChapterReadStatus, error) {
@@ -1226,7 +1275,7 @@ func (r *Repository) listReadChapters(ctx context.Context, where string, args ..
 			c.discovered_at, c.updated_at,
 			COALESCE(d.status, ''), COALESCE(d.output_file, ''), COALESCE(d.bytes, 0), COALESCE(d.pages, 0),
 			COALESCE(rp.last_page, 0), COALESCE(rp.read_pages, 0), COALESCE(NULLIF(rp.total_pages, 0), d.pages, 0),
-			COALESCE(rp.completed, 0), rp.last_read_at, rp.completed_at
+			COALESCE(rp.completed, 0), COALESCE(rp.manual, 0), rp.last_read_at, rp.completed_at
 		FROM chapters c
 		LEFT JOIN downloads d ON d.chapter_id = c.id
 		LEFT JOIN chapter_read_progress rp ON rp.chapter_id = c.id AND rp.user_id = ?
@@ -1242,16 +1291,17 @@ func (r *Repository) listReadChapters(ctx context.Context, where string, args ..
 	for rows.Next() {
 		var cs ChapterReadStatus
 		var discoveredAt, updatedAt, status string
-		var completed int
+		var completed, manual int
 		var lastReadAt, completedAt sql.NullString
 		if err := rows.Scan(&cs.ID, &cs.TitleID, &cs.Label, &cs.Title, &cs.URL, &cs.NumberMain,
 			&cs.SuffixType, &cs.SuffixNum, &discoveredAt, &updatedAt,
 			&status, &cs.OutputFile, &cs.Bytes, &cs.Pages,
-			&cs.LastPage, &cs.ReadPages, &cs.TotalPages, &completed, &lastReadAt, &completedAt); err != nil {
+			&cs.LastPage, &cs.ReadPages, &cs.TotalPages, &completed, &manual, &lastReadAt, &completedAt); err != nil {
 			return nil, fmt.Errorf("scan read chapter: %w", err)
 		}
 		cs.Downloaded = status == "completed"
 		cs.Completed = completed != 0
+		cs.Manual = manual != 0
 		cs.DiscoveredAt, _ = database.ParseTime(discoveredAt)
 		cs.UpdatedAt, _ = database.ParseTime(updatedAt)
 		cs.LastReadAt = parseOptionalTime(lastReadAt)

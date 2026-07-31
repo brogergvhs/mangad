@@ -22,7 +22,13 @@ func authEnabled() bool { return os.Getenv("KAODOKU_ADMIN_PASSWORD") != "" }
 // session cookie when auth is enabled, the env admin otherwise.
 func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" ||
+			r.URL.Path == "/api/v1/meta" || r.URL.Path == "/api/v1/auth/login" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -32,11 +38,19 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
 			}
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+				v1err(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+			} else {
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+			}
 			return
 		}
 		if p := requiredPerm(r); p != "" && !user.Can(p) {
-			writeError(w, http.StatusForbidden, "missing permission: "+p)
+			if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+				v1err(w, http.StatusForbidden, "forbidden", "missing permission: "+p)
+			} else {
+				writeError(w, http.StatusForbidden, "missing permission: "+p)
+			}
 			return
 		}
 		if !user.AllowAdult {
@@ -57,8 +71,40 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 func requiredPerm(r *http.Request) string {
 	p := r.URL.Path
 	switch {
-	case p == "/management": // any-of check happens in the handler
+	case p == "/management" || p == "/metrics" || p == "/ui/metrics":
 		return ""
+	case p == "/api/v1/meta" || p == "/api/v1/auth/login" || p == "/api/v1/me" || p == "/api/v1/auth/token" || p == "/api/v1/me/settings":
+		return "" // public or any-signed-in
+	case p == "/api/v1/jobs/run":
+		return auth.PermJobsManage
+	case p == "/api/v1/jobs/enqueue" || strings.HasPrefix(p, "/api/v1/notifications") && r.Method == http.MethodGet:
+		return "" // ownership / visibility scoping in the handler
+	case strings.HasPrefix(p, "/api/v1/notifications"):
+		return auth.PermJobsManage
+	case strings.HasPrefix(p, "/api/v1/jobs"):
+		return auth.PermJobsView
+	case p == "/api/v1/wanted/track":
+		return auth.PermLibraryManage
+	case p == "/api/v1/tags": // filter vocabulary, needed by library viewers too
+		return auth.PermLibraryView
+	case strings.HasPrefix(p, "/api/v1/sources/"):
+		return auth.PermSourcesManage
+	case strings.HasPrefix(p, "/api/v1/library/") && strings.Contains(p, "/sources"):
+		return auth.PermLibraryManage
+	case strings.HasPrefix(p, "/api/v1/wanted") || p == "/api/v1/library/add":
+		return auth.PermLibraryAdd
+	case strings.HasPrefix(p, "/api/v1/anilist"):
+		return auth.PermReaderUse
+	case strings.HasPrefix(p, "/api/v1/reader/"):
+		return auth.PermReaderUse
+	case strings.HasPrefix(p, "/api/v1/library") && strings.HasSuffix(p, "/favourite"):
+		return auth.PermLibraryView
+	case strings.HasPrefix(p, "/api/v1/library") && r.Method != http.MethodGet:
+		return auth.PermLibraryManage
+	case strings.HasPrefix(p, "/api/v1/library") || strings.HasPrefix(p, "/api/v1/covers/") ||
+		strings.HasPrefix(p, "/api/v1/volumes/") || strings.HasPrefix(p, "/api/v1/collections") ||
+		strings.HasPrefix(p, "/api/v1/screens") || p == "/api/v1/sources":
+		return auth.PermLibraryView
 	case p == "/logout" || p == "/" || strings.HasPrefix(p, "/anilist/") || strings.HasPrefix(p, "/ui/anilist/") || strings.HasPrefix(p, "/ui/account"):
 		return "" // any signed-in user (dashboard sections gate individually)
 	case strings.HasPrefix(p, "/reader/") || strings.HasPrefix(p, "/api/reader/"):
@@ -68,16 +114,22 @@ func requiredPerm(r *http.Request) string {
 	case p == "/api/settings":
 		return auth.PermSettingsManage // the JSON API has no per-section split
 	case p == "/settings" || p == "/ui/settings":
-		return "" // section-level checks in the handlers (appearance vs global)
+		return ""
 	case p == "/sources" || strings.HasPrefix(p, "/ui/sources"):
 		return auth.PermSourcesManage
 	case p == "/ui/health":
 		return auth.PermServicesView
+	case p == "/backups" || strings.HasPrefix(p, "/ui/backups"):
+		return auth.PermSettingsManage
 	case p == "/ui/sessions":
 		return auth.PermSessionsView
 	case strings.HasPrefix(p, "/ui/jobs/") && r.Method != http.MethodGet:
 		return auth.PermJobsManage
 	case strings.HasPrefix(p, "/ui/jobs/"):
+		return auth.PermJobsView
+	case strings.HasPrefix(p, "/ui/notifications") && r.Method != http.MethodGet:
+		return auth.PermJobsManage
+	case strings.HasPrefix(p, "/ui/notifications"):
 		return auth.PermJobsView
 	case p == "/search" || strings.HasPrefix(p, "/ui/search") || p == "/ui/library/add":
 		return auth.PermLibraryAdd
@@ -131,16 +183,59 @@ func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 	return nil
 }
 
-// clientIP prefers the proxy-forwarded address over the socket peer.
+// clientIP prefers the proxy-forwarded address from a local proxy.
 func clientIP(r *http.Request) string {
-	if fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); fwd != "" {
+	peer := remoteIP(r.RemoteAddr)
+	if trustedProxy(peer) {
+		fwd := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
+		if net.ParseIP(fwd) != nil {
+			return fwd
+		}
+	}
+	if peer != "" {
+		return peer
+	}
+	return r.RemoteAddr
+}
+
+func remoteIP(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err == nil {
+		return host
+	}
+	if net.ParseIP(addr) != nil {
+		return addr
+	}
+	return ""
+}
+
+func trustedProxy(addr string) bool {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
+}
+
+func forwardedProto(r *http.Request) string {
+	if trustedProxy(remoteIP(r.RemoteAddr)) {
+		return strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	}
+	return ""
+}
+
+func forwardedHost(r *http.Request) string {
+	if trustedProxy(remoteIP(r.RemoteAddr)) {
+		return strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	}
+	return ""
+}
+
+func requestHost(r *http.Request) string {
+	if fwd := forwardedHost(r); fwd != "" {
 		return fwd
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return r.Host
 }
 
 func headerToken(r *http.Request) string {
@@ -153,7 +248,7 @@ func headerToken(r *http.Request) string {
 // secureRequest reports whether the request arrived over https (directly or
 // via a TLS-terminating proxy) so cookies can carry the Secure flag.
 func secureRequest(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	return r.TLS != nil || forwardedProto(r) == "https"
 }
 
 const loginPage = `<!doctype html><html lang="en" data-theme="mocha"><meta charset="utf-8">

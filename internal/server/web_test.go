@@ -44,6 +44,24 @@ func TestTitleActivityFromIgnoresGlobalTitleJob(t *testing.T) {
 	}
 }
 
+func TestSelectedTitleIDs(t *testing.T) {
+	t.Parallel()
+
+	got, err := selectedTitleIDs([]string{"2", "2", "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != 2 || got[1] != 5 {
+		t.Fatalf("ids = %#v", got)
+	}
+	if _, err := selectedTitleIDs(nil); err == nil {
+		t.Fatal("empty selection accepted")
+	}
+	if _, err := selectedTitleIDs([]string{"x"}); err == nil {
+		t.Fatal("bad id accepted")
+	}
+}
+
 func TestReaderManifestWindow(t *testing.T) {
 	t.Parallel()
 

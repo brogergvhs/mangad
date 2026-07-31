@@ -12,6 +12,7 @@ const (
 	TypeAttachVolumes   = "attach_volumes"
 	TypeVerifySource    = "verify_source"
 	TypeMatchSources    = "match_sources"
+	TypeBackupUserData  = "backup_user_data"
 )
 
 // Job is a persisted background job.

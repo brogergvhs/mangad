@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
 )
@@ -52,7 +53,8 @@ func (u *webUI) accountRevokeSessions(w http.ResponseWriter, r *http.Request) {
 
 func (u *webUI) accountTokenCreate(w http.ResponseWriter, r *http.Request) {
 	user := userFrom(r.Context())
-	token, err := u.svc.Auth().CreateAPIToken(r.Context(), user.ID, r.FormValue("name"))
+	ttlDays, _ := strconv.Atoi(r.FormValue("ttl_days"))
+	token, err := u.svc.Auth().CreateAPIToken(r.Context(), user.ID, r.FormValue("name"), ttlDays)
 	if err != nil {
 		u.fail(w, err)
 		return

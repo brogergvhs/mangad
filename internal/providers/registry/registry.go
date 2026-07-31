@@ -34,11 +34,10 @@ var constructors = map[string]Constructor{
 		return iken.NewScraper(client, log, allowExt, checkJS, browser)
 	},
 	"mangadex": func(client *http.Client, log ui.Log, allowExt []string, checkJS bool, browser generic.BrowserFetcher) providers.Scraper {
-		timeout := 30 * time.Second
-		if client != nil && client.Timeout > 0 {
-			timeout = client.Timeout
+		if client == nil {
+			client = &http.Client{Timeout: 30 * time.Second}
 		}
-		return mangadex.NewScraper(&http.Client{Timeout: timeout}, log, allowExt, checkJS, browser)
+		return mangadex.NewScraper(client, log, allowExt, checkJS, browser)
 	},
 }
 

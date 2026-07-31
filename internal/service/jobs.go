@@ -78,10 +78,12 @@ type RunSummary struct {
 }
 
 const (
-	SettingServeRefreshEvery  = "serve.refresh_every"
-	SettingServeScanEvery     = "serve.scan_every"
-	SettingServeDownloadEvery = "serve.download_every"
-	SettingServeRunEvery      = "serve.run_every"
+	SettingServeRefreshEvery      = "serve.refresh_every"
+	SettingServeScanEvery         = "serve.scan_every"
+	SettingServeDownloadEvery     = "serve.download_every"
+	SettingServeSourceVerifyEvery = "sources.verify_every"
+	SettingServeBackupEvery       = "backup.every"
+	SettingServeRunEvery          = "serve.run_every"
 
 	SettingBrowserSolverEnabled            = "browser_solver.enabled"
 	SettingBrowserSolverProvider           = "browser_solver.provider"
@@ -125,6 +127,10 @@ func SettingDefault(key string) string {
 		return "30m"
 	case SettingServeDownloadEvery:
 		return "10m"
+	case SettingServeSourceVerifyEvery:
+		return "168h"
+	case SettingServeBackupEvery:
+		return ""
 	case SettingServeRunEvery:
 		return "5s"
 	case SettingBrowserSolverEnabled:
@@ -204,6 +210,8 @@ func SettingKeys() []string {
 		SettingServeRefreshEvery,
 		SettingServeScanEvery,
 		SettingServeDownloadEvery,
+		SettingServeSourceVerifyEvery,
+		SettingServeBackupEvery,
 		SettingServeRunEvery,
 		SettingBrowserSolverEnabled,
 		SettingBrowserSolverProvider,
@@ -253,12 +261,12 @@ func ValidateSetting(key, value string) error {
 			}
 		}
 		return fmt.Errorf("unknown theme %q", value)
-	case SettingServeAniListSyncEvery, SettingServeCatalogEvery:
+	case SettingServeAniListSyncEvery, SettingServeCatalogEvery, SettingServeBackupEvery:
 		if value == "" {
 			return nil
 		}
 		return validateDurationSetting(key, value)
-	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeRunEvery, SettingServicesHealthInterval:
+	case SettingServeRefreshEvery, SettingServeScanEvery, SettingServeDownloadEvery, SettingServeSourceVerifyEvery, SettingServeRunEvery, SettingServicesHealthInterval:
 		return validateDurationSetting(key, value)
 	case SettingBrowserSolverEnabled, SettingBrowserDownloaderEnabled, SettingRateLimitDisabled:
 		if _, err := strconv.ParseBool(value); err != nil {
@@ -348,6 +356,14 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 	}
 	svc.auth = auth.NewService(db)
 	if err := svc.auth.Bootstrap(ctx, os.Getenv("KAODOKU_ADMIN_USER"), os.Getenv("KAODOKU_ADMIN_PASSWORD")); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	if err := svc.auth.PurgeExpiredSessions(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	if err := svc.auth.PurgeExpiredAPITokens(ctx); err != nil {
 		_ = db.Close()
 		return nil, nil, err
 	}
@@ -590,6 +606,11 @@ func (s *JobService) GetTitle(ctx context.Context, id int64) (library.Title, err
 	return s.lib.GetTitle(ctx, id)
 }
 
+// TitleReadStatuses returns all discovered chapters with download + read state.
+func (s *JobService) TitleReadStatuses(ctx context.Context, id int64) ([]library.ChapterReadStatus, error) {
+	return s.lib.TitleReadStatuses(ctx, id)
+}
+
 // TitleChapters returns all discovered chapters for a title with download state.
 func (s *JobService) TitleChapters(ctx context.Context, id int64) ([]library.ChapterStatus, error) {
 	return s.lib.ListChapters(ctx, id)
@@ -809,7 +830,7 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 	}
 	entries, err := s.want.AniList().UserList(actx, aid)
 	if err != nil {
-		return err
+		return s.aniListAuthError(ctx, userID, err)
 	}
 	remote := make(map[string]catalog.AniListEntry, len(entries))
 	for _, e := range entries {
@@ -913,7 +934,17 @@ func (s *JobService) runAniListSync(ctx context.Context, userID int64, progress 
 		}
 	}
 	s.invalidateRecs(userID)
-	return errs2err(errs)
+	return s.aniListAuthError(ctx, userID, errs2err(errs))
+}
+
+func (s *JobService) aniListAuthError(ctx context.Context, userID int64, err error) error {
+	if !catalog.IsUnauthorized(err) {
+		return err
+	}
+	if derr := s.DisconnectAniList(ctx, userID); derr != nil {
+		return errors.Join(fmt.Errorf("anilist authorization expired; reconnect AniList in settings"), derr)
+	}
+	return fmt.Errorf("anilist authorization expired; reconnect AniList in settings")
 }
 
 // contentAllowedFor mirrors the server's per-user content guard so AniList
@@ -1043,7 +1074,7 @@ func (s *JobService) runCatalogRefresh(ctx context.Context, progress ProgressMan
 		if err != nil {
 			continue
 		}
-		if err := s.want.RefreshManga(ctx, mediaID); err != nil {
+		if err := s.want.RefreshManga(ctx, mediaID); err != nil && !catalog.IsNotFound(err) {
 			errs = append(errs, fmt.Errorf("refresh %s: %w", pid, err))
 		}
 	}
@@ -1594,6 +1625,10 @@ func (s *JobService) PinToSmart(ctx context.Context, smartKey string, titleID in
 	return s.want.library.AddSmartPin(ctx, smartKey, titleID)
 }
 
+func (s *JobService) RemoveSmartPin(ctx context.Context, smartKey string, titleID int64) error {
+	return s.want.library.RemoveSmartPin(ctx, smartKey, titleID)
+}
+
 func (s *JobService) GetManga(ctx context.Context, catalogID int64) (catalog.Manga, error) {
 	return s.want.GetManga(ctx, catalogID)
 }
@@ -1650,6 +1685,9 @@ func (s *JobService) RemoveTitleFiles(ctx context.Context, id int64, deleteFiles
 		}
 	}
 	if filesDir != "" {
+		if _, statErr := os.Stat(filesDir); os.IsNotExist(statErr) {
+			return title, fmt.Errorf("title removed, but no files found at %s — check the download directory setting", filesDir)
+		}
 		if err := os.RemoveAll(filesDir); err != nil {
 			return title, fmt.Errorf("title removed, but deleting %s failed: %w", filesDir, err)
 		}
@@ -1688,9 +1726,15 @@ func (s *JobService) SearchAniList(ctx context.Context, query string, limit int,
 	return s.want.SearchAniList(ctx, query, limit, filter)
 }
 
-// AddAniListWanted adds an AniList title to wanted.
-func (s *JobService) AddAniListWanted(ctx context.Context, anilistID int) (catalog.Manga, error) {
-	return s.want.AddAniListWanted(ctx, anilistID)
+// AddAniListWanted adds an AniList title to wanted; a non-nil allowed guard is
+// checked before anything is persisted.
+func (s *JobService) AddAniListWanted(ctx context.Context, anilistID int, allowed func(catalog.Manga) bool) (catalog.Manga, error) {
+	return s.want.AddAniListWanted(ctx, anilistID, allowed)
+}
+
+// GetMatch returns one source match.
+func (s *JobService) GetMatch(ctx context.Context, id int64) (catalog.Match, error) {
+	return s.want.catalog.GetMatch(ctx, id)
 }
 
 // ListWanted returns wanted canonical titles.
@@ -1730,6 +1774,26 @@ func (s *JobService) Volumes(ctx context.Context, titleID int64) ([]library.Volu
 
 func (s *JobService) GetVolume(ctx context.Context, id int64) (library.Volume, error) {
 	return s.lib.GetVolume(ctx, id)
+}
+
+// MarkPageReadAt marks a page read at an explicit time (offline replay).
+func (s *JobService) MarkPageReadAt(ctx context.Context, chapterID int64, page, totalPages int, readAt string) (library.ChapterReadStatus, error) {
+	return s.lib.MarkPageReadAt(ctx, chapterID, page, totalPages, readAt)
+}
+
+// ProgressSince returns chapter and volume progress touched after since.
+func (s *JobService) ProgressSince(ctx context.Context, since string) ([]library.ChapterReadStatus, []library.Volume, error) {
+	chs, err := s.lib.ChaptersReadSince(ctx, since)
+	if err != nil {
+		return nil, nil, err
+	}
+	vols, err := s.lib.VolumesReadSince(ctx, since)
+	return chs, vols, err
+}
+
+// ReadProgressIDs returns all chapter/volume ids with progress rows.
+func (s *JobService) ReadProgressIDs(ctx context.Context) ([]int64, []int64, error) {
+	return s.lib.ReadProgressIDs(ctx)
 }
 
 func (s *JobService) SetVolumeRead(ctx context.Context, id int64, read bool) error {
@@ -1816,8 +1880,26 @@ func (s *JobService) AttachVolumesFolder(ctx context.Context, folder string, tit
 	return title, nil
 }
 
+func (s *JobService) sourceAllowed(ctx context.Context, sourceID string) error {
+	u := auth.FromContext(ctx)
+	if u == nil || u.AllowAdult {
+		return nil
+	}
+	if src, err := s.src.GetSource(ctx, sourceID); err == nil && src.NSFW {
+		return fmt.Errorf("that source is not available for this account")
+	}
+	return nil
+}
+
 // LinkTitleSource links a tracked title to a matched source.
 func (s *JobService) LinkTitleSource(ctx context.Context, titleID, matchID int64) (library.Title, error) {
+	match, err := s.GetMatch(ctx, matchID)
+	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.sourceAllowed(ctx, match.SourceID); err != nil {
+		return library.Title{}, err
+	}
 	title, err := s.want.LinkTitleSource(ctx, titleID, matchID)
 	if err != nil {
 		return library.Title{}, err
@@ -1947,6 +2029,9 @@ func (s *JobService) LinkTitleSourceURL(ctx context.Context, titleID int64, sour
 	if err != nil {
 		return library.Title{}, err
 	}
+	if err := s.sourceAllowed(ctx, src.ID); err != nil {
+		return library.Title{}, err
+	}
 	title, err := s.want.LinkTitleURL(ctx, titleID, strings.TrimSpace(rawURL), src.ID)
 	if err != nil {
 		return library.Title{}, err
@@ -1978,6 +2063,9 @@ func (s *JobService) sourceForURL(ctx context.Context, sourceID, rawURL string) 
 func (s *JobService) LinkTitleToSource(ctx context.Context, titleID int64, sourceID string) (library.Title, error) {
 	src, err := s.src.GetSource(ctx, sourceID)
 	if err != nil {
+		return library.Title{}, err
+	}
+	if err := s.sourceAllowed(ctx, src.ID); err != nil {
 		return library.Title{}, err
 	}
 	if _, err := url.ParseRequestURI(src.SampleMangaURL); err != nil {
@@ -2108,6 +2196,26 @@ func (s *JobService) Enqueue(ctx context.Context, typ string, titleID int64, run
 // EnqueueSource creates a source-scoped job.
 func (s *JobService) EnqueueSource(ctx context.Context, sourceID string, runAfter time.Time) (jobs.Job, error) {
 	return s.enqueue(ctx, jobs.TypeVerifySource, JobPayload{SourceID: strings.TrimSpace(sourceID)}, runAfter)
+}
+
+func (s *JobService) EnqueueSourceVerification(ctx context.Context, runAfter time.Time) (int, error) {
+	srcs, err := s.ListSources(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var errs []error
+	n := 0
+	for _, src := range srcs {
+		if !src.Enabled {
+			continue
+		}
+		_, err := s.EnqueueSource(ctx, src.ID, runAfter)
+		if err == nil {
+			n++
+		}
+		errs = append(errs, err)
+	}
+	return n, errors.Join(errs...)
 }
 
 // EnqueueCatalog creates a catalog-scoped job.
@@ -2328,6 +2436,10 @@ func (s *JobService) runClaimedJob(ctx, markCtx context.Context, cfg *config.Con
 		if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {
 			return 0, 1, markErr
 		}
+		if latest, gerr := s.jobs.Get(markCtx, job.ID); gerr == nil && latest.Status == "dead" {
+			msg := fmt.Sprintf("Job #%d (%s) failed after retries: %s", job.ID, job.Type, truncateError(err.Error()))
+			_ = s.AddNotification(markCtx, 0, "error", msg, job.ID)
+		}
 		return 0, 1, nil
 	}
 	if err := s.jobs.MarkDone(markCtx, job.ID); err != nil {
@@ -2360,6 +2472,7 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return fmt.Errorf("decode job payload: %w", err)
 	}
 
+	logSvc = logSvc.With("job_id", job.ID, "job_type", job.Type)
 	switch job.Type {
 	case jobs.TypeRefreshTitle:
 		if payload.TitleID > 0 {
@@ -2367,7 +2480,11 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 			if err != nil {
 				return err
 			}
-			if _, err = s.lib.RefreshTitle(ctx, cfg, logSvc, title); err != nil {
+			_, err = s.lib.RefreshTitle(ctx, cfg, logSvc, title)
+			if markErr := s.markTitleSourceHealth(ctx, title, err); markErr != nil {
+				return errors.Join(err, markErr)
+			}
+			if err != nil {
 				return err
 			}
 			if payload.DownloadAfterRefresh {
@@ -2394,14 +2511,21 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 				return err
 			}
 			if title.DiscoveredCount == 0 {
-				if _, err := s.lib.RefreshTitle(ctx, cfg, logSvc, title); err != nil {
+				_, err := s.lib.RefreshTitle(ctx, cfg, logSvc, title)
+				if markErr := s.markTitleSourceHealth(ctx, title, err); markErr != nil {
+					return errors.Join(err, markErr)
+				}
+				if err != nil {
 					return err
 				}
 			}
-			if _, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID, progress); err != nil {
-				return err
+			results, err := s.lib.DownloadMissing(ctx, cfg, logSvc, payload.TitleID, progress)
+			if err != nil || len(results) > 0 {
+				if markErr := s.markTitleSourceHealth(ctx, title, err); markErr != nil {
+					return errors.Join(err, markErr)
+				}
 			}
-			return nil
+			return err
 		}
 		return s.expandTitleJob(ctx, jobs.TypeDownloadMissing, job.ID)
 	case jobs.TypeSyncAniList:
@@ -2411,6 +2535,9 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 		return s.expandAniListSync(ctx, job.ID)
 	case jobs.TypeCatalogRefresh:
 		return s.runCatalogRefresh(ctx, progress)
+	case jobs.TypeBackupUserData:
+		_, err := s.CreateBackup(ctx)
+		return err
 	case jobs.TypeAttachVolumes:
 		title, err := s.lib.GetTitle(ctx, payload.TitleID)
 		if err != nil {
@@ -2426,6 +2553,19 @@ func (s *JobService) run(ctx context.Context, cfg *config.Config, logSvc ui.Log,
 	default:
 		return fmt.Errorf("unknown job type %q", job.Type)
 	}
+}
+
+func (s *JobService) markTitleSourceHealth(ctx context.Context, title library.Title, runErr error) error {
+	if strings.TrimSpace(title.SourceID) == "" {
+		return nil
+	}
+	status := sources.StatusHealthy
+	lastError := ""
+	if runErr != nil {
+		status = fetchFailureStatus(runErr)
+		lastError = runErr.Error()
+	}
+	return s.src.repo.UpdateHealth(ctx, title.SourceID, status, lastError)
 }
 
 func (s *JobService) expandTitleJob(ctx context.Context, typ string, parentID int64) error {
@@ -2491,7 +2631,7 @@ func validateJob(typ string, payload JobPayload) error {
 		if payload.TitleID < 0 {
 			return fmt.Errorf("invalid title id %d", payload.TitleID)
 		}
-	case jobs.TypeSyncAniList, jobs.TypeCatalogRefresh:
+	case jobs.TypeSyncAniList, jobs.TypeCatalogRefresh, jobs.TypeBackupUserData:
 	case jobs.TypeAttachVolumes:
 		if payload.TitleID <= 0 || strings.TrimSpace(payload.Folder) == "" {
 			return fmt.Errorf("title id and folder are required")

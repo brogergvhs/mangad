@@ -9,10 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +32,7 @@ func New(
 ) http.Handler {
 	mux := http.NewServeMux()
 	registerUI(mux, svc, runJobs)
+	registerAPIV1(mux, svc, runJobs)
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -46,6 +45,9 @@ func New(
 				return
 			}
 			for key, value := range values {
+				if key == service.SettingAniListClientSecret && value == redactedSecret {
+					continue
+				}
 				if err := service.ValidateSetting(key, value); err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
@@ -155,30 +157,7 @@ func New(
 	})
 
 	mux.HandleFunc("GET /api/reader/volumes/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) {
-		id, err := parseInt64Path(r, "id")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid volume id")
-			return
-		}
-		page, err := strconv.Atoi(r.PathValue("page"))
-		if err != nil || page <= 0 {
-			writeError(w, http.StatusBadRequest, "invalid page")
-			return
-		}
-		vol, err := svc.GetVolume(r.Context(), id)
-		if err != nil || !titleAllowed(r.Context(), svc, vol.TitleID) {
-			writeError(w, http.StatusNotFound, "volume not found")
-			return
-		}
-		entry, rc, err := cbzPage(vol.File, page)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "page not found")
-			return
-		}
-		defer rc.Close()
-		w.Header().Set("Content-Type", imageMime(entry.Name))
-		w.Header().Set("Cache-Control", "private, max-age=86400")
-		_, _ = io.Copy(w, rc)
+		serveVolumePage(w, r, svc)
 	})
 
 	mux.HandleFunc("POST /api/reader/chapters/{id}/pages", func(w http.ResponseWriter, r *http.Request) {
@@ -210,44 +189,7 @@ func New(
 	})
 
 	mux.HandleFunc("GET /api/reader/chapters/{id}/pages/{page}", func(w http.ResponseWriter, r *http.Request) {
-		id, err := parseInt64Path(r, "id")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid chapter id")
-			return
-		}
-		page, err := parseIntPath(r, "page")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid page")
-			return
-		}
-		status, err := svc.ChapterReadStatus(r.Context(), id)
-		if err != nil || !titleAllowed(r.Context(), svc, status.TitleID) {
-			writeError(w, http.StatusNotFound, "chapter not found")
-			return
-		}
-		if !status.Downloaded || status.OutputFile == "" {
-			writeError(w, http.StatusNotFound, "chapter is not downloaded")
-			return
-		}
-		file, rc, err := cbzPage(status.OutputFile, page)
-		if err != nil {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		defer rc.Close()
-		etag := strconv.Quote(strconv.FormatUint(uint64(file.CRC32), 16))
-		w.Header().Set("Cache-Control", "private, max-age=86400")
-		w.Header().Set("ETag", etag)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		if ct := mime.TypeByExtension(filepath.Ext(file.Name)); ct != "" {
-			w.Header().Set("Content-Type", ct)
-		}
-		w.Header().Set("Content-Length", strconv.FormatUint(file.UncompressedSize64, 10))
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.Copy(w, rc)
+		serveChapterPage(w, r, svc)
 	})
 
 	mux.HandleFunc("POST /api/reader/chapters/{id}/complete", func(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +284,9 @@ func New(
 				writeError(w, http.StatusBadRequest, "invalid json")
 				return
 			}
-			item, err := svc.AddAniListWanted(r.Context(), req.AniListID)
+			item, err := svc.AddAniListWanted(r.Context(), req.AniListID, func(m catalog.Manga) bool {
+				return contentAllowed(r.Context(), m.IsAdult, mangaContentTags(m))
+			})
 			if err != nil {
 				writeError(w, http.StatusBadGateway, err.Error())
 				return
@@ -654,12 +598,30 @@ func New(
 	return gzipMiddleware(handler)
 }
 
+// gzipCompressible reports whether a path's responses benefit from gzip.
+// Page images, CBZ archives, and covers are already compressed — recoding
+// them wastes CPU and drops Content-Length (breaking client progress).
+func gzipCompressible(p string) bool {
+	for _, skip := range []string{
+		"/api/reader/chapters/",
+		"/api/v1/reader/chapters/",
+		"/api/v1/reader/volumes/",
+		"/api/v1/covers/",
+		"/api/v1/volumes/",
+	} {
+		if strings.HasPrefix(p, skip) {
+			return false
+		}
+	}
+	return true
+}
+
 // gzipMiddleware compresses textual responses (HTML fragments, CSS, JS,
-// JSON). Reader page images are already compressed and are passed through.
+// JSON). Already-compressed binaries are passed through.
 func gzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") ||
-			strings.HasPrefix(r.URL.Path, "/api/reader/chapters/") {
+			!gzipCompressible(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -715,10 +677,15 @@ func csrfGuard(next http.Handler) http.Handler {
 	})
 }
 
+const redactedSecret = "••••••••"
+
 func serveSettings(r *http.Request, svc *service.JobService) map[string]string {
 	out := map[string]string{}
 	for _, key := range service.SettingKeys() {
 		out[key] = svc.Setting(r.Context(), key, service.SettingDefault(key))
+	}
+	if out[service.SettingAniListClientSecret] != "" {
+		out[service.SettingAniListClientSecret] = redactedSecret
 	}
 	return out
 }

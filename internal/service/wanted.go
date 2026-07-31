@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -111,11 +112,18 @@ func (s *WantedService) SearchAniList(ctx context.Context, query string, limit i
 	return out, more, nil
 }
 
+// ErrContentBlocked marks content the acting user's guard forbids.
+var ErrContentBlocked = errors.New("content blocked")
+
 // AddAniListWanted fetches an AniList title, stores it, and marks it wanted.
-func (s *WantedService) AddAniListWanted(ctx context.Context, anilistID int) (catalog.Manga, error) {
+// A non-nil allowed guard runs before anything is persisted.
+func (s *WantedService) AddAniListWanted(ctx context.Context, anilistID int, allowed func(catalog.Manga) bool) (catalog.Manga, error) {
 	item, err := s.anilist.Get(ctx, anilistID)
 	if err != nil {
 		return catalog.Manga{}, err
+	}
+	if allowed != nil && !allowed(item) {
+		return catalog.Manga{}, ErrContentBlocked
 	}
 	item.Wanted = true
 	return s.catalog.UpsertManga(ctx, item)
@@ -461,12 +469,13 @@ func searchSourceURLs(ctx context.Context, cfg config.Config, logSvc ui.Log, src
 // slow browser path for search.
 func fetchSearchPage(ctx context.Context, cfg config.Config, target string) (body, finalURL string, err error) {
 	client, err := util.NewHTTPClient(util.HTTPClientOptions{
-		Timeout:    30 * time.Second,
-		UserAgent:  util.PickUserAgent(cfg.UserAgent),
-		Cookie:     cfg.Cookie,
-		CookieFile: cfg.CookieFile,
-		Transport:  cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
-		RateLimit:  hostRateLimit(&cfg),
+		Timeout:              30 * time.Second,
+		UserAgent:            util.PickUserAgent(cfg.UserAgent),
+		Cookie:               cfg.Cookie,
+		CookieFile:           cfg.CookieFile,
+		Transport:            cloudflarebp.AddCloudFlareByPass(http.DefaultTransport),
+		RateLimit:            hostRateLimit(&cfg),
+		BlockPrivateNetworks: true,
 	})
 	if err != nil {
 		return "", "", err

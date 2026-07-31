@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brogergvhs/kaodoku/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,7 +42,7 @@ func EncodeProfileYAML(profile Profile) ([]byte, error) {
 	return body, nil
 }
 
-var registryClient = &http.Client{Timeout: 15 * time.Second}
+var registryClient, _ = util.NewHTTPClient(util.HTTPClientOptions{Timeout: 15 * time.Second, BlockPrivateNetworks: true})
 
 // FetchRegistry downloads a JSON or YAML profile registry.
 func FetchRegistry(ctx context.Context, registryURL string) ([]Profile, error) {

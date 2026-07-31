@@ -54,3 +54,17 @@ func TestAniListDoGivesUpOnPersistent429(t *testing.T) {
 		t.Fatalf("expected 3 attempts, got %d", hits)
 	}
 }
+
+func TestAniListDoUnauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := NewAniListClient(srv.Client())
+	c.endpoint = srv.URL
+	var out struct{}
+	if err := c.do(context.Background(), `query { x }`, nil, &out); !IsUnauthorized(err) {
+		t.Fatalf("unauthorized error = %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/providers"
 	"github.com/brogergvhs/kaodoku/internal/sources"
+	"github.com/brogergvhs/kaodoku/internal/ui"
 )
 
 func TestApplyLimitsFromSettings(t *testing.T) {
@@ -243,6 +245,103 @@ func TestSourceChangeQueuesRefreshForActiveTitles(t *testing.T) {
 	assertRefreshDownloadsAfter(t, ctx, svc, title.ID, true)
 }
 
+func TestTitleJobUpdatesSourceHealth(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+	addTestSource(t, ctx, svc, "demo")
+	title, err := svc.lib.AddTitle(ctx, library.AddTitleParams{
+		SourceID:     "demo",
+		SourceURL:    "https://demo.test/manga/demo",
+		DisplayTitle: "Demo",
+	})
+	if err != nil {
+		t.Fatalf("AddTitle() error = %v", err)
+	}
+
+	if err := svc.markTitleSourceHealth(ctx, title, nil); err != nil {
+		t.Fatalf("mark healthy: %v", err)
+	}
+	src, err := svc.src.GetSource(ctx, "demo")
+	if err != nil {
+		t.Fatalf("Get(source) error = %v", err)
+	}
+	if src.Status != sources.StatusHealthy || src.LastError != "" || src.LastCheckedAt == "" {
+		t.Fatalf("healthy source = %#v", src)
+	}
+
+	if err := svc.markTitleSourceHealth(ctx, title, errors.New("cloudflare blocked")); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+	src, err = svc.src.GetSource(ctx, "demo")
+	if err != nil {
+		t.Fatalf("Get(source) error = %v", err)
+	}
+	if src.Status != sources.StatusRequiresCF || src.LastError != "cloudflare blocked" {
+		t.Fatalf("failed source = %#v", src)
+	}
+}
+
+func TestEnqueueSourceVerificationQueuesEnabledSources(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+	addTestSource(t, ctx, svc, "on")
+	addTestSource(t, ctx, svc, "off")
+	if err := svc.SetSourceEnabled(ctx, "off", false); err != nil {
+		t.Fatalf("SetSourceEnabled() error = %v", err)
+	}
+
+	n, err := svc.EnqueueSourceVerification(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("EnqueueSourceVerification() error = %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("queued = %d, want 1", n)
+	}
+	assertSourceJob(t, ctx, svc, "on")
+	assertNoSourceJob(t, ctx, svc, "off")
+}
+
+func TestBackupUserDataJobCreatesBackup(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+	if _, err := svc.Enqueue(ctx, jobs.TypeBackupUserData, 0, time.Now()); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	summary, err := svc.RunDue(ctx, config.DefaultConfig(), ui.NewLogger(false))
+	if err != nil {
+		t.Fatalf("RunDue() error = %v", err)
+	}
+	if summary.Done != 1 || summary.Failed != 0 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	backups, err := svc.ListBackups(ctx)
+	if err != nil {
+		t.Fatalf("ListBackups() error = %v", err)
+	}
+	if len(backups) != 1 || backups[0].Size == 0 {
+		t.Fatalf("backups = %#v", backups)
+	}
+}
+
 func TestAutoRefreshQueuesDownloadWhenMissingThresholdMet(t *testing.T) {
 	t.Parallel()
 
@@ -331,6 +430,29 @@ func assertNoTitleJob(t *testing.T, ctx context.Context, svc *JobService, typ st
 	}
 }
 
+func assertSourceJob(t *testing.T, ctx context.Context, svc *JobService, sourceID string) {
+	t.Helper()
+	js, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if hasSourceJob(js, sourceID) {
+		return
+	}
+	t.Fatalf("source job for %s not found in %#v", sourceID, js)
+}
+
+func assertNoSourceJob(t *testing.T, ctx context.Context, svc *JobService, sourceID string) {
+	t.Helper()
+	js, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if hasSourceJob(js, sourceID) {
+		t.Fatalf("unexpected source job for %s in %#v", sourceID, js)
+	}
+}
+
 func assertRefreshDownloadsAfter(t *testing.T, ctx context.Context, svc *JobService, titleID int64, want bool) {
 	t.Helper()
 	js, err := svc.List(ctx)
@@ -347,6 +469,16 @@ func assertRefreshDownloadsAfter(t *testing.T, ctx context.Context, svc *JobServ
 		}
 	}
 	t.Fatalf("refresh job for title %d not found in %#v", titleID, js)
+}
+
+func hasSourceJob(js []jobs.Job, sourceID string) bool {
+	for _, job := range js {
+		var payload JobPayload
+		if job.Type == jobs.TypeVerifySource && json.Unmarshal([]byte(job.Payload), &payload) == nil && payload.SourceID == sourceID {
+			return true
+		}
+	}
+	return false
 }
 
 func hasTitleJob(js []jobs.Job, typ string, titleID int64) bool {

@@ -31,9 +31,50 @@ func boolInt(b bool) int {
 type Service struct {
 	db      *sql.DB
 	touched sync.Map // session token hash -> last_seen_at write
+	loginMu sync.Mutex
+	logins  map[string]*loginState
 }
 
-func NewService(db *sql.DB) *Service { return &Service{db: db} }
+type loginState struct {
+	fails int
+	until time.Time
+}
+
+const (
+	loginMaxFails   = 5
+	loginLockWindow = 15 * time.Minute
+)
+
+func NewService(db *sql.DB) *Service { return &Service{db: db, logins: map[string]*loginState{}} }
+
+// loginAllowed rejects a username that has hit the failed-attempt cap within
+// the lock window.
+func (s *Service) loginAllowed(username string) error {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	if st := s.logins[username]; st != nil && st.fails >= loginMaxFails && time.Now().Before(st.until) {
+		return fmt.Errorf("too many failed attempts, try again later")
+	}
+	return nil
+}
+
+func (s *Service) loginFailed(username string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	st := s.logins[username]
+	if st == nil {
+		st = &loginState{}
+		s.logins[username] = st
+	}
+	st.fails++
+	st.until = time.Now().Add(loginLockWindow)
+}
+
+func (s *Service) loginReset(username string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	delete(s.logins, username)
+}
 
 // Bootstrap seeds built-in roles and the env admin (user id 1). It runs at
 // every startup so the admin credentials always mirror the environment and
@@ -80,18 +121,35 @@ func (s *Service) Bootstrap(ctx context.Context, adminUser, adminPassword string
 }
 
 // Login verifies credentials and returns a new session token.
-func (s *Service) Login(ctx context.Context, username, password, userAgent, ip string) (string, error) {
+// Authenticate verifies credentials (with lockout) and returns the user id,
+// without creating a session — used by session login and API-token minting.
+func (s *Service) Authenticate(ctx context.Context, username, password string) (int64, error) {
+	username = strings.TrimSpace(username)
+	if err := s.loginAllowed(username); err != nil {
+		return 0, err
+	}
 	var id int64
 	var hash string
-	err := s.db.QueryRowContext(ctx, `SELECT id, password_hash FROM users WHERE username = ?`, strings.TrimSpace(username)).Scan(&id, &hash)
+	err := s.db.QueryRowContext(ctx, `SELECT id, password_hash FROM users WHERE username = ?`, username).Scan(&id, &hash)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && hash == "") {
-		return "", fmt.Errorf("invalid credentials")
+		s.loginFailed(username)
+		return 0, fmt.Errorf("invalid credentials")
 	}
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
-		return "", fmt.Errorf("invalid credentials")
+		s.loginFailed(username)
+		return 0, fmt.Errorf("invalid credentials")
+	}
+	s.loginReset(username)
+	return id, nil
+}
+
+func (s *Service) Login(ctx context.Context, username, password, userAgent, ip string) (string, error) {
+	id, err := s.Authenticate(ctx, username, password)
+	if err != nil {
+		return "", err
 	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -177,6 +235,12 @@ func (s *Service) ActiveSessions(ctx context.Context) ([]ActiveSession, error) {
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// PurgeExpiredSessions deletes expired sessions in bulk.
+func (s *Service) PurgeExpiredSessions(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, database.FormatTime(time.Now()))
+	return err
 }
 
 // Logout deletes the session for a token.
@@ -294,8 +358,12 @@ func (s *Service) DeleteUser(ctx context.Context, id int64) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ? AND origin != 'env'`, id); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, id)
-	return err
+	for _, table := range []string{"sessions", "user_favourites", "chapter_read_progress", "chapter_read_pages", "volume_read_progress"} {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE user_id = ?`, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ListRoles returns all roles.
@@ -388,7 +456,10 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, current, nex
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, string(newHash), userID)
+	if _, err = s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, string(newHash), userID); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
 	return err
 }
 
@@ -431,10 +502,11 @@ type APIToken struct {
 	ID        int64
 	Name      string
 	CreatedAt string
+	ExpiresAt string // "" = never expires
 }
 
-// CreateAPIToken mints a token for a user; the raw value is shown once.
-func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string) (string, error) {
+// CreateAPIToken mints a token (shown once). ttlDays > 0 sets an expiry; else never.
+func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string, ttlDays int) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "token"
@@ -445,8 +517,12 @@ func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string)
 	}
 	token := "mgd_" + hex.EncodeToString(raw)
 	sum := sha256.Sum256([]byte(token))
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO api_tokens (token_hash, user_id, name) VALUES (?, ?, ?)`,
-		hex.EncodeToString(sum[:]), userID, name); err != nil {
+	expires := ""
+	if ttlDays > 0 {
+		expires = database.FormatTime(time.Now().AddDate(0, 0, ttlDays))
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO api_tokens (token_hash, user_id, name, expires_at) VALUES (?, ?, ?, ?)`,
+		hex.EncodeToString(sum[:]), userID, name, expires); err != nil {
 		return "", err
 	}
 	return token, nil
@@ -454,7 +530,7 @@ func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string)
 
 // APITokens lists a user's tokens (hashes never leave the DB).
 func (s *Service) APITokens(ctx context.Context, userID int64) ([]APIToken, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT rowid, name, created_at FROM api_tokens WHERE user_id = ? ORDER BY rowid`, userID)
+	rows, err := s.db.QueryContext(ctx, `SELECT rowid, name, created_at, expires_at FROM api_tokens WHERE user_id = ? ORDER BY rowid`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +538,7 @@ func (s *Service) APITokens(ctx context.Context, userID int64) ([]APIToken, erro
 	var out []APIToken
 	for rows.Next() {
 		var t APIToken
-		if rows.Scan(&t.ID, &t.Name, &t.CreatedAt) == nil {
+		if rows.Scan(&t.ID, &t.Name, &t.CreatedAt, &t.ExpiresAt) == nil {
 			out = append(out, t)
 		}
 	}
@@ -475,14 +551,29 @@ func (s *Service) DeleteAPIToken(ctx context.Context, userID, tokenID int64) err
 	return err
 }
 
-// UserByAPIToken resolves a header token to its user, or nil.
+// PurgeExpiredAPITokens deletes expired tokens (empty expires_at never expires).
+func (s *Service) PurgeExpiredAPITokens(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE expires_at != '' AND expires_at <= ?`, database.FormatTime(time.Now()))
+	return err
+}
+
+// RevokeAPIToken deletes the token matching the given raw value (device sign-out).
+func (s *Service) RevokeAPIToken(ctx context.Context, token string) error {
+	sum := sha256.Sum256([]byte(token))
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE token_hash = ?`, hex.EncodeToString(sum[:]))
+	return err
+}
+
+// UserByAPIToken resolves a header token to its user, or nil. Expired tokens do not resolve.
 func (s *Service) UserByAPIToken(ctx context.Context, token string) (*User, error) {
 	if !strings.HasPrefix(token, "mgd_") {
 		return nil, nil
 	}
 	sum := sha256.Sum256([]byte(token))
 	var userID int64
-	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM api_tokens WHERE token_hash = ?`, hex.EncodeToString(sum[:])).Scan(&userID)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT user_id FROM api_tokens WHERE token_hash = ? AND (expires_at = '' OR expires_at > ?)`,
+		hex.EncodeToString(sum[:]), database.FormatTime(time.Now())).Scan(&userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

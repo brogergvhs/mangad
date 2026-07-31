@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/brogergvhs/kaodoku/internal/catalog"
@@ -149,6 +150,34 @@ func TestRelationCollectionsAppendsSmartPins(t *testing.T) {
 	}
 	if !hasPinned {
 		t.Error("pinned title Appleseed should appear in the smart collection")
+	}
+}
+
+func TestCollectionCardsCarrySmartKey(t *testing.T) {
+	t.Parallel()
+
+	cards := collectionCards([]collection{{
+		Name:     "Smart",
+		SmartKey: "100",
+		Members:  []library.Title{{ID: 1, DisplayTitle: "A"}, {ID: 2, DisplayTitle: "B"}},
+	}})
+	if len(cards) != 1 {
+		t.Fatalf("cards = %d, want 1", len(cards))
+	}
+	if cards[0].SmartKey != "100" || !strings.Contains(cards[0].URL, "smart=100") {
+		t.Fatalf("card = %+v", cards[0])
+	}
+}
+
+func TestCollectionsViewPagination(t *testing.T) {
+	t.Parallel()
+
+	v := collectionsView{Mode: "smart", Page: 2, PerPage: 24, Total: 49}
+	if v.TotalPages() != 3 || !v.HasPrev() || !v.HasNext() || v.Prev() != 1 || v.Next() != 3 {
+		t.Fatalf("pagination = pages %d prev %v next %v", v.TotalPages(), v.HasPrev(), v.HasNext())
+	}
+	if got := string(v.PageURL(3)); got != "/collections?by=relation&page=3" {
+		t.Fatalf("PageURL = %q", got)
 	}
 }
 

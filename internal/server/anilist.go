@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
 	"github.com/brogergvhs/kaodoku/internal/catalog"
@@ -16,14 +15,10 @@ import (
 // anilistRedirectURL is the callback the admin registers on their AniList app.
 func anilistRedirectURL(r *http.Request) string {
 	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+	if r.TLS != nil || forwardedProto(r) == "https" {
 		scheme = "https"
 	}
-	host := r.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = r.Host
-	}
-	return fmt.Sprintf("%s://%s/anilist/callback", scheme, host)
+	return fmt.Sprintf("%s://%s/anilist/callback", scheme, requestHost(r))
 }
 
 func (u *webUI) anilistConnect(w http.ResponseWriter, r *http.Request) {

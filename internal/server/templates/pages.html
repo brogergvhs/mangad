@@ -26,16 +26,7 @@
 {{end}}
 
 {{define "dashboard"}}
-{{if .User.Can "stats.view"}}
-<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Stats</h2>
-<div class="stats bg-base-100 w-full mb-6">
-  <div class="stat"><div class="stat-title">Tracked titles</div><div class="stat-value text-3xl">{{len .Titles}}</div></div>
-  <div class="stat"><div class="stat-title">Chapters</div><div class="stat-value text-3xl">{{.TotalChaps}}</div><div class="stat-desc">{{missingTotal .Titles}} missing</div></div>
-  <div class="stat"><div class="stat-title">Volumes</div><div class="stat-value text-3xl">{{.TotalVols}}</div></div>
-  <div class="stat"><div class="stat-title">Library size</div><div class="stat-value text-3xl">{{humanBytes .TotalBytes}}</div><div class="stat-desc">{{.TotalPages}} pages</div></div>
-  <div class="stat"><div class="stat-title">Sources healthy</div><div class="stat-value text-3xl">{{healthyCount .Sources}}<span class="text-base-content/40">/{{len .Sources}}</span></div></div>
-</div>
-{{end}}
+{{if .User.Can "stats.view"}}<p class="text-sm text-base-content/60 mb-4">Library and reading statistics have moved to the <a class="link" href="/metrics">Metrics</a> page.</p>{{end}}
 {{if .User.Can "services.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
 <div id="services-health" hx-get="/ui/health" hx-trigger="load" hx-swap="outerHTML">
@@ -49,6 +40,10 @@
 </div>
 {{end}}
 {{if .User.Can "jobs.view"}}
+<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Notifications</h2>
+<div id="notifications-card" hx-get="/ui/notifications" hx-trigger="load" hx-swap="outerHTML">
+  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading notifications…</div>
+</div>
 <div class="mt-6 mb-2 flex items-center justify-between">
   <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Recent jobs</h2>
   {{if .User.Can "jobs.manage"}}<button class="btn btn-sm btn-outline" onclick="job_start_modal.showModal()">Start a new job</button>{{end}}
@@ -94,6 +89,33 @@
 </div>
 {{end}}
 
+{{define "notificationsCard"}}
+<div id="notifications-card" class="rounded-xl bg-base-100 p-3" hx-get="/ui/notifications" hx-trigger="every 30s" hx-swap="outerHTML" hx-sync="this:drop">
+  <div class="mb-2 flex items-center justify-between">
+    <span class="text-xs text-base-content/60">{{len .Items}} recent</span>
+    {{if and .Items .CanManage}}
+    <div class="flex gap-1">
+      <button class="btn btn-xs btn-ghost" hx-post="/ui/notifications/read" hx-target="#notifications-card" hx-swap="outerHTML">Mark all read</button>
+      <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/notifications/clear" hx-target="#notifications-card" hx-swap="outerHTML" hx-confirm="Clear all notifications?">Clear</button>
+    </div>
+    {{end}}
+  </div>
+  {{range .Items}}
+  <div class="flex items-start justify-between gap-2 rounded-lg px-3 py-2 {{if not .ReadAt}}bg-base-200{{end}}">
+    <div class="min-w-0">
+      <div class="text-sm break-words {{if not .ReadAt}}font-medium{{end}}">{{.Message}}</div>
+      <div class="text-xs text-base-content/50">{{.CreatedAt}}</div>
+    </div>
+    {{if $.CanManage}}<button class="btn btn-ghost btn-xs shrink-0" hx-post="/ui/notifications/{{.ID}}/delete" hx-target="#notifications-card" hx-swap="outerHTML" aria-label="Dismiss notification">{{template "iconXCircle"}}</button>{{end}}
+  </div>
+  {{else}}
+  <p class="py-2 text-sm text-base-content/60">No notifications.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "notificationsBadge"}}<span class="ml-auto" hx-get="/ui/notifications/badge" hx-trigger="every 30s" hx-swap="outerHTML" hx-sync="this:drop">{{if gt . 0}}<span class="badge badge-error badge-sm">{{.}}</span>{{end}}</span>{{end}}
+
 {{define "search"}}
 <form id="search-form" class="mb-4 grid gap-3" hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML" hx-indicator="#search-spin"
   hx-trigger="submit, change[event.target.name && event.target.name !== 'q'], keyup changed delay:400ms from:input[name='q']">
@@ -138,18 +160,24 @@
   <a href="/collections{{if .CollectionID}}?by=custom{{end}}" class="link link-hover text-sm text-base-content/60">‹ Collections</a>
   <div class="mt-1 flex items-center gap-2">
     <h1 class="min-w-0 flex-1 truncate text-lg font-semibold">{{.CollectionName}}</h1>
-    {{if .CollectionID}}
+    {{if or .CollectionID .CollectionSmartKey}}
     <details class="dropdown dropdown-end shrink-0">
       <summary class="btn btn-sm btn-ghost btn-square" aria-label="Collection actions">{{template "iconDots"}}</summary>
       <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-lg border border-base-300">
+        {{if .CollectionSmartKey}}
+        <li><button hx-get="/ui/collections/smart/{{pathEscape .CollectionSmartKey}}/manage" hx-target="#collection-manage-body" hx-swap="innerHTML" onclick="collection_manage_modal.showModal()">{{template "iconLayers"}}Manage pins</button></li>
+        {{end}}
+        {{if .CollectionID}}
         <li><button hx-get="/ui/collections/{{.CollectionID}}/manage" hx-target="#collection-manage-body" hx-swap="innerHTML" onclick="collection_manage_modal.showModal()">{{template "iconLayers"}}Manage titles</button></li>
         <li><button onclick="rename_collection_modal.showModal()">{{template "iconEdit"}}Rename</button></li>
         <li><button class="text-error" hx-post="/ui/collections/{{.CollectionID}}/delete" hx-swap="none" hx-confirm="Delete this collection? The titles themselves are not affected.">{{template "iconTrash"}}Delete</button></li>
+        {{end}}
       </ul>
     </details>
     {{end}}
   </div>
 </div>
+{{if or .CollectionID .CollectionSmartKey}}
 {{if .CollectionID}}
 <dialog id="rename_collection_modal" class="modal">
   <div class="modal-box max-w-sm">
@@ -164,6 +192,7 @@
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
+{{end}}
 <dialog id="collection_manage_modal" class="modal">
   <div class="modal-box">
     <h3 class="text-lg font-bold mb-3">Manage members</h3>
@@ -356,12 +385,19 @@
   <a href="/collections" class="btn btn-sm {{if eq .Mode "author"}}btn-primary{{else}}btn-outline{{end}}">By author</a>
   <a href="/collections?by=relation" class="btn btn-sm {{if eq .Mode "smart"}}btn-primary{{else}}btn-outline{{end}}">Smart</a>
   <a href="/collections?by=custom" class="btn btn-sm {{if eq .Mode "custom"}}btn-primary{{else}}btn-outline{{end}}">Custom</a>
-  {{if eq .Mode "custom"}}<button class="btn btn-sm btn-ghost ml-auto" onclick="new_collection_modal.showModal()">+ New collection</button>{{end}}
+  {{if eq .Mode "custom"}}<button class="btn btn-sm btn-ghost ml-auto" onclick="new_collection_modal.showModal()">{{template "iconPlus"}}New collection</button>{{end}}
 </div>
 {{if .Cards}}
 <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
   {{range .Cards}}{{template "collectionCard" .}}{{end}}
 </div>
+{{if gt .TotalPages 1}}
+<div class="mt-4 flex items-center justify-center gap-2">
+  <a class="btn btn-sm {{if not .HasPrev}}btn-disabled{{end}}" href="{{.PageURL .Prev}}">‹</a>
+  <span class="text-sm text-base-content/60">{{.Page}} / {{.TotalPages}}</span>
+  <a class="btn btn-sm {{if not .HasNext}}btn-disabled{{end}}" href="{{.PageURL .Next}}">›</a>
+</div>
+{{end}}
 {{else if eq .Mode "custom"}}
 <p class="py-3 text-base-content/60">No custom collections yet. Use “New collection” to group titles manually, or add a title to one from its actions menu.</p>
 {{else if and (eq .Mode "smart") (not .HasRelations)}}
@@ -689,7 +725,7 @@
 {{define "sources"}}
 <div class="flex items-center justify-between gap-2 mb-4">
   <button class="btn btn-sm btn-outline" hx-post="/ui/sources/sync" hx-target="#sources-table" hx-swap="outerHTML">Sync built-ins</button>
-  <button class="btn btn-sm btn-primary" onclick="source_add_modal.showModal()">+ Add source</button>
+  <button class="btn btn-sm btn-primary" onclick="source_add_modal.showModal()">{{template "iconPlus"}}Add source</button>
 </div>
 {{template "sourcesTable" .Sources}}
 
@@ -789,7 +825,7 @@
   <div class="text-xs text-base-content/50">Then enter the client ID and secret in the AniList application section below (admins only).</div>
   {{end}}
 </div>
-<form class="grid gap-4" hx-put="/ui/settings" hx-target="#settings-msg">
+<form class="grid gap-4" hx-put="/ui/settings" hx-target="#toast">
   {{range .Groups}}
   {{if eq .Title "Appearance"}}
   <div class="card bg-base-100 card-body p-4 gap-0">
@@ -835,9 +871,67 @@
   {{end}}
   <div class="flex items-center gap-3">
     <button class="w-full btn btn-primary btn-sm">Save settings</button>
-    <span id="settings-msg"></span>
   </div>
 </form>
+{{end}}
+
+{{define "backups"}}
+{{template "backupsContent" .}}
+{{end}}
+
+{{define "backupsContent"}}
+<div id="backups-content" class="grid gap-3">
+  <div class="flex items-center justify-between gap-3 max-sm:flex-col">
+    <button class="btn btn-outline max-sm:w-full" onclick="backup_upload_modal.showModal()">{{template "iconUpload"}}Upload</button>
+    <button class="btn btn-primary max-sm:w-full" hx-post="/ui/backups" hx-target="#backups-content" hx-swap="outerHTML" hx-disabled-elt="this">{{template "iconPlus"}}Create backup</button>
+  </div>
+
+  <div class="divide-y divide-line/25 rounded-xl bg-base-100">
+    {{range .Backups}}
+    <div class="flex items-center gap-3 p-4">
+      <div class="min-w-0 flex-1">
+        <div class="truncate font-medium">{{.Name}}</div>
+        <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50 sm:hidden">
+          <span>{{humanBytes .Size}}</span>
+          <span>{{since .ModTime}}</span>
+        </div>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 text-sm text-base-content/60 shrink-0">
+        <span class="w-20 text-right tabular-nums">{{humanBytes .Size}}</span>
+      </div>
+      <span class="w-24 text-right text-sm text-base-content/50 whitespace-nowrap shrink-0">{{since .ModTime}}</span>
+      <details class="dropdown dropdown-end">
+        <summary class="btn btn-sm btn-ghost btn-square" aria-label="Backup actions">{{template "iconDots"}}</summary>
+        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
+          <li><a href="/ui/backups/{{pathEscape .Name}}/download">{{template "iconDownload"}}Export</a></li>
+          <li><button hx-post="/ui/backups/{{pathEscape .Name}}/restore" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Restore this backup? Current user data will be replaced.">{{template "iconRefresh"}}Restore</button></li>
+          <li><button class="text-error" hx-post="/ui/backups/{{pathEscape .Name}}/delete" hx-target="#backups-content" hx-swap="outerHTML" hx-confirm="Delete this backup?">{{template "iconTrash"}}Delete</button></li>
+        </ul>
+      </details>
+    </div>
+    {{else}}
+    <p class="text-base-content/60 p-4">No backups yet.</p>
+    {{end}}
+  </div>
+
+  <dialog id="backup_upload_modal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="text-lg font-bold mb-3">Upload backup</h3>
+      <form class="grid gap-3" data-backup-upload hx-post="/ui/backups/upload" hx-encoding="multipart/form-data" enctype="multipart/form-data" hx-target="#backups-content" hx-swap="outerHTML" hx-disabled-elt="#backup-upload-submit" hx-sync="this:drop">
+        <label class="btn justify-start">
+          <input type="file" class="sr-only" name="backup" required onchange="this.nextElementSibling.textContent=this.files[0]?this.files[0].name:'Choose File'">
+          <span class="truncate">Choose File</span>
+        </label>
+        <progress id="backup-upload-progress" class="progress" value="0" max="100" hidden></progress>
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost" onclick="backup_upload_modal.close()">Cancel</button>
+          <button id="backup-upload-submit" class="btn btn-primary">Upload <span class="htmx-indicator loading loading-xs"></span></button>
+        </div>
+      </form>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+</div>
 {{end}}
 
 {{define "users"}}
@@ -849,7 +943,7 @@
   <div class="card bg-base-100 card-body p-4 gap-2">
     <div class="flex items-center justify-between gap-2">
       <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Users</h2>
-      <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">+ Add user</button>
+      <button class="btn btn-sm btn-primary" onclick="user_add_modal.showModal()">{{template "iconPlus"}}Add user</button>
     </div>
     <div class="divide-y divide-line/25">
       {{range .Users}}
@@ -874,7 +968,7 @@
   <div class="card bg-base-100 card-body p-4 gap-2">
     <div class="flex items-center justify-between gap-2">
       <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Roles</h2>
-      <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">+ Add role</button>
+      <button class="btn btn-sm btn-primary" onclick="role_add_modal.showModal()">{{template "iconPlus"}}Add role</button>
     </div>
     <div class="list-rounded divide-y divide-line/25">
       {{range .Roles}}
@@ -1119,12 +1213,18 @@
       {{end}}
       {{range .Tokens}}
       <div class="flex items-center justify-between gap-2 text-sm">
-        <span>{{.Name}} <span class="text-xs text-base-content/50">· created {{.CreatedAt}}</span></span>
+        <span>{{.Name}} <span class="text-xs text-base-content/50">· created {{.CreatedAt}}{{if .ExpiresAt}} · {{if tokenExpired .ExpiresAt}}<span class="text-error">expired {{.ExpiresAt}}</span>{{else}}expires {{.ExpiresAt}}{{end}}{{else}} · never expires{{end}}</span></span>
         <button class="btn btn-ghost btn-xs text-error" hx-post="/ui/account/tokens/{{.ID}}/delete" hx-target="#account-card" hx-swap="outerHTML" hx-confirm="Revoke this token?">Revoke</button>
       </div>
       {{else}}<p class="text-sm text-base-content/60">Use tokens as <code>X-API-Key</code> or <code>Bearer</code> headers for scripts — they act with your permissions.</p>{{end}}
-      <form class="flex items-center gap-2" hx-post="/ui/account/tokens" hx-target="#account-card" hx-swap="outerHTML">
+      <form class="flex flex-wrap items-center gap-2" hx-post="/ui/account/tokens" hx-target="#account-card" hx-swap="outerHTML">
         <input class="input input-sm w-40" name="name" placeholder="Token name">
+        <select class="select select-sm w-32" name="ttl_days" aria-label="Token expiry">
+          <option value="0">Never expires</option>
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+          <option value="365">1 year</option>
+        </select>
         <button class="btn btn-sm btn-outline">Create token</button>
       </form>
     </div>
