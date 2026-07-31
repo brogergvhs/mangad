@@ -21,6 +21,8 @@ final class AppState {
     private static let serverKey = "server_url"
     private static let settingsKey = "user_settings"
     private static let tokenAccount = "api_token"
+    private var settingsDirty = false
+    private var settingsTask: Task<Void, Never>?
 
     var connected: Bool { api != nil }
 
@@ -44,8 +46,8 @@ final class AppState {
             return false
         }
         if url.scheme == nil { url = URL(string: "https://\(server)") ?? url }
-        if url.scheme?.lowercased() == "http", !isPrivateHost(url.host) {
-            errorMessage = "Use https:// for a public server — plaintext http would expose your password and token on the network."
+        guard isAllowedServerURL(url) else {
+            errorMessage = "Use HTTPS, or HTTP only for a private local server."
             return false
         }
         var client = APIClient(baseURL: url, token: nil)
@@ -74,10 +76,10 @@ final class AppState {
         }
     }
 
-    func loadMe() async {
-        guard let api, me == nil else { return }
+    func loadSession() async {
+        guard let api else { return }
         do {
-            me = try await api.get("/api/v1/me")
+            if me == nil { me = try await api.get("/api/v1/me") }
             settings = try await api.get("/api/v1/me/settings")
             cacheSettings()
             await store.flush(api)
@@ -91,8 +93,16 @@ final class AppState {
     func saveSettings() {
         cacheSettings()
         guard let api else { return }
-        let s = settings
-        Task { _ = try? await api.data("PUT", "/api/v1/me/settings", body: s) }
+        settingsDirty = true
+        guard settingsTask == nil else { return }
+        settingsTask = Task {
+            while settingsDirty, !Task.isCancelled {
+                settingsDirty = false
+                let snapshot = settings
+                _ = try? await api.data("PUT", "/api/v1/me/settings", body: snapshot)
+            }
+            settingsTask = nil
+        }
     }
 
     private func cacheSettings() {
@@ -100,6 +110,8 @@ final class AppState {
     }
 
     func signOut() {
+        settingsDirty = false
+        settingsTask?.cancel()
         if let api, api.token != nil {
             Task { _ = try? await api.data("DELETE", "/api/v1/auth/token") }
         }
@@ -109,17 +121,5 @@ final class AppState {
         APIClient.clearCache()
         api = nil
         me = nil
-    }
-}
-
-func isPrivateHost(_ host: String?) -> Bool {
-    guard let host = host?.lowercased() else { return false }
-    if host == "localhost" || host.hasSuffix(".local") { return true }
-    let p = host.split(separator: ".").compactMap { Int($0) }
-    guard p.count == 4 else { return host.hasPrefix("127.") || host == "::1" }
-    switch (p[0], p[1]) {
-    case (127, _), (10, _), (192, 168), (169, 254): return true
-    case (172, 16...31): return true
-    default: return false
     }
 }

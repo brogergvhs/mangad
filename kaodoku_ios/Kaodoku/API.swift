@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 enum APIError: LocalizedError {
     case badURL
@@ -38,7 +39,8 @@ struct APIClient {
     }()
 
     private func request(_ method: String, _ path: String, body: (any Encodable)? = nil) throws -> URLRequest {
-        guard let url = URL(string: path, relativeTo: baseURL) else { throw APIError.badURL }
+        guard let url = URL(string: path, relativeTo: baseURL),
+              isAllowedServerURL(url) else { throw APIError.badURL }
         var req = URLRequest(url: url)
         req.httpMethod = method
         if let token, sameOrigin(url, baseURL) {
@@ -66,8 +68,8 @@ struct APIClient {
         }
     }
 
-    // download streams a response to a temp file (large CBZs never sit in
-    // memory), reporting byte progress when the length is known.
+    // download streams a large CBZ to a temp file, reporting 0…1 progress
+    // against the response length (expectedBytes covers a stripped length).
     func download(_ path: String, expectedBytes: Int64 = 0,
                   progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
         let (bytes, resp) = try await Self.session.bytes(for: request("GET", path))
@@ -80,20 +82,20 @@ struct APIClient {
         let total = resp.expectedContentLength > 0 ? resp.expectedContentLength : expectedBytes
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: tmp.path, contents: nil)
-        let fh = try FileHandle(forWritingTo: tmp)
-        defer { try? fh.close() }
-        var buf = Data(capacity: 128 << 10)
+        let handle = try FileHandle(forWritingTo: tmp)
+        defer { try? handle.close() }
+        var buffer = Data(); buffer.reserveCapacity(1 << 17)
         var written: Int64 = 0
-        for try await b in bytes {
-            buf.append(b)
-            if buf.count >= 128 << 10 {
-                try fh.write(contentsOf: buf)
-                written += Int64(buf.count)
-                buf.removeAll(keepingCapacity: true)
+        for try await byte in bytes {
+            buffer.append(byte)
+            if buffer.count >= 1 << 17 {
+                try handle.write(contentsOf: buffer)
+                written += Int64(buffer.count)
+                buffer.removeAll(keepingCapacity: true)
                 if total > 0 { progress(Double(written) / Double(total)) }
             }
         }
-        try fh.write(contentsOf: buf)
+        try handle.write(contentsOf: buffer)
         progress(1)
         return tmp
     }
@@ -115,6 +117,35 @@ func sameOrigin(_ a: URL, _ b: URL) -> Bool {
         && (a.port ?? defaultPort(a.scheme)) == (b.port ?? defaultPort(b.scheme))
 }
 
+func isAllowedServerURL(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), let host = url.host, !host.isEmpty else { return false }
+    return scheme == "https" || (scheme == "http" && isPrivateHost(host))
+}
+
+func isPrivateHost(_ rawHost: String?) -> Bool {
+    guard var host = rawHost?.lowercased(), !host.isEmpty else { return false }
+    if host.first == "[", host.last == "]" { host = String(host.dropFirst().dropLast()) }
+    if let zone = host.firstIndex(of: "%") { host = String(host[..<zone]) }
+    if host.hasSuffix(".") { host.removeLast() }
+    if host == "localhost" || host.hasSuffix(".local") || host == "::1" { return true }
+    if host.hasPrefix("::ffff:") { return isPrivateHost(String(host.dropFirst(7))) }
+    if host.contains(":") {
+        return host.hasPrefix("fc") || host.hasPrefix("fd")
+            || ["fe8", "fe9", "fea", "feb"].contains { host.hasPrefix($0) }
+    }
+    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+    if parts.count == 4 {
+        let octets = parts.compactMap { Int($0) }
+        guard octets.count == 4, octets.allSatisfy((0...255).contains) else { return false }
+        switch (octets[0], octets[1]) {
+        case (127, _), (10, _), (192, 168), (169, 254): return true
+        case (172, 16...31): return true
+        default: return false
+        }
+    }
+    return !host.contains(".")
+}
+
 private func defaultPort(_ scheme: String?) -> Int {
     scheme?.lowercased() == "https" ? 443 : 80
 }
@@ -125,7 +156,11 @@ final class RedirectGuard: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
-        guard let orig = task.originalRequest?.url, let dest = request.url, !sameOrigin(orig, dest) else {
+        guard let dest = request.url, isAllowedServerURL(dest) else {
+            completionHandler(nil)
+            return
+        }
+        guard let orig = task.originalRequest?.url, !sameOrigin(orig, dest) else {
             completionHandler(request)
             return
         }
