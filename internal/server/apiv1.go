@@ -256,6 +256,10 @@ func (a *apiV1) login(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "iOS app"
 	}
+	if err := a.svc.Auth().DeleteAPITokensNamed(r.Context(), id, name); err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 	token, err := a.svc.Auth().CreateAPIToken(r.Context(), id, name, appTokenTTLDays)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())

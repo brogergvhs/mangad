@@ -505,6 +505,12 @@ type APIToken struct {
 	ExpiresAt string // "" = never expires
 }
 
+// DeleteAPITokensNamed removes a user's tokens with the given name.
+func (s *Service) DeleteAPITokensNamed(ctx context.Context, userID int64, name string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id = ? AND name = ?`, userID, name)
+	return err
+}
+
 // CreateAPIToken mints a token (shown once). ttlDays > 0 sets an expiry; else never.
 func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string, ttlDays int) (string, error) {
 	name = strings.TrimSpace(name)

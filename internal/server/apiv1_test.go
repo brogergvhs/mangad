@@ -522,3 +522,33 @@ func TestAPIV1MetaInstanceIDStable(t *testing.T) {
 		t.Fatalf("instance_id changed across restart: %q -> %q", first, second)
 	}
 }
+
+// A device re-login must replace that device's token, not accumulate them.
+func TestAPIV1LoginReplacesDeviceToken(t *testing.T) {
+	t.Setenv("KAODOKU_ADMIN_USER", "boss")
+	t.Setenv("KAODOKU_ADMIN_PASSWORD", "secret123")
+	api, closeDB := testAPI(t)
+	defer closeDB()
+
+	login := func() string {
+		rec := do(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+			"username": "boss", "password": "secret123", "device_name": "iOS app · iPhone",
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("login status = %d", rec.Code)
+		}
+		var out struct {
+			Token string `json:"token"`
+		}
+		_ = json.NewDecoder(rec.Body).Decode(&out)
+		return out.Token
+	}
+	first := login()
+	second := login()
+	if rec := do(t, api, http.MethodGet, "/api/v1/me", first, nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old device token still valid: %d", rec.Code)
+	}
+	if rec := do(t, api, http.MethodGet, "/api/v1/me", second, nil); rec.Code != http.StatusOK {
+		t.Fatalf("new device token rejected: %d", rec.Code)
+	}
+}

@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import UIKit
 
 // ServerEndpoints stores up to two addresses for the same server: a LAN one
 // and a public one. instanceID  proves they are the same installation.
@@ -157,7 +158,8 @@ final class AppState {
                     return false
                 }
                 let login: LoginResponse = try await client.post("/api/v1/auth/login", body: [
-                    "username": username, "password": password, "device_name": "iOS app",
+                    "username": username, "password": password,
+                    "device_name": "iOS app · \(UIDevice.current.model)",
                 ])
                 client.token = login.token
                 me = login.me
