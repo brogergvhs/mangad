@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"sync"
 	"io"
@@ -26,13 +28,30 @@ const maxPageBytes = 64 << 20 // per-image download cap
 const appTokenTTLDays = 90
 
 type apiV1 struct {
-	svc     *service.JobService
-	runJobs func(context.Context) (service.RunSummary, error)
+	svc        *service.JobService
+	runJobs    func(context.Context) (service.RunSummary, error)
+	instanceID string
+}
+
+func loadInstanceID(svc *service.JobService) string {
+	ctx := context.Background()
+	if id := svc.Setting(ctx, "instance_id", ""); id != "" {
+		return id
+	}
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return ""
+	}
+	id := hex.EncodeToString(raw)
+	if err := svc.SetSetting(ctx, "instance_id", id); err != nil {
+		return ""
+	}
+	return id
 }
 
 // registerAPIV1 mounts the /api/v1 surface consumed by the native app.
 func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(context.Context) (service.RunSummary, error)) {
-	a := &apiV1{svc: svc, runJobs: runJobs}
+	a := &apiV1{svc: svc, runJobs: runJobs, instanceID: loadInstanceID(svc)}
 	mux.HandleFunc("GET /api/v1/meta", a.meta)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("GET /api/v1/me", a.me)
@@ -136,6 +155,7 @@ type metaDTO struct {
 	Features      []string `json:"features"`
 	ImageFormats  []string `json:"image_formats"`
 	MaxPageBytes  int64    `json:"max_page_bytes"`
+	InstanceID    string   `json:"instance_id,omitempty"`
 }
 
 type meDTO struct {
@@ -180,6 +200,7 @@ func (a *apiV1) meta(w http.ResponseWriter, _ *http.Request) {
 		Features:      []string{"archives", "delta_sync", "progress_batch", "collections", "screens", "anilist", "notifications"},
 		ImageFormats:  []string{"jpg", "jpeg", "png", "webp", "gif", "avif"},
 		MaxPageBytes:  maxPageBytes,
+		InstanceID:    a.instanceID,
 	})
 }
 

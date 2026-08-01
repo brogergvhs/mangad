@@ -493,3 +493,32 @@ func TestAPIV1LoginRateLimit(t *testing.T) {
 		t.Fatalf("25th login = %d, want 429", last)
 	}
 }
+
+func TestAPIV1MetaInstanceIDStable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "kaodoku.db")
+	metaID := func() string {
+		svc, closeDB, err := service.OpenJobs(context.Background(), dbPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer closeDB()
+		api := New(svc, func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
+			func(context.Context, string) (service.SourceVerifyResult, error) {
+				return service.SourceVerifyResult{}, nil
+			})
+		var meta metaDTO
+		rec := do(t, api, http.MethodGet, "/api/v1/meta", "", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("meta status = %d", rec.Code)
+		}
+		_ = json.NewDecoder(rec.Body).Decode(&meta)
+		return meta.InstanceID
+	}
+	first := metaID()
+	if len(first) != 32 {
+		t.Fatalf("instance_id = %q, want 32 hex chars", first)
+	}
+	if second := metaID(); second != first {
+		t.Fatalf("instance_id changed across restart: %q -> %q", first, second)
+	}
+}
