@@ -151,25 +151,25 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		}
 		changed := oldRefresh != refreshEvery || oldScan != scanEvery || oldDownload != downloadEvery || oldSourceVerify != sourceVerifyEvery || oldBackup != backupEvery || oldAniList != anilistEvery || oldCatalog != catalogEvery || oldRun != runEvery
 		if oldRefresh != refreshEvery {
-			nextRefresh = time.Now().Add(refreshEvery)
+			nextRefresh = nextAfter(svc, ctx, jobs.TypeRefreshTitle, refreshEvery)
 		}
 		if oldScan != scanEvery {
-			nextScan = time.Now().Add(scanEvery)
+			nextScan = nextAfter(svc, ctx, jobs.TypeScanDownloads, scanEvery)
 		}
 		if oldDownload != downloadEvery {
-			nextDownload = time.Now().Add(downloadEvery)
+			nextDownload = nextAfter(svc, ctx, jobs.TypeDownloadMissing, downloadEvery)
 		}
 		if oldSourceVerify != sourceVerifyEvery {
-			nextSourceVerify = time.Now().Add(sourceVerifyEvery)
+			nextSourceVerify = nextAfter(svc, ctx, jobs.TypeVerifySource, sourceVerifyEvery)
 		}
 		if oldBackup != backupEvery {
-			nextBackup = time.Now().Add(backupEvery)
+			nextBackup = nextAfter(svc, ctx, jobs.TypeBackupUserData, backupEvery)
 		}
 		if oldAniList != anilistEvery {
-			nextAniList = time.Now().Add(anilistEvery)
+			nextAniList = nextAfter(svc, ctx, jobs.TypeSyncAniList, anilistEvery)
 		}
 		if oldCatalog != catalogEvery {
-			nextCatalog = time.Now().Add(catalogEvery)
+			nextCatalog = nextAfter(svc, ctx, jobs.TypeCatalogRefresh, catalogEvery)
 		}
 		if changed {
 			fmt.Printf("Serving: refresh=%s scan=%s download=%s source_verify=%s backup=%s run=%s\n", refreshEvery, scanEvery, downloadEvery, sourceVerifyEvery, backupEvery, runEvery)
@@ -272,6 +272,13 @@ func serveDuration(svc *service.JobService, ctx context.Context, key string) tim
 		return fallbackDuration(fallback)
 	}
 	return d
+}
+
+func nextAfter(svc *service.JobService, ctx context.Context, typ string, every time.Duration) time.Time {
+	if last := svc.LastJobTime(ctx, typ); !last.IsZero() {
+		return last.Add(every)
+	}
+	return time.Now()
 }
 
 func nextDue(next *time.Time, every time.Duration) bool {

@@ -454,6 +454,20 @@ func (s *JobService) Setting(ctx context.Context, key, fallback string) string {
 	return value
 }
 
+// LastJobTime returns when a job of the given type was last enqueued, or the
+// zero time when none exists.
+func (s *JobService) LastJobTime(ctx context.Context, typ string) time.Time {
+	var raw sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT MAX(created_at) FROM jobs WHERE type = ?`, typ).Scan(&raw); err != nil || !raw.Valid {
+		return time.Time{}
+	}
+	t, err := database.ParseTime(raw.String)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
 // Auth exposes the user/role/session service.
 func (s *JobService) Auth() *auth.Service { return s.auth }
 
