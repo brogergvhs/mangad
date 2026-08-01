@@ -59,6 +59,22 @@ final class AppState {
 
     private static let endpointsKey = "server_endpoints"
     private static let settingsKey = "user_settings"
+    private static let modeOverridesKey = "reader_mode_overrides"
+
+    // Per-title reader mode.
+    var readerModeOverrides: [String: String] =
+        UserDefaults.standard.dictionary(forKey: modeOverridesKey) as? [String: String] ?? [:]
+
+    func readerMode(forTitle id: Int64) -> String? { readerModeOverrides["\(id)"] }
+
+    func setReaderMode(_ mode: String?, forTitle id: Int64) {
+        if let mode {
+            readerModeOverrides["\(id)"] = mode
+        } else {
+            readerModeOverrides.removeValue(forKey: "\(id)")
+        }
+        UserDefaults.standard.set(readerModeOverrides, forKey: Self.modeOverridesKey)
+    }
     private static let tokenAccount = "api_token"
     private var settingsDirty = false
     private var settingsTask: Task<Void, Never>?

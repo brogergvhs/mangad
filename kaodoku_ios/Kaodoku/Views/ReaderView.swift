@@ -21,11 +21,18 @@ struct ReaderView: View {
         var url: String
         var localURL: URL?
         var volume = false
+        var transition = false // synthetic "end of chapter" cell
     }
 
     // Per-page width/height ratios, so the strip reader knows each page's exact
     // height up front. Seeded from downloads on load, cleared per session.
     @MainActor static var aspects: [String: CGFloat] = [:]
+
+    struct DisplayPage: Hashable {
+        enum Half { case leading, trailing }
+        var ref: PageRef
+        var half: Half? = nil
+    }
 
     @State private var pages: [PageRef] = []
     @State private var index = 0
@@ -38,7 +45,11 @@ struct ReaderView: View {
     @State private var loadFailed = false
     @State private var extendChapter: Int64?
     @State private var zoom: CGFloat = 1
-    @State private var zoomBase: CGFloat = 1
+    @State private var stripJump: StripReader.Jump?
+    @State private var commandID = 0
+    @State private var showChapters = false
+    @State private var chapterRows: [ReaderChapterRow]?
+    @State private var detectionDone = false
 
     // stripLoader fetches a page for the UICollectionView reader: the device
     // CBZ first, then the network, downsampled off the main thread.
@@ -56,8 +67,79 @@ struct ReaderView: View {
         }
     }
 
-    private var paged: Bool { app.settings.readerMode != "strip" }
+    private var paged: Bool {
+        (app.readerMode(forTitle: titleID) ?? app.settings.readerMode ?? "paged") != "strip"
+    }
     private var rtl: Bool { app.settings.readerDir == "rtl" }
+
+    @State private var isLandscape = false
+
+    private var doubleActive: Bool {
+        guard paged else { return false }
+        switch app.settings.readerPageLayout ?? "single" {
+        case "double": return true
+        case "auto": return isLandscape
+        default: return false
+        }
+    }
+
+    private var splitWide: Bool { !doubleActive && (app.settings.readerSplitWide ?? false) }
+
+    // units chunks pages into paged display slots.
+    private var units: [[DisplayPage]] {
+        let dbl = doubleActive
+        let split = splitWide
+        var out: [[DisplayPage]] = []
+        var pending: DisplayPage?
+        var pendingChapter: Int64 = 0
+        func flush() {
+            if let p = pending {
+                out.append([p])
+                pending = nil
+            }
+        }
+        func place(_ dp: DisplayPage, chapter: Int64) {
+            guard dbl else {
+                out.append([dp])
+                return
+            }
+            if let p = pending, pendingChapter == chapter {
+                out.append([p, dp])
+                pending = nil
+            } else {
+                flush()
+                pending = dp
+                pendingChapter = chapter
+            }
+        }
+        for ref in pages {
+            if ref.transition {
+                flush()
+                out.append([DisplayPage(ref: ref)])
+                continue
+            }
+            let known = Self.aspects["\(ref.volume ? "v" : "c")\(ref.chapterID)-\(ref.page)"]
+            if let known, known > 1 {
+                if split {
+                    place(DisplayPage(ref: ref, half: .leading), chapter: ref.chapterID)
+                    place(DisplayPage(ref: ref, half: .trailing), chapter: ref.chapterID)
+                } else {
+                    flush()
+                    out.append([DisplayPage(ref: ref)])
+                }
+            } else {
+                place(DisplayPage(ref: ref), chapter: ref.chapterID)
+            }
+        }
+        flush()
+        return out
+    }
+
+    private func unitIndex(forPage i: Int) -> Int {
+        guard pages.indices.contains(i) else { return 0 }
+        let ref = pages[i]
+        return units.firstIndex { $0.contains { $0.ref == ref } } ?? 0
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -71,12 +153,14 @@ struct ReaderView: View {
                 } else if pages.isEmpty {
                     ProgressView().tint(.white)
                 } else if paged {
+                    let us = units
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 0) {
-                            ForEach(pages.indices, id: \.self) { i in
-                                ReaderPage(ref: pages[i], maxPixelSize: pixels,
-                                           active: abs(i - index) <= 1,
-                                           zoom: $zoom, zoomBase: $zoomBase)
+                            ForEach(us.indices, id: \.self) { u in
+                                ReaderPage(unit: us[u], maxPixelSize: pixels,
+                                           active: abs(u - (scrollID ?? 0)) <= 1,
+                                           zoom: $zoom,
+                                           onImage: u == 0 ? { autoDetect(aspect: $0) } : nil)
                                     .containerRelativeFrame([.horizontal, .vertical])
                             }
                         }
@@ -87,7 +171,7 @@ struct ReaderView: View {
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
                     .ignoresSafeArea()
                     .onChange(of: scrollID) {
-                        if let i = scrollID, pages.indices.contains(i) { onSettle(i) }
+                        if let u = scrollID, us.indices.contains(u) { onSettleUnit(us[u]) }
                     }
                 } else {
                     StripReader(
@@ -95,6 +179,7 @@ struct ReaderView: View {
                         startIndex: index,
                         maxPixelSize: CGSize(width: pixels.width, height: 8_192),
                         estimateAspect: geo.size.width / max(geo.size.height, 1),
+                        jump: stripJump,
                         loadImage: stripLoader,
                         onPage: onSettle
                     )
@@ -106,12 +191,26 @@ struct ReaderView: View {
             .onTapGesture { point in
                 handleTap(point, width: geo.size.width)
             }
+            .onChange(of: geo.size.width > geo.size.height, initial: true) { _, v in
+                isLandscape = v
+            }
+            .onChange(of: doubleActive) {
+                if paged { scrollID = unitIndex(forPage: index) }
+            }
+            .onChange(of: splitWide) {
+                if paged { scrollID = unitIndex(forPage: index) }
+            }
+            .onChange(of: paged) {
+                stripJump = nil
+                if paged { scrollID = unitIndex(forPage: index) }
+            }
         }
         .task { await load(chapter: startChapter, resume: true) }
         .task(id: extendChapter) {
             guard let last = extendChapter, let api = app.api else { return }
             defer { extendChapter = nil }
             guard let m: Manifest = try? await api.get(extendBase + String(last)) else { return }
+            guard !Task.isCancelled else { return }
             append(m.chapters)
         }
         .onDisappear {
@@ -121,7 +220,14 @@ struct ReaderView: View {
                 await LocalStore.clearPageCache()
             }
         }
-        .sheet(isPresented: $showSettings) { ReaderSettingsSheet() }
+        .sheet(isPresented: $showSettings) { ReaderSettingsSheet(titleID: titleID) }
+        .sheet(isPresented: $showChapters) {
+            ReaderChapterSheet(rows: chapterRows,
+                               currentID: pages.indices.contains(index) ? pages[index].chapterID : 0,
+                               volumes: volumes,
+                               onSelect: jumpToChapter)
+                .task { await loadChapterRows() }
+        }
     }
 
     private var bar: some View {
@@ -131,10 +237,19 @@ struct ReaderView: View {
                 Spacer()
                 if pages.indices.contains(index) {
                     let p = pages[index]
-                    let name = volumes && Double(p.label) == nil ? p.label : "\(volumes ? "Vol" : "Ch") \(p.label)"
-                    Text("\(name) · \(p.page)/\(p.total)").lineLimit(1)
+                    if p.transition {
+                        Text(p.label).lineLimit(1)
+                    } else {
+                        let name = volumes && Double(p.label) == nil ? p.label : "\(volumes ? "Vol" : "Ch") \(p.label)"
+                        Text("\(name) · \(p.page)/\(p.total)").lineLimit(1)
+                    }
                 }
                 Spacer()
+                Button {
+                    showChapters = true
+                } label: {
+                    Image(systemName: "list.bullet")
+                }
                 Button {
                     showSettings = true
                 } label: {
@@ -145,7 +260,35 @@ struct ReaderView: View {
             .background(.black.opacity(0.6))
             .foregroundStyle(.white)
             Spacer()
+            bottomBar
         }
+    }
+
+    // bottomBar scrubs within the current chapter.
+    private var bottomBar: some View {
+        let range = chapterIndices
+        let pos = range.firstIndex(of: index) ?? 0
+        return HStack(spacing: 12) {
+            Text("\(pos + 1)").monospacedDigit()
+            Slider(value: Binding(
+                get: { Double(pos) },
+                set: { jump(toPageIndex: range[min(max(Int($0.rounded()), 0), range.count - 1)]) }
+            ), in: 0...Double(max(range.count - 1, 1)), step: 1)
+            .disabled(range.count <= 1)
+            Text("\(range.count)").monospacedDigit()
+        }
+        .font(.footnote)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.black.opacity(0.6))
+        .foregroundStyle(.white)
+        .environment(\.layoutDirection, paged && rtl ? .rightToLeft : .leftToRight)
+    }
+
+    private var chapterIndices: [Int] {
+        guard pages.indices.contains(index) else { return [] }
+        let cid = pages[index].chapterID
+        return pages.indices.filter { pages[$0].chapterID == cid && !pages[$0].transition }
     }
 
     private func handleTap(_ point: CGPoint, width: CGFloat) {
@@ -162,14 +305,81 @@ struct ReaderView: View {
     }
 
     private func step(by delta: Int) {
-        let target = min(max(index + delta, 0), pages.count - 1)
-        guard target != index else { return }
+        let count = units.count
+        let cur = scrollID ?? unitIndex(forPage: index)
+        let target = min(max(cur + delta, 0), count - 1)
+        guard target != cur else { return }
         withAnimation { scrollID = target }
     }
 
+    private func onSettleUnit(_ unit: [DisplayPage]) {
+        guard let last = unit.last else { return }
+        if let i = pages.firstIndex(of: last.ref) { index = i }
+        for ref in Set(unit.map(\.ref)) where !ref.transition { mark(ref) }
+        extendIfNeeded()
+    }
+
+    private func jump(toPageIndex target: Int) {
+        guard pages.indices.contains(target) else { return }
+        index = target
+        if paged {
+            scrollID = unitIndex(forPage: target)
+        } else {
+            commandID += 1
+            stripJump = StripReader.Jump(id: commandID, index: target)
+        }
+    }
+
+    private func jumpToChapter(_ id: Int64) {
+        if let i = pages.firstIndex(where: { $0.chapterID == id && !$0.transition }) {
+            jump(toPageIndex: i)
+            return
+        }
+        extendChapter = nil
+        stripJump = nil
+        pages = []
+        noMore = false
+        lastChapterID = 0
+        loadFailed = false
+        index = 0
+        scrollID = 0
+        Task { await load(chapter: id, resume: false) }
+    }
+
+    private func loadChapterRows() async {
+        if let localChapters {
+            chapterRows = localChapters.map {
+                ReaderChapterRow(id: $0.id, label: $0.label, read: $0.isRead, available: true)
+            }
+            return
+        }
+        if !volumes, let api = app.api,
+           let p: TitleReadProgress = try? await api.get("/api/v1/reader/titles/\(titleID)") {
+            chapterRows = p.chapters.map {
+                ReaderChapterRow(id: $0.id, label: $0.label, read: $0.completed, available: $0.downloaded)
+            }
+            return
+        }
+        var seen = Set<Int64>()
+        chapterRows = pages.compactMap {
+            guard !$0.transition, seen.insert($0.chapterID).inserted else { return nil }
+            return ReaderChapterRow(id: $0.chapterID, label: $0.label, read: false, available: true)
+        }
+    }
+
+    // autoDetect flips a title to strip mode when the first page is very tall.
+    private func autoDetect(aspect: CGFloat) {
+        guard !detectionDone, aspect > 0 else { return }
+        detectionDone = true
+        guard aspect < 0.55, app.readerMode(forTitle: titleID) == nil,
+              (app.settings.readerMode ?? "paged") != "strip" else { return }
+        app.setReaderMode("strip", forTitle: titleID)
+    }
+
     private func onSettle(_ i: Int) {
+        guard pages.indices.contains(i) else { return }
         index = i
-        mark(pages[i])
+        if !pages[i].transition { mark(pages[i]) }
         extendIfNeeded()
     }
 
@@ -180,6 +390,7 @@ struct ReaderView: View {
             let build = Task.detached(priority: .userInitiated) {
                 var refs: [PageRef] = []
                 var aspects: [String: CGFloat] = [:]
+                let kind = volumeMode ? "Vol" : "Ch"
                 for e in localChapters where e.pages > 0 {
                     guard !Task.isCancelled else { break }
                     let local = LocalStore.root.appendingPathComponent(e.path)
@@ -187,11 +398,23 @@ struct ReaderView: View {
                     for (pi, aspect) in e.pageAspects.enumerated() where aspect > 0 {
                         aspects["\(volumeMode ? "v" : "c")\(e.id)-\(pi + 1)"] = aspect
                     }
+                    if let prev = refs.last {
+                        refs.append(PageRef(chapterID: prev.chapterID,
+                                            label: "End of \(kind) \(prev.label)  ·  Next: \(kind) \(e.label)",
+                                            page: 0, total: 0, url: "", localURL: nil,
+                                            volume: volumeMode, transition: true))
+                    }
                     for page in 1...e.pages {
                         refs.append(PageRef(chapterID: e.id, label: e.label, page: page,
                                             total: e.pages, url: "", localURL: local,
                                             volume: volumeMode))
                     }
+                }
+                if let prev = refs.last {
+                    refs.append(PageRef(chapterID: prev.chapterID,
+                                        label: "No more \(volumeMode ? "volumes" : "chapters")",
+                                        page: 0, total: 0, url: "", localURL: nil,
+                                        volume: volumeMode, transition: true))
                 }
                 return (refs, aspects)
             }
@@ -203,6 +426,9 @@ struct ReaderView: View {
             guard !Task.isCancelled else { return }
             Self.aspects.merge(loaded.1) { _, new in new }
             pages = loaded.0
+            if let a = localChapters.lazy.flatMap(\.pageAspects).first(where: { $0 > 0 }) {
+                autoDetect(aspect: CGFloat(a))
+            }
             let entry = localChapters.first { $0.id == chapter }
             let resumePage = entry.map { $0.isRead ? 1 : min($0.readPages + 1, max($0.pages, 1)) } ?? 1
             guard let i = pages.firstIndex(where: { $0.chapterID == chapter && $0.page == resumePage }) else {
@@ -210,7 +436,7 @@ struct ReaderView: View {
                 return
             }
             index = i
-            scrollID = i
+            scrollID = unitIndex(forPage: i)
             return
         }
         guard let api = app.api else { return }
@@ -223,7 +449,7 @@ struct ReaderView: View {
                 if let i = pages.firstIndex(where: { $0.chapterID == m.resumeChapterId && $0.page == m.resumePage }) {
                     index = i
                 }
-                scrollID = index
+                scrollID = unitIndex(forPage: index)
             }
         } catch {
             app.errorMessage = error.localizedDescription
@@ -232,8 +458,11 @@ struct ReaderView: View {
 
     private func append(_ chapters: [Manifest.Chapter]) {
         var added = false
-        for ch in chapters where !pages.contains(where: { $0.chapterID == ch.id }) {
+        for ch in chapters where !pages.contains(where: { $0.chapterID == ch.id && !$0.transition }) {
             let local = app.store.url(for: ch.id, volume: volumes)
+            if let prev = pages.last(where: { !$0.transition }) {
+                pages.append(transitionRef(after: prev, nextLabel: ch.label))
+            }
             pages.append(contentsOf: ch.pages.map {
                 PageRef(chapterID: ch.id, label: ch.label, page: $0.page, total: ch.pageCount,
                         url: $0.url, localURL: local, volume: volumes)
@@ -241,7 +470,21 @@ struct ReaderView: View {
             lastChapterID = ch.id
             added = true
         }
-        if !added { noMore = true }
+        if !added {
+            if !noMore, let prev = pages.last(where: { !$0.transition }) {
+                pages.append(transitionRef(after: prev, nextLabel: nil))
+            }
+            noMore = true
+        }
+    }
+
+    private func transitionRef(after prev: PageRef, nextLabel: String?) -> PageRef {
+        let kind = volumes ? "Vol" : "Ch"
+        let text = nextLabel.map { "End of \(kind) \(prev.label)  ·  Next: \(kind) \($0)" }
+            ?? "No more \(volumes ? "volumes" : "chapters")"
+        return PageRef(chapterID: prev.chapterID, label: text,
+                       page: 0, total: 0, url: "", localURL: nil,
+                       volume: volumes, transition: true)
     }
 
     private func extendIfNeeded() {
@@ -254,8 +497,63 @@ struct ReaderView: View {
     }
 }
 
+// ReaderChapterRow feeds the in-reader chapter list.
+struct ReaderChapterRow: Identifiable {
+    var id: Int64
+    var label: String
+    var read: Bool
+    var available: Bool
+}
+
+struct ReaderChapterSheet: View {
+    let rows: [ReaderChapterRow]?
+    let currentID: Int64
+    let volumes: Bool
+    var onSelect: (Int64) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let rows {
+                    List(rows) { row in
+                        Button {
+                            onSelect(row.id)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text("\(volumes ? "Vol" : "Ch") \(row.label)")
+                                    .foregroundStyle(row.available ? Color.primary : .secondary)
+                                Spacer()
+                                if row.id == currentID {
+                                    Image(systemName: "eye").foregroundStyle(Theme.primary)
+                                } else if row.read {
+                                    Image(systemName: "checkmark").foregroundStyle(Theme.success)
+                                }
+                            }
+                        }
+                        .disabled(!row.available)
+                        .nordRows()
+                    }
+                } else {
+                    ProgressView()
+                }
+            }
+            .nordScreen()
+            .navigationTitle(volumes ? "Volumes" : "Chapters")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
 struct ReaderSettingsSheet: View {
     @Environment(AppState.self) private var app
+    let titleID: Int64
+
+    private var stripActive: Bool {
+        (app.readerMode(forTitle: titleID) ?? app.settings.readerMode ?? "paged") == "strip"
+    }
 
     var body: some View {
         @Bindable var app = app
@@ -268,57 +566,82 @@ struct ReaderSettingsSheet: View {
                     Text("Paged").tag("paged")
                     Text("Long strip").tag("strip")
                 }
-                Picker("Direction", selection: Binding(
-                    get: { app.settings.readerDir ?? "ltr" },
-                    set: { app.settings.readerDir = $0; app.saveSettings() }
+                Picker("This title", selection: Binding(
+                    get: { app.readerMode(forTitle: titleID) ?? "default" },
+                    set: { app.setReaderMode($0 == "default" ? nil : $0, forTitle: titleID) }
                 )) {
-                    Text("Left to right").tag("ltr")
-                    Text("Right to left").tag("rtl")
+                    Text("Default").tag("default")
+                    Text("Paged").tag("paged")
+                    Text("Long strip").tag("strip")
                 }
+                Group {
+                    Picker("Direction", selection: Binding(
+                        get: { app.settings.readerDir ?? "ltr" },
+                        set: { app.settings.readerDir = $0; app.saveSettings() }
+                    )) {
+                        Text("Left to right").tag("ltr")
+                        Text("Right to left").tag("rtl")
+                    }
+                    Picker("Pages", selection: Binding(
+                        get: { app.settings.readerPageLayout ?? "single" },
+                        set: { app.settings.readerPageLayout = $0; app.saveSettings() }
+                    )) {
+                        Text("Single").tag("single")
+                        Text("Double").tag("double")
+                        Text("Double in landscape").tag("auto")
+                    }
+                    Toggle("Split wide pages", isOn: Binding(
+                        get: { app.settings.readerSplitWide ?? false },
+                        set: { app.settings.readerSplitWide = $0; app.saveSettings() }
+                    ))
+                }
+                .disabled(stripActive) // paged-only controls
             }
             .navigationTitle("Reader")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(380)])
     }
 }
 
-// ReaderPage renders one page in paged mode: fit-to-screen with pinch zoom.
-// A device CBZ copy is preferred over the network; the bitmap is released when
-// the page leaves the active window so long sessions stay bounded.
+// ReaderPage renders one paged display unit.
 struct ReaderPage: View {
     @Environment(AppState.self) private var app
-    let ref: ReaderView.PageRef
+    @Environment(\.layoutDirection) private var layoutDirection
+    let unit: [ReaderView.DisplayPage]
     let maxPixelSize: CGSize
     var active = true
     @Binding var zoom: CGFloat
-    @Binding var zoomBase: CGFloat
-    @State private var image: UIImage?
+    var onImage: ((CGFloat) -> Void)? = nil
+    @State private var images: [Int: UIImage] = [:]
     @State private var failed = false
+
+    private var transition: Bool { unit.first?.ref.transition == true }
+
+    private struct LoadKey: Hashable {
+        let active: Bool
+        let unit: [ReaderView.DisplayPage]
+    }
 
     var body: some View {
         content
             .onChange(of: active) { _, a in
-                if !a { image = nil; failed = false }
+                if !a { images = [:]; failed = false }
             }
-            .task(id: active) { await loadIfNeeded() }
+            .onChange(of: unit) {
+                images = [:]
+                failed = false
+            }
+            .task(id: LoadKey(active: active, unit: unit)) { await loadIfNeeded() }
     }
 
     @ViewBuilder private var content: some View {
-        if let image {
-            GeometryReader { g in
-                let fit = Self.fitted(image.size, in: g.size)
-                ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .frame(width: fit.width * zoom, height: fit.height * zoom)
-                        .frame(width: max(fit.width * zoom, g.size.width),
-                               height: max(fit.height * zoom, g.size.height))
-                }
-            }
-            .gesture(MagnifyGesture()
-                .onChanged { zoom = max(1, min(3, zoomBase * $0.magnification)) }
-                .onEnded { _ in zoomBase = zoom })
+        if transition {
+            Text(unit.first?.ref.label ?? "")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else if images.count == unit.count {
+            ZoomablePage(slots: slots, zoom: $zoom)
         } else if failed {
             Label("Page failed to load", systemImage: "exclamationmark.triangle").foregroundStyle(.white)
         } else {
@@ -326,26 +649,51 @@ struct ReaderPage: View {
         }
     }
 
-    nonisolated static func fitted(_ img: CGSize, in box: CGSize) -> CGSize {
-        guard img.width > 0, img.height > 0, box.width > 0, box.height > 0 else { return box }
-        let s = min(box.width / img.width, box.height / img.height)
-        return CGSize(width: img.width * s, height: img.height * s)
+    // slots maps the reading-order unit into visual left-to-right slots for
+    // the UIKit zoom view.
+    private var slots: [ZoomablePage.Slot] {
+        let rtl = layoutDirection == .rightToLeft
+        let ordered = rtl ? Array(unit.enumerated().reversed()) : Array(unit.enumerated())
+        return ordered.compactMap { i, dp in
+            guard let img = images[i] else { return nil }
+            let rect: CGRect
+            switch dp.half {
+            case nil:
+                rect = CGRect(x: 0, y: 0, width: 1, height: 1)
+            case .leading:
+                rect = CGRect(x: rtl ? 0.5 : 0, y: 0, width: 0.5, height: 1)
+            case .trailing:
+                rect = CGRect(x: rtl ? 0 : 0.5, y: 0, width: 0.5, height: 1)
+            }
+            return ZoomablePage.Slot(image: img, contentsRect: rect)
+        }
     }
 
     private func loadIfNeeded() async {
-        guard active, image == nil else { return }
+        guard active, !transition, images.count < unit.count else { return }
+        for (i, dp) in unit.enumerated() where images[i] == nil {
+            guard let img = await load(dp) else {
+                if !Task.isCancelled { failed = true }
+                return
+            }
+            guard !Task.isCancelled else { return }
+            images[i] = img
+            if i == 0 { onImage?(img.size.width / max(img.size.height, 1)) }
+        }
+    }
+
+    private func load(_ dp: ReaderView.DisplayPage) async -> UIImage? {
+        let size = dp.half == nil ? maxPixelSize
+            : CGSize(width: maxPixelSize.width * 2, height: maxPixelSize.height)
+        let ref = dp.ref
         if let local = ref.localURL,
-           let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: maxPixelSize) {
-            if !Task.isCancelled { image = img }
-            return
+           let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size) {
+            return img
         }
         guard let api = app.api, !ref.url.isEmpty, let data = try? await api.data("GET", ref.url) else {
-            if !Task.isCancelled { failed = true }
-            return
+            return nil
         }
-        let decode = Task.detached(priority: .userInitiated) { UIImage.downsampled(data, maxPixelSize: maxPixelSize) }
-        let img = await withTaskCancellationHandler { await decode.value } onCancel: { decode.cancel() }
-        guard !Task.isCancelled else { return }
-        if let img { image = img } else { failed = true }
+        let decode = Task.detached(priority: .userInitiated) { UIImage.downsampled(data, maxPixelSize: size) }
+        return await withTaskCancellationHandler { await decode.value } onCancel: { decode.cancel() }
     }
 }

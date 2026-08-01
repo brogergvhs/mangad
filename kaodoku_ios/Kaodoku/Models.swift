@@ -161,6 +161,8 @@ struct APIErrorBody: Decodable {
 struct UserSettings: Codable {
     var readerMode: String?
     var readerDir: String?
+    var readerPageLayout: String? // single / double / auto
+    var readerSplitWide: Bool?
 }
 
 struct Manga: Decodable, Identifiable, Hashable {

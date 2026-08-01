@@ -3,10 +3,16 @@ import UIKit
 
 // StripReader is a UICollectionView-backed vertical reader with pinch zoom.
 struct StripReader: UIViewRepresentable {
+    struct Jump: Equatable {
+        var id: Int
+        var index: Int
+    }
+
     let pages: [ReaderView.PageRef]
     let startIndex: Int
     let maxPixelSize: CGSize
     let estimateAspect: CGFloat
+    var jump: Jump? = nil
     let loadImage: (ReaderView.PageRef, CGSize) async -> UIImage?
     let onPage: (Int) -> Void
 
@@ -28,6 +34,7 @@ struct StripReader: UIViewRepresentable {
 
     // aspect returns width/height for a page.
     static func aspect(_ ref: ReaderView.PageRef, estimate: CGFloat) -> CGFloat {
+        if ref.transition { return 3 }
         let key = "\(ref.volume ? "v" : "c")\(ref.chapterID)-\(ref.page)"
         return max(ReaderView.aspects[key] ?? estimate, 0.05)
     }
@@ -38,6 +45,7 @@ struct StripReader: UIViewRepresentable {
         weak var view: ZoomStripView?
         private var didResume = false
         private var reported = -1
+        private var lastJumpID = 0
 
         init(_ parent: StripReader) {
             self.parent = parent
@@ -67,6 +75,13 @@ struct StripReader: UIViewRepresentable {
                 syncAspects()
             }
             resumeIfNeeded()
+            if let j = parent.jump, j.id != lastJumpID, didResume, pages.indices.contains(j.index) {
+                lastJumpID = j.id
+                v.scrollToItem(j.index)
+                reported = j.index
+                let onPage = parent.onPage
+                DispatchQueue.main.async { onPage(j.index) }
+            }
         }
 
         private func syncAspects() {
@@ -116,12 +131,8 @@ final class ZoomStripView: UIView, UIScrollViewDelegate {
         collectionView.isUserInteractionEnabled = false // overlay owns all touches
         collectionView.contentInsetAdjustmentBehavior = .never
         overlay.delegate = self
-        overlay.minimumZoomScale = 1
-        overlay.maximumZoomScale = 3
+        overlay.applyReaderZoomDefaults()
         overlay.bouncesZoom = false // zoom bounce doesn't emit scrollViewDidZoom
-        overlay.showsVerticalScrollIndicator = false
-        overlay.showsHorizontalScrollIndicator = false
-        overlay.contentInsetAdjustmentBehavior = .never
         overlay.addSubview(dummy)
         addSubview(collectionView)
         addSubview(overlay)
@@ -171,6 +182,7 @@ final class ZoomStripView: UIView, UIScrollViewDelegate {
     }
 
     func viewForZooming(in s: UIScrollView) -> UIView? { dummy }
+
 }
 
 final class ZoomStripLayout: UICollectionViewLayout {
@@ -242,6 +254,7 @@ final class ZoomStripLayout: UICollectionViewLayout {
 final class StripCell: UICollectionViewCell {
     static let id = "strip"
     private let imageView = UIImageView()
+    private let label = UILabel()
     private var task: Task<Void, Never>?
     private var pageKey: ReaderView.PageRef?
 
@@ -252,6 +265,14 @@ final class StripCell: UICollectionViewCell {
         imageView.frame = contentView.bounds
         imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         contentView.addSubview(imageView)
+        label.textColor = .secondaryLabel
+        label.font = .preferredFont(forTextStyle: .callout)
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.frame = contentView.bounds.insetBy(dx: 16, dy: 0)
+        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        label.isHidden = true
+        contentView.addSubview(label)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -262,6 +283,12 @@ final class StripCell: UICollectionViewCell {
         pageKey = page
         task?.cancel()
         imageView.image = nil
+        label.isHidden = !page.transition
+        imageView.isHidden = page.transition
+        if page.transition {
+            label.text = page.label
+            return
+        }
         task = Task { @MainActor in
             let img = await loader(page, size)
             guard !Task.isCancelled else { return }
