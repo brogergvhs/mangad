@@ -392,6 +392,8 @@ func (a *apiV1) meSettingsGet(w http.ResponseWriter, r *http.Request) {
 	out := userSettingsDTO{
 		ReaderMode: stored["reader.mode"], ReaderDir: stored["reader.dir"],
 		ReaderFit: stored["reader.fit"], Theme: stored[service.SettingUITheme],
+		ReaderPageLayout: stored["reader.page_layout"],
+		ReaderSplitWide:  stored["reader.split_wide"] == "true",
 	}
 	if z, err := strconv.ParseFloat(stored["reader.zoom"], 64); err == nil {
 		out.ReaderZoom = &z
@@ -403,11 +405,13 @@ func (a *apiV1) meSettingsGet(w http.ResponseWriter, r *http.Request) {
 // a half-applied update; empty values clear the stored setting.
 func (a *apiV1) meSettingsPut(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ReaderMode *string  `json:"reader_mode"`
-		ReaderDir  *string  `json:"reader_dir"`
-		ReaderFit  *string  `json:"reader_fit"`
-		ReaderZoom *float64 `json:"reader_zoom"`
-		Theme      *string  `json:"theme"`
+		ReaderMode       *string  `json:"reader_mode"`
+		ReaderDir        *string  `json:"reader_dir"`
+		ReaderFit        *string  `json:"reader_fit"`
+		ReaderZoom       *float64 `json:"reader_zoom"`
+		ReaderPageLayout *string  `json:"reader_page_layout"`
+		ReaderSplitWide  *bool    `json:"reader_split_wide"`
+		Theme            *string  `json:"theme"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
@@ -424,6 +428,12 @@ func (a *apiV1) meSettingsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.ReaderZoom != nil {
 		writes["reader.zoom"] = strconv.FormatFloat(*body.ReaderZoom, 'f', -1, 64)
+	}
+	if body.ReaderPageLayout != nil {
+		writes["reader.page_layout"] = *body.ReaderPageLayout
+	}
+	if body.ReaderSplitWide != nil {
+		writes["reader.split_wide"] = strconv.FormatBool(*body.ReaderSplitWide)
 	}
 	if body.Theme != nil {
 		if *body.Theme != "" {
