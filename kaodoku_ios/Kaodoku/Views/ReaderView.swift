@@ -37,6 +37,8 @@ struct ReaderView: View {
     @State private var scrollID: Int?
     @State private var loadFailed = false
     @State private var extendChapter: Int64?
+    @State private var zoom: CGFloat = 1
+    @State private var zoomBase: CGFloat = 1
 
     // stripLoader fetches a page for the UICollectionView reader: the device
     // CBZ first, then the network, downsampled off the main thread.
@@ -73,7 +75,8 @@ struct ReaderView: View {
                         LazyHStack(spacing: 0) {
                             ForEach(pages.indices, id: \.self) { i in
                                 ReaderPage(ref: pages[i], maxPixelSize: pixels,
-                                           active: abs(i - index) <= 1)
+                                           active: abs(i - index) <= 1,
+                                           zoom: $zoom, zoomBase: $zoomBase)
                                     .containerRelativeFrame([.horizontal, .vertical])
                             }
                         }
@@ -288,9 +291,10 @@ struct ReaderPage: View {
     let ref: ReaderView.PageRef
     let maxPixelSize: CGSize
     var active = true
+    @Binding var zoom: CGFloat
+    @Binding var zoomBase: CGFloat
     @State private var image: UIImage?
     @State private var failed = false
-    @State private var zoom: CGFloat = 1
 
     var body: some View {
         content
@@ -302,19 +306,30 @@ struct ReaderPage: View {
 
     @ViewBuilder private var content: some View {
         if let image {
-            ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .containerRelativeFrame([.horizontal, .vertical])
-                    .scaleEffect(zoom)
+            GeometryReader { g in
+                let fit = Self.fitted(image.size, in: g.size)
+                ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .frame(width: fit.width * zoom, height: fit.height * zoom)
+                        .frame(width: max(fit.width * zoom, g.size.width),
+                               height: max(fit.height * zoom, g.size.height))
+                }
             }
-            .gesture(MagnifyGesture().onChanged { zoom = max(1, min(3, $0.magnification)) })
+            .gesture(MagnifyGesture()
+                .onChanged { zoom = max(1, min(3, zoomBase * $0.magnification)) }
+                .onEnded { _ in zoomBase = zoom })
         } else if failed {
             Label("Page failed to load", systemImage: "exclamationmark.triangle").foregroundStyle(.white)
         } else {
             ProgressView().tint(.white)
         }
+    }
+
+    nonisolated static func fitted(_ img: CGSize, in box: CGSize) -> CGSize {
+        guard img.width > 0, img.height > 0, box.width > 0, box.height > 0 else { return box }
+        let s = min(box.width / img.width, box.height / img.height)
+        return CGSize(width: img.width * s, height: img.height * s)
     }
 
     private func loadIfNeeded() async {
