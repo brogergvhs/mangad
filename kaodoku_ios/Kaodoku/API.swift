@@ -26,6 +26,7 @@ struct APIClient {
         let cfg = URLSessionConfiguration.default
         cfg.urlCache = URLCache(memoryCapacity: 64 << 20, diskCapacity: 512 << 20)
         cfg.requestCachePolicy = .useProtocolCachePolicy
+        cfg.timeoutIntervalForRequest = 15
         return URLSession(configuration: cfg, delegate: redirectGuard, delegateQueue: nil)
     }()
 
@@ -167,6 +168,15 @@ final class RedirectGuard: NSObject, URLSessionTaskDelegate {
         var stripped = request
         stripped.setValue(nil, forHTTPHeaderField: "X-API-Key")
         completionHandler(stripped)
+    }
+}
+
+final class NoRedirect: NSObject, URLSessionTaskDelegate, Sendable {
+    static let shared = NoRedirect()
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }
 

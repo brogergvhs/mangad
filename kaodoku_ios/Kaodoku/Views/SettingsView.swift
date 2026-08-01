@@ -8,6 +8,9 @@ struct SettingsView: View {
     @State private var meta: Meta?
     @State private var confirmClear = false
     @State private var note: String?
+    @State private var localAddr = ""
+    @State private var publicAddr = ""
+    @State private var savingAddrs = false
 
     var body: some View {
         @Bindable var app = app
@@ -35,11 +38,9 @@ struct SettingsView: View {
                             LabeledContent("User", value: me.user.username)
                             LabeledContent("Role", value: me.user.role)
                         }
-                        if let api = app.api {
-                            LabeledContent("Server", value: api.baseURL.absoluteString)
-                        }
                         Button("Sign out", role: .destructive) { app.signOut() }
                     }
+                    serverSection
                     Section("AniList") {
                         if let anilist {
                             LabeledContent("Status", value: anilist.connected ? "Connected" : "Not connected")
@@ -77,6 +78,8 @@ struct SettingsView: View {
             .nordScreen()
             .navigationTitle("Settings")
             .task {
+                localAddr = app.endpoints?.localURL?.absoluteString ?? ""
+                publicAddr = app.endpoints?.publicURL?.absoluteString ?? ""
                 guard let api = app.api else { return }
                 anilist = try? await api.get("/api/v1/anilist")
                 meta = try? await api.get("/api/v1/meta")
@@ -94,10 +97,56 @@ struct SettingsView: View {
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(.thinMaterial, in: Capsule())
                         .padding(.bottom, 12)
-                        .task { try? await Task.sleep(for: .seconds(2)); self.note = nil }
+                        .task { try? await Task.sleep(for: .seconds(4)); self.note = nil }
                 }
             }
         }
+    }
+
+    private var serverSection: some View {
+        @Bindable var app = app
+        return Section("Server") {
+            if let api = app.api {
+                LabeledContent("Active", value: api.baseURL.absoluteString)
+            }
+            TextField("Local address (http://192.168…)", text: $localAddr)
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("Public address (https://…)", text: $publicAddr)
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Picker("Use", selection: Binding(
+                get: { app.endpoints?.mode ?? .auto },
+                set: { app.endpoints?.mode = $0; app.scheduleReselect() }
+            )) {
+                Text("Auto").tag(ServerEndpoints.Mode.auto)
+                Text("Local").tag(ServerEndpoints.Mode.local)
+                Text("Public").tag(ServerEndpoints.Mode.external)
+            }
+            Button(savingAddrs ? "Verifying…" : "Save addresses") {
+                savingAddrs = true
+                Task {
+                    if let error = await app.updateEndpoints(local: localAddr, external: publicAddr) {
+                        note = error
+                    } else {
+                        note = "Addresses saved"
+                        localAddr = app.endpoints?.localURL?.absoluteString ?? ""
+                        publicAddr = app.endpoints?.publicURL?.absoluteString ?? ""
+                    }
+                    savingAddrs = false
+                }
+            }
+            .disabled(savingAddrs || addrsUnchanged)
+            Button("Recheck now") {
+                Task {
+                    await app.reselect()
+                    note = "Using \(app.api?.baseURL.host ?? "?")"
+                }
+            }
+        }
+    }
+
+    private var addrsUnchanged: Bool {
+        localAddr == (app.endpoints?.localURL?.absoluteString ?? "")
+            && publicAddr == (app.endpoints?.publicURL?.absoluteString ?? "")
     }
 
     private var totalSize: Int64 { app.store.titles.reduce(0) { $0 + $1.size } }

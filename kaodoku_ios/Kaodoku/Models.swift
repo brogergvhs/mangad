@@ -9,6 +9,7 @@ struct Meta: Decodable {
     var apiVersion: Int
     var authRequired: Bool
     var features: [String]
+    var instanceId: String?
 }
 
 struct Me: Decodable {

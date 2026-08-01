@@ -44,7 +44,11 @@ struct KaodokuApp: App {
             .tint(Theme.primary)
             .preferredColorScheme(.dark)
             .onChange(of: scenePhase) { _, phase in
-                if phase != .active { Task { await app.store.flush(nil) } }
+                if phase != .active {
+                    Task { await app.store.flush(nil) }
+                } else {
+                    app.scheduleReselect()
+                }
             }
             .alert(app.store.requiresRecovery ? "Offline metadata is unreadable" : "Offline data wasn’t saved",
                    isPresented: Binding(
