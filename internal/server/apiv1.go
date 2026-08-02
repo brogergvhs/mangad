@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"sync"
 	"io"
 	"mime"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
@@ -242,6 +242,7 @@ func (a *apiV1) login(w http.ResponseWriter, r *http.Request) {
 		Username   string `json:"username"`
 		Password   string `json:"password"`
 		DeviceName string `json:"device_name"`
+		DeviceID   string `json:"device_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		v1err(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -256,11 +257,11 @@ func (a *apiV1) login(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "iOS app"
 	}
-	if err := a.svc.Auth().DeleteAPITokensNamed(r.Context(), id, name); err != nil {
+	if err := a.svc.Auth().DeleteAPITokensForDevice(r.Context(), id, body.DeviceID); err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	token, err := a.svc.Auth().CreateAPIToken(r.Context(), id, name, appTokenTTLDays)
+	token, err := a.svc.Auth().CreateAPIToken(r.Context(), id, name, body.DeviceID, appTokenTTLDays)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return

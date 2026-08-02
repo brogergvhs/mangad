@@ -142,7 +142,9 @@ func TestAPIV1ReaderAndLibrary(t *testing.T) {
 	defer closeDB()
 	api := New(svc,
 		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
-		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
 	)
 	tid := strconv.FormatInt(title.ID, 10)
 	cid := strconv.FormatInt(chapter.ID, 10)
@@ -278,7 +280,9 @@ func TestAPIV1Actions(t *testing.T) {
 	defer closeDB()
 	api := New(svc,
 		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
-		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
 	)
 	tid := strconv.FormatInt(titleID, 10)
 
@@ -383,7 +387,9 @@ func TestAPIV1EnqueueOwnership(t *testing.T) {
 
 	api := New(svc,
 		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
-		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
 	)
 	login := func(user, pass string) string {
 		rec := do(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": user, "password": pass})
@@ -530,9 +536,10 @@ func TestAPIV1LoginReplacesDeviceToken(t *testing.T) {
 	api, closeDB := testAPI(t)
 	defer closeDB()
 
-	login := func() string {
+	login := func(deviceID string) string {
 		rec := do(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
-			"username": "boss", "password": "secret123", "device_name": "iOS app · iPhone",
+			"username": "boss", "password": "secret123",
+			"device_name": "iOS app · iPhone", "device_id": deviceID,
 		})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("login status = %d", rec.Code)
@@ -543,12 +550,16 @@ func TestAPIV1LoginReplacesDeviceToken(t *testing.T) {
 		_ = json.NewDecoder(rec.Body).Decode(&out)
 		return out.Token
 	}
-	first := login()
-	second := login()
+	other := login("install-b") // same display name, different install
+	first := login("install-a")
+	second := login("install-a")
+	// Same-install re-login replaces only that install's token.
 	if rec := do(t, api, http.MethodGet, "/api/v1/me", first, nil); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("old device token still valid: %d", rec.Code)
+		t.Fatalf("replaced install token still valid: %d", rec.Code)
 	}
-	if rec := do(t, api, http.MethodGet, "/api/v1/me", second, nil); rec.Code != http.StatusOK {
-		t.Fatalf("new device token rejected: %d", rec.Code)
+	for name, tok := range map[string]string{"other install": other, "new": second} {
+		if rec := do(t, api, http.MethodGet, "/api/v1/me", tok, nil); rec.Code != http.StatusOK {
+			t.Fatalf("%s token rejected: %d", name, rec.Code)
+		}
 	}
 }

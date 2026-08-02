@@ -61,6 +61,8 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 		ctx := auth.WithUser(r.Context(), user)
 		if c, err := r.Cookie("kaodoku_session"); err == nil {
 			ctx = withSessionKey(ctx, c.Value)
+		} else if t := headerToken(r); t != "" {
+			ctx = withSessionKey(ctx, t)
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

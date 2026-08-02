@@ -418,8 +418,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"title_source_matches", "error", "TEXT NOT NULL DEFAULT ''"},
 		{"title_source_matches", "updated_at", "TEXT NOT NULL DEFAULT ''"},
 		{"api_tokens", "expires_at", "TEXT NOT NULL DEFAULT ''"},
+		{"api_tokens", "last_seen_at", "TEXT NOT NULL DEFAULT ''"},
+		{"api_tokens", "device_id", "TEXT NOT NULL DEFAULT ''"},
 		{"chapter_read_progress", "manual", "INTEGER NOT NULL DEFAULT 0"}, // 1 = bulk/AniList mark, not page-by-page reading
-		{"notifications", "user_id", "INTEGER NOT NULL DEFAULT 0"}, // 0 = server-wide
+		{"notifications", "user_id", "INTEGER NOT NULL DEFAULT 0"},        // 0 = server-wide
 	} {
 		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)

@@ -25,29 +25,49 @@ func (u *webUI) sessionsFrag(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := make([]sessionRowView, 0, len(list))
 	for _, s := range list {
-		row := sessionRowView{
+		rows = append(rows, sessionRowView{
 			Username: s.Username,
 			Device:   uaDevice(s.UserAgent),
 			IP:       s.IP,
 			SignedIn: relTime(s.CreatedAt),
 			Online:   time.Since(s.LastSeenAt) < 5*time.Minute,
 			LastSeen: relTime(s.LastSeenAt),
+			Reading:  readingLabel(s.TokenHash),
+		})
+	}
+	if devices, err := u.svc.Auth().ActiveDevices(r.Context()); err == nil {
+		for _, d := range devices {
+			rows = append(rows, sessionRowView{
+				Username: d.Username,
+				Device:   d.Name,
+				IP:       "—",
+				SignedIn: relTime(d.CreatedAt),
+				Online:   time.Since(d.LastSeenAt) < 5*time.Minute,
+				LastSeen: relTime(d.LastSeenAt),
+				Reading:  readingLabel(d.TokenHash),
+			})
 		}
-		if a, ok := presence.Get(s.TokenHash, 3*time.Minute); ok {
-			row.Reading = a.Title
-			if a.ChapterLabel != "" {
-				if row.Reading != "" {
-					row.Reading += ": "
-				}
-				row.Reading += a.ChapterLabel
-			}
-			if a.Total > 0 {
-				row.Reading += fmt.Sprintf(" · p %d/%d", a.Page, a.Total)
-			}
-		}
-		rows = append(rows, row)
 	}
 	u.frag(w, "sessionsCard", rows)
+}
+
+// readingLabel formats a session's reader presence ("Title: Ch 5 · p 3/40").
+func readingLabel(tokenHash string) string {
+	a, ok := presence.Get(tokenHash, 3*time.Minute)
+	if !ok {
+		return ""
+	}
+	out := a.Title
+	if a.ChapterLabel != "" {
+		if out != "" {
+			out += ": "
+		}
+		out += a.ChapterLabel
+	}
+	if a.Total > 0 {
+		out += fmt.Sprintf(" · p %d/%d", a.Page, a.Total)
+	}
+	return out
 }
 
 // uaDevice reduces a user-agent string to "Browser · OS".
