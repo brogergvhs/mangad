@@ -10,6 +10,7 @@ struct StripReader: UIViewRepresentable {
 
     let pages: [ReaderView.PageRef]
     let startIndex: Int
+    var enhanced = false
     let maxPixelSize: CGSize
     let estimateAspect: CGFloat
     var jump: Jump? = nil
@@ -46,6 +47,7 @@ struct StripReader: UIViewRepresentable {
         private var didResume = false
         private var reported = -1
         private var lastJumpID = 0
+        private var enhanced = false
 
         init(_ parent: StripReader) {
             self.parent = parent
@@ -55,6 +57,10 @@ struct StripReader: UIViewRepresentable {
         func apply(_ parent: StripReader) {
             self.parent = parent
             guard let v = view else { return }
+            if parent.enhanced != enhanced {
+                enhanced = parent.enhanced
+                v.collectionView.reloadData()
+            }
             let newPages = parent.pages
             if newPages.count != pages.count {
                 let grew = newPages.count > pages.count

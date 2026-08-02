@@ -55,14 +55,15 @@ struct ReaderView: View {
     // CBZ first, then the network, downsampled off the main thread.
     private var stripLoader: (PageRef, CGSize) async -> UIImage? {
         let api = app.api
+        let enhanced = app.settings.readerImageQuality == "enhanced"
         return { ref, size in
             if let local = ref.localURL,
-               let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size) {
+               let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size, enhanced: enhanced) {
                 return img
             }
             guard let api, !ref.url.isEmpty, let data = try? await api.data("GET", ref.url) else { return nil }
             return await Task.detached(priority: .userInitiated) {
-                UIImage.downsampled(data, maxPixelSize: size)
+                UIImage.downsampled(data, maxPixelSize: size, enhanced: enhanced)
             }.value
         }
     }
@@ -177,6 +178,7 @@ struct ReaderView: View {
                     StripReader(
                         pages: pages,
                         startIndex: index,
+                        enhanced: app.settings.readerImageQuality == "enhanced",
                         maxPixelSize: CGSize(width: pixels.width, height: 8_192),
                         estimateAspect: geo.size.width / max(geo.size.height, 1),
                         jump: stripJump,
@@ -596,11 +598,18 @@ struct ReaderSettingsSheet: View {
                     ))
                 }
                 .disabled(stripActive) // paged-only controls
+                Picker("Quality", selection: Binding(
+                    get: { app.settings.readerImageQuality ?? "standard" },
+                    set: { app.settings.readerImageQuality = $0; app.saveSettings() }
+                )) {
+                    Text("Standard").tag("standard")
+                    Text("Enhanced").tag("enhanced")
+                }
             }
             .navigationTitle("Reader")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.height(380)])
+        .presentationDetents([.height(430)])
     }
 }
 
@@ -621,7 +630,10 @@ struct ReaderPage: View {
     private struct LoadKey: Hashable {
         let active: Bool
         let unit: [ReaderView.DisplayPage]
+        let enhanced: Bool
     }
+
+    private var enhanced: Bool { app.settings.readerImageQuality == "enhanced" }
 
     var body: some View {
         content
@@ -632,7 +644,11 @@ struct ReaderPage: View {
                 images = [:]
                 failed = false
             }
-            .task(id: LoadKey(active: active, unit: unit)) { await loadIfNeeded() }
+            .onChange(of: enhanced) {
+                images = [:]
+                failed = false
+            }
+            .task(id: LoadKey(active: active, unit: unit, enhanced: enhanced)) { await loadIfNeeded() }
     }
 
     @ViewBuilder private var content: some View {
@@ -685,15 +701,18 @@ struct ReaderPage: View {
     private func load(_ dp: ReaderView.DisplayPage) async -> UIImage? {
         let size = dp.half == nil ? maxPixelSize
             : CGSize(width: maxPixelSize.width * 2, height: maxPixelSize.height)
+        let enhanced = enhanced
         let ref = dp.ref
         if let local = ref.localURL,
-           let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size) {
+           let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size, enhanced: enhanced) {
             return img
         }
         guard let api = app.api, !ref.url.isEmpty, let data = try? await api.data("GET", ref.url) else {
             return nil
         }
-        let decode = Task.detached(priority: .userInitiated) { UIImage.downsampled(data, maxPixelSize: size) }
+        let decode = Task.detached(priority: .userInitiated) {
+            UIImage.downsampled(data, maxPixelSize: size, enhanced: enhanced)
+        }
         return await withTaskCancellationHandler { await decode.value } onCancel: { decode.cancel() }
     }
 }

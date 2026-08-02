@@ -1,3 +1,4 @@
+import CoreImage.CIFilterBuiltins
 import Foundation
 import ImageIO
 import UIKit
@@ -517,14 +518,14 @@ final class LocalStore {
     }
 
     // pageImage extracts one page (1-based) from a local CBZ off the main actor.
-    nonisolated static func pageImage(at url: URL, page: Int, maxPixelSize: CGSize) async -> UIImage? {
+    nonisolated static func pageImage(at url: URL, page: Int, maxPixelSize: CGSize, enhanced: Bool = false) async -> UIImage? {
         let load: Task<UIImage?, Never> = Task.detached(priority: .userInitiated) {
             guard let zip = await pageArchives.archive(at: url), !Task.isCancelled else { return nil }
             let images = zip.imageEntries
             guard images.indices.contains(page - 1),
                   let data = zip.data(for: images[page - 1]),
                   !Task.isCancelled else { return nil }
-            return UIImage.downsampled(data, maxPixelSize: maxPixelSize)
+            return UIImage.downsampled(data, maxPixelSize: maxPixelSize, enhanced: enhanced)
         }
         let image = await withTaskCancellationHandler {
             await load.value
@@ -583,16 +584,20 @@ final class LocalStore {
 
 extension UIImage {
     // Decode only the pixels that can be displayed, with a GPU-safe long side.
-    nonisolated static func downsampled(_ data: Data, maxPixelSize: CGSize) -> UIImage? {
+    // enhanced doubles the decode budget and adds a GPU clarity pass.
+    nonisolated static func downsampled(_ data: Data, maxPixelSize: CGSize, enhanced: Bool = false) -> UIImage? {
+        let budget = enhanced
+            ? CGSize(width: maxPixelSize.width * 2, height: maxPixelSize.height * 2)
+            : maxPixelSize
         guard let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
             return nil
         }
-        var maxPixel = min(2_600, max(maxPixelSize.width, maxPixelSize.height))
+        var maxPixel = min(2_600, max(budget.width, budget.height))
         if let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
            let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
            let h = props[kCGImagePropertyPixelHeight] as? CGFloat, w > 0, h > 0 {
             let long = max(w, h)
-            let scale = min(1, min(maxPixelSize.width / w, min(maxPixelSize.height / h, 16_000 / long)))
+            let scale = min(1, min(budget.width / w, min(budget.height / h, 16_000 / long)))
             maxPixel = long * scale
         }
         guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
@@ -601,6 +606,34 @@ extension UIImage {
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixel,
         ] as CFDictionary) else { return nil }
+        if enhanced, let sharp = ImageEnhancer.enhance(cg, targetLong: maxPixel) {
+            return UIImage(cgImage: sharp)
+        }
         return UIImage(cgImage: cg)
+    }
+}
+
+// Metal-backed clarity pass: Lanczos-upscale sources smaller than the decode
+// budget, then a subtle unsharp mask.
+enum ImageEnhancer {
+    nonisolated(unsafe) static let context = CIContext()
+
+    nonisolated static func enhance(_ cg: CGImage, targetLong: CGFloat) -> CGImage? {
+        var image = CIImage(cgImage: cg)
+        let long = CGFloat(max(cg.width, cg.height))
+        let scale = min(2, targetLong / long)
+        if scale > 1.05 {
+            let up = CIFilter.lanczosScaleTransform()
+            up.inputImage = image
+            up.scale = Float(scale)
+            up.aspectRatio = 1
+            image = up.outputImage ?? image
+        }
+        let sharpen = CIFilter.unsharpMask()
+        sharpen.inputImage = image
+        sharpen.radius = 1.2
+        sharpen.intensity = 0.35
+        image = sharpen.outputImage ?? image
+        return context.createCGImage(image, from: image.extent)
     }
 }

@@ -400,8 +400,9 @@ func (a *apiV1) meSettingsGet(w http.ResponseWriter, r *http.Request) {
 	out := userSettingsDTO{
 		ReaderMode: stored["reader.mode"], ReaderDir: stored["reader.dir"],
 		ReaderFit: stored["reader.fit"], Theme: stored[service.SettingUITheme],
-		ReaderPageLayout: stored["reader.page_layout"],
-		ReaderSplitWide:  stored["reader.split_wide"] == "true",
+		ReaderPageLayout:   stored["reader.page_layout"],
+		ReaderSplitWide:    stored["reader.split_wide"] == "true",
+		ReaderImageQuality: stored["reader.image_quality"],
 	}
 	if z, err := strconv.ParseFloat(stored["reader.zoom"], 64); err == nil {
 		out.ReaderZoom = &z
@@ -413,13 +414,14 @@ func (a *apiV1) meSettingsGet(w http.ResponseWriter, r *http.Request) {
 // a half-applied update; empty values clear the stored setting.
 func (a *apiV1) meSettingsPut(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ReaderMode       *string  `json:"reader_mode"`
-		ReaderDir        *string  `json:"reader_dir"`
-		ReaderFit        *string  `json:"reader_fit"`
-		ReaderZoom       *float64 `json:"reader_zoom"`
-		ReaderPageLayout *string  `json:"reader_page_layout"`
-		ReaderSplitWide  *bool    `json:"reader_split_wide"`
-		Theme            *string  `json:"theme"`
+		ReaderMode         *string  `json:"reader_mode"`
+		ReaderDir          *string  `json:"reader_dir"`
+		ReaderFit          *string  `json:"reader_fit"`
+		ReaderZoom         *float64 `json:"reader_zoom"`
+		ReaderPageLayout   *string  `json:"reader_page_layout"`
+		ReaderSplitWide    *bool    `json:"reader_split_wide"`
+		ReaderImageQuality *string  `json:"reader_image_quality"`
+		Theme              *string  `json:"theme"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
@@ -442,6 +444,9 @@ func (a *apiV1) meSettingsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.ReaderSplitWide != nil {
 		writes["reader.split_wide"] = strconv.FormatBool(*body.ReaderSplitWide)
+	}
+	if body.ReaderImageQuality != nil {
+		writes["reader.image_quality"] = *body.ReaderImageQuality
 	}
 	if body.Theme != nil {
 		if *body.Theme != "" {

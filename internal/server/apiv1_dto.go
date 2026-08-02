@@ -238,11 +238,12 @@ func toSourcePickDTO(s sources.Source) sourcePickDTO {
 }
 
 type userSettingsDTO struct {
-	ReaderMode       string   `json:"reader_mode,omitempty"`
-	ReaderDir        string   `json:"reader_dir,omitempty"`
-	ReaderFit        string   `json:"reader_fit,omitempty"`
-	ReaderZoom       *float64 `json:"reader_zoom,omitempty"`
-	ReaderPageLayout string   `json:"reader_page_layout,omitempty"`
-	ReaderSplitWide  bool     `json:"reader_split_wide,omitempty"`
-	Theme            string   `json:"theme,omitempty"`
+	ReaderMode         string   `json:"reader_mode,omitempty"`
+	ReaderDir          string   `json:"reader_dir,omitempty"`
+	ReaderFit          string   `json:"reader_fit,omitempty"`
+	ReaderZoom         *float64 `json:"reader_zoom,omitempty"`
+	ReaderPageLayout   string   `json:"reader_page_layout,omitempty"`
+	ReaderSplitWide    bool     `json:"reader_split_wide,omitempty"`
+	ReaderImageQuality string   `json:"reader_image_quality,omitempty"`
+	Theme              string   `json:"theme,omitempty"`
 }

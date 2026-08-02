@@ -174,6 +174,7 @@ struct UserSettings: Codable {
     var readerDir: String?
     var readerPageLayout: String? // single / double / auto
     var readerSplitWide: Bool?
+    var readerImageQuality: String? // standard / enhanced
 }
 
 struct Manga: Decodable, Identifiable, Hashable {
