@@ -458,6 +458,21 @@ func (a *apiV1) libraryList(w http.ResponseWriter, r *http.Request) {
 		}
 		titles = kept
 	}
+	if rawIDs := q.Get("ids"); rawIDs != "" {
+		want := map[int64]bool{}
+		for _, part := range strings.Split(rawIDs, ",") {
+			if id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64); err == nil {
+				want[id] = true
+			}
+		}
+		kept := titles[:0]
+		for _, t := range titles {
+			if want[t.ID] {
+				kept = append(kept, t)
+			}
+		}
+		titles = kept
+	}
 	titles = filterTitles(titles, libraryControlsFromQuery(q))
 	sortTitles(titles, v1SortKey(q.Get("sort")), q.Get("dir"))
 	total := len(titles)

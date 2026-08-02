@@ -120,14 +120,20 @@ struct TitleActivity: Decodable {
     var busy: Bool { !active.isEmpty || !queued.isEmpty }
 }
 
-struct CollectionItem: Decodable, Identifiable, Hashable {
-    var id: Int64
+struct CollectionEntry: Decodable, Hashable {
+    var id: Int64?
+    var key: String?
     var name: String
-    var kind: String
+    var titleIds: [Int64]
+    var pinnedIds: [Int64]?
+
+    var uid: String { key ?? id.map { "c\($0)" } ?? name }
 }
 
-struct CollectionList: Decodable {
-    var items: [CollectionItem]
+struct CollectionGroups: Decodable {
+    var author: [CollectionEntry]
+    var smart: [CollectionEntry]
+    var custom: [CollectionEntry]
 }
 
 struct Manifest: Decodable {

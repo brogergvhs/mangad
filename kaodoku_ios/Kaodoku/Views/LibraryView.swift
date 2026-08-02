@@ -234,7 +234,7 @@ struct LibraryView: View {
     @State private var includeTags: Set<String> = []
     @State private var excludeTags: Set<String> = []
     @State private var showFilters = false
-    @State private var path: [Int64] = []
+    @State private var path = NavigationPath()
 
     private var filtersActive: Bool {
         fav || !monitored.isEmpty || progress != "all" || content != "all"
@@ -273,6 +273,11 @@ struct LibraryView: View {
                 await load()
             }
             .toolbar {
+                NavigationLink {
+                    CollectionsView()
+                } label: {
+                    Image(systemName: "square.stack.3d.up")
+                }
                 Button {
                     showFilters = true
                 } label: {
@@ -292,8 +297,8 @@ struct LibraryView: View {
         guard let nav else { return }
         app.libraryNav = nil
         switch nav {
-        case .title(let id): path = [id]
-        case .root: path = []
+        case .title(let id): path = NavigationPath([id])
+        case .root: path = NavigationPath()
         }
         Task { await load() }
     }

@@ -179,17 +179,30 @@ func (a *apiV1) ownsCollection(r *http.Request, id int64) bool {
 }
 
 func (a *apiV1) collectionsList(w http.ResponseWriter, r *http.Request) {
-	cols, err := a.svc.CustomCollections(r.Context())
+	author, smart, custom, _, err := buildCollections(r.Context(), a.svc)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	items := make([]collectionDTO, 0, len(cols))
-	for _, c := range cols {
-		items = append(items, collectionDTO{ID: c.ID, Name: c.Name, Kind: "manual"})
-	}
 	pins, _ := a.svc.SmartPins(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "smart_pins": pins})
+	toDTO := func(c collection) collectionDTO {
+		ids := make([]int64, 0, len(c.Members))
+		for _, m := range c.Members {
+			ids = append(ids, m.ID)
+		}
+		return collectionDTO{ID: c.CustomID, Key: c.SmartKey, Name: c.Name,
+			TitleIDs: ids, PinnedIDs: pins[c.SmartKey]}
+	}
+	group := func(cols []collection) []collectionDTO {
+		out := make([]collectionDTO, 0, len(cols))
+		for _, c := range cols {
+			out = append(out, toDTO(c))
+		}
+		return out
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"author": group(author), "smart": group(smart), "custom": group(custom),
+	})
 }
 
 func (a *apiV1) collectionCreate(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +217,7 @@ func (a *apiV1) collectionCreate(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, collectionDTO{ID: id, Name: body.Name, Kind: "manual"})
+	writeJSON(w, http.StatusCreated, collectionDTO{ID: id, Name: body.Name})
 }
 
 func (a *apiV1) collectionGet(w http.ResponseWriter, r *http.Request) {
@@ -213,15 +226,18 @@ func (a *apiV1) collectionGet(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	cols, err := a.svc.CustomCollections(r.Context())
+	_, _, custom, _, err := buildCollections(r.Context(), a.svc)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	for _, c := range cols {
-		if c.ID == id {
-			members, _ := a.svc.CollectionMembers(r.Context())
-			writeJSON(w, http.StatusOK, collectionDTO{ID: c.ID, Name: c.Name, Kind: "manual", TitleIDs: members[id]})
+	for _, c := range custom {
+		if c.CustomID == id {
+			ids := make([]int64, 0, len(c.Members))
+			for _, m := range c.Members {
+				ids = append(ids, m.ID)
+			}
+			writeJSON(w, http.StatusOK, collectionDTO{ID: c.CustomID, Name: c.Name, TitleIDs: ids})
 			return
 		}
 	}
@@ -248,7 +264,7 @@ func (a *apiV1) collectionPatch(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, collectionDTO{ID: id, Name: body.Name, Kind: "manual"})
+	writeJSON(w, http.StatusOK, collectionDTO{ID: id, Name: body.Name})
 }
 
 func (a *apiV1) collectionDelete(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +294,10 @@ func (a *apiV1) collectionMember(add bool) http.HandlerFunc {
 		}
 		if !titleAllowed(r.Context(), a.svc, titleID) {
 			v1err(w, http.StatusNotFound, "not_found", "title not found")
+			return
+		}
+		if !a.ownsCollection(r, id) {
+			v1err(w, http.StatusNotFound, "not_found", "collection not found")
 			return
 		}
 		fn := a.svc.RemoveFromCollection

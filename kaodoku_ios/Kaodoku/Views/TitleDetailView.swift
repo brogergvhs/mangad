@@ -488,25 +488,44 @@ struct TitleSettingsSheet: View {
     }
 }
 
-// CollectionsSheet mirrors the web add-to-collection modal.
 struct CollectionsSheet: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     let titleID: Int64
     var onDone: (String) -> Void
-    @State private var collections: [CollectionItem]?
+    @State private var groups: CollectionGroups?
+
+    private var customs: [CollectionEntry] {
+        (groups?.custom ?? []).filter { !$0.titleIds.contains(titleID) }
+    }
+
+    private var smarts: [CollectionEntry] {
+        (groups?.smart ?? []).filter { !$0.titleIds.contains(titleID) }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if let collections {
-                    if collections.isEmpty {
-                        Text("No collections yet.").foregroundStyle(.secondary)
+                if groups != nil {
+                    if customs.isEmpty && smarts.isEmpty {
+                        Text("No collections to add to.").foregroundStyle(.secondary).nordRows()
                     }
-                    ForEach(collections) { col in
-                        Button(col.name) { add(col) }
+                    if !customs.isEmpty {
+                        Section("Collections") {
+                            ForEach(customs, id: \.uid) { col in
+                                Button(col.name) { add(col) }
+                            }
+                        }
+                        .nordRows()
                     }
-                    .nordRows()
+                    if !smarts.isEmpty {
+                        Section("Pin to series") {
+                            ForEach(smarts, id: \.uid) { col in
+                                Button(col.name) { pin(col) }
+                            }
+                        }
+                        .nordRows()
+                    }
                 } else {
                     ProgressView()
                 }
@@ -517,17 +536,32 @@ struct CollectionsSheet: View {
             .toolbar { Button("Close") { dismiss() } }
             .task {
                 guard let api = app.api else { return }
-                collections = ((try? await api.get("/api/v1/collections") as CollectionList) ?? CollectionList(items: [])).items
+                do {
+                    groups = try await api.get("/api/v1/collections")
+                } catch {
+                    onDone(error.localizedDescription)
+                    dismiss()
+                }
             }
         }
     }
 
-    private func add(_ col: CollectionItem) {
+    private func add(_ col: CollectionEntry) {
+        guard let id = col.id else { return }
+        send("/api/v1/collections/\(id)/titles/\(titleID)", note: "Added to \(col.name)")
+    }
+
+    private func pin(_ col: CollectionEntry) {
+        guard let key = col.key?.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
+        send("/api/v1/collections/smart/\(key)/pins/\(titleID)", note: "Pinned to \(col.name)")
+    }
+
+    private func send(_ path: String, note: String) {
         guard let api = app.api else { return }
         Task {
             do {
-                _ = try await api.data("PUT", "/api/v1/collections/\(col.id)/titles/\(titleID)")
-                onDone("Added to \(col.name)")
+                _ = try await api.data("PUT", path)
+                onDone(note)
             } catch { onDone(error.localizedDescription) }
             dismiss()
         }

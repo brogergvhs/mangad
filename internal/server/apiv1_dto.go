@@ -183,10 +183,11 @@ func toJobDTO(j jobs.Job) jobDTO {
 }
 
 type collectionDTO struct {
-	ID       int64   `json:"id"`
-	Name     string  `json:"name"`
-	Kind     string  `json:"kind"`
-	TitleIDs []int64 `json:"title_ids,omitempty"`
+	ID        int64   `json:"id,omitempty"`
+	Key       string  `json:"key,omitempty"`
+	Name      string  `json:"name"`
+	TitleIDs  []int64 `json:"title_ids"`
+	PinnedIDs []int64 `json:"pinned_ids,omitempty"`
 }
 
 type screenDTO struct {
