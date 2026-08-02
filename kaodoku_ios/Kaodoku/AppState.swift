@@ -3,6 +3,15 @@ import Network
 import Observation
 import UIKit
 
+// SavedServer is a named connection the user can pick on the connect screen.
+struct SavedServer: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var name: String
+    var localURL: URL?
+    var publicURL: URL?
+    var mode: ServerEndpoints.Mode = .auto
+}
+
 // ServerEndpoints stores up to two addresses for the same server: a LAN one
 // and a public one. instanceID  proves they are the same installation.
 struct ServerEndpoints: Codable, Equatable {
@@ -61,6 +70,29 @@ final class AppState {
     private static let endpointsKey = "server_endpoints"
     private static let settingsKey = "user_settings"
     private static let modeOverridesKey = "reader_mode_overrides"
+    private static let savedServersKey = "saved_servers"
+
+    var savedServers: [SavedServer] =
+        (UserDefaults.standard.data(forKey: savedServersKey))
+            .flatMap { try? JSONDecoder().decode([SavedServer].self, from: $0) } ?? []
+
+    func saveServer(_ server: SavedServer) {
+        if let i = savedServers.firstIndex(where: { $0.id == server.id }) {
+            savedServers[i] = server
+        } else {
+            savedServers.append(server)
+        }
+        persistServers()
+    }
+
+    func deleteServer(_ id: UUID) {
+        savedServers.removeAll { $0.id == id }
+        persistServers()
+    }
+
+    private func persistServers() {
+        UserDefaults.standard.set(try? JSONEncoder().encode(savedServers), forKey: Self.savedServersKey)
+    }
     private static let deviceIDKey = "device_id"
 
     // Stable per-install id; the server keeps one active token per install.
@@ -158,13 +190,51 @@ final class AppState {
             errorMessage = "Use HTTPS, or HTTP only for a private local server."
             return false
         }
-        var client = APIClient(baseURL: url, token: nil)
+        guard let id = await authenticate(url: url, username: username, password: password) else { return false }
+        var e = endpoints?.instanceID == id ? endpoints! : ServerEndpoints(instanceID: id)
+        if isPrivateHost(url.host) { e.localURL = url } else { e.publicURL = url }
+        endpoints = e
+        return true
+    }
+
+    func connect(saved: SavedServer, username: String, password: String) async -> Bool {
+        errorMessage = nil
+        let primary: URL?
+        if saved.mode == .external {
+            primary = saved.publicURL
+        } else if let local = saved.localURL, await Self.fetchInstanceID(local) != nil {
+            primary = local
+        } else {
+            primary = saved.publicURL ?? saved.localURL
+        }
+        guard let url = primary, isAllowedServerURL(url) else {
+            errorMessage = "This server has no reachable address for the selected mode."
+            return false
+        }
+        guard let id = await authenticate(url: url, username: username, password: password) else { return false }
+        var local = saved.localURL
+        var external = saved.publicURL
+        for other in [saved.localURL, saved.publicURL] {
+            guard let other, other != url, await Self.fetchInstanceID(other) != id else { continue }
+            if other == saved.localURL { local = nil }
+            if other == saved.publicURL { external = nil }
+        }
+        endpoints = ServerEndpoints(localURL: local, publicURL: external, instanceID: id, mode: saved.mode)
+        return true
+    }
+
+    private func authenticate(url: URL, username: String, password: String) async -> String? {
         do {
+            var client = APIClient(baseURL: url, token: nil)
             let meta: Meta = try await client.get("/api/v1/meta")
+            guard let id = meta.instanceId, !id.isEmpty else {
+                errorMessage = "This server doesn't report an instance ID — update the server."
+                return nil
+            }
             if meta.authRequired {
                 guard !username.isEmpty else {
                     errorMessage = "This server requires a username and password"
-                    return false
+                    return nil
                 }
                 let login: LoginResponse = try await client.post("/api/v1/auth/login", body: [
                     "username": username, "password": password,
@@ -177,53 +247,12 @@ final class AppState {
             } else {
                 me = try await client.get("/api/v1/me")
             }
-            guard let id = meta.instanceId, !id.isEmpty else {
-                errorMessage = "This server doesn't report an instance ID — update the server."
-                return false
-            }
-            var e = endpoints?.instanceID == id ? endpoints! : ServerEndpoints(instanceID: id)
-            if isPrivateHost(url.host) { e.localURL = url } else { e.publicURL = url }
-            endpoints = e
             api = client
-            return true
+            return id
         } catch {
             errorMessage = error.localizedDescription
-            return false
+            return nil
         }
-    }
-
-    // updateEndpoints saves edited addresses from Settings.
-    func updateEndpoints(local localRaw: String, external publicRaw: String) async -> String? {
-        guard var e = endpoints else { return "Not connected" }
-        func parse(_ raw: String) -> URL?? {
-            let raw = raw.trimmingCharacters(in: .whitespaces)
-            if raw.isEmpty { return .some(nil) }
-            var url = URL(string: raw)
-            if url?.scheme == nil { url = URL(string: "https://\(raw)") }
-            guard let url, isAllowedServerURL(url) else { return nil }
-            return url
-        }
-        guard let local = parse(localRaw), let pub = parse(publicRaw) else {
-            return "Use HTTPS, or HTTP only for a private local address."
-        }
-        guard local != nil || pub != nil else { return "At least one address is required" }
-        if let pub, isPrivateHost(pub.host) {
-            return "The public address must be reachable from outside — a private IP only means something on its own network."
-        }
-        for (new, old) in [(local, e.localURL), (pub, e.publicURL)] where new != nil && new != old {
-            guard let got = await Self.fetchInstanceID(new!) else {
-                return "\(new!.host ?? "The address") didn't respond — check the address."
-            }
-            guard got == e.instanceID else {
-                return "\(new!.host ?? "The address") responds, but it's a different server."
-            }
-        }
-        e.localURL = local
-        e.publicURL = pub
-        reselectTask?.cancel()
-        endpoints = e
-        await reselect()
-        return nil
     }
 
     func loadSession() async {

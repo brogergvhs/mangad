@@ -8,9 +8,7 @@ struct SettingsView: View {
     @State private var meta: Meta?
     @State private var confirmClear = false
     @State private var note: String?
-    @State private var localAddr = ""
-    @State private var publicAddr = ""
-    @State private var savingAddrs = false
+    @State private var editingServer: SavedServer?
 
     var body: some View {
         @Bindable var app = app
@@ -79,12 +77,11 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .task {
-                localAddr = app.endpoints?.localURL?.absoluteString ?? ""
-                publicAddr = app.endpoints?.publicURL?.absoluteString ?? ""
                 guard let api = app.api else { return }
                 anilist = try? await api.get("/api/v1/anilist")
                 meta = try? await api.get("/api/v1/meta")
             }
+            .sheet(item: $editingServer) { ServerEditSheet(server: $0) }
             .confirmationDialog("Remove all downloaded chapters from this device?",
                                 isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("Remove all", role: .destructive) {
@@ -105,49 +102,10 @@ struct SettingsView: View {
     }
 
     private var serverSection: some View {
-        @Bindable var app = app
-        return Section("Server") {
-            if let api = app.api {
-                LabeledContent("Active", value: api.baseURL.absoluteString)
-            }
-            TextField("Local address (http://192.168…)", text: $localAddr)
-                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-            TextField("Public address (https://…)", text: $publicAddr)
-                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Picker("Use", selection: Binding(
-                get: { app.endpoints?.mode ?? .auto },
-                set: { app.endpoints?.mode = $0; app.scheduleReselect() }
-            )) {
-                Text("Auto").tag(ServerEndpoints.Mode.auto)
-                Text("Local").tag(ServerEndpoints.Mode.local)
-                Text("Public").tag(ServerEndpoints.Mode.external)
-            }
-            Button(savingAddrs ? "Verifying…" : "Save addresses") {
-                savingAddrs = true
-                Task {
-                    if let error = await app.updateEndpoints(local: localAddr, external: publicAddr) {
-                        note = error
-                    } else {
-                        note = "Addresses saved"
-                        localAddr = app.endpoints?.localURL?.absoluteString ?? ""
-                        publicAddr = app.endpoints?.publicURL?.absoluteString ?? ""
-                    }
-                    savingAddrs = false
-                }
-            }
-            .disabled(savingAddrs || addrsUnchanged)
-            Button("Recheck now") {
-                Task {
-                    await app.reselect()
-                    note = "Using \(app.api?.baseURL.host ?? "?")"
-                }
-            }
+        Section("Servers") {
+            SavedServersList(editing: $editingServer)
+            Button("Add a server", systemImage: "plus") { editingServer = SavedServer(name: "") }
         }
-    }
-
-    private var addrsUnchanged: Bool {
-        localAddr == (app.endpoints?.localURL?.absoluteString ?? "")
-            && publicAddr == (app.endpoints?.publicURL?.absoluteString ?? "")
     }
 
     private var totalSize: Int64 { app.store.titles.reduce(0) { $0 + $1.size } }
