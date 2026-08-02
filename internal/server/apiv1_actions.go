@@ -185,18 +185,10 @@ func (a *apiV1) collectionsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pins, _ := a.svc.SmartPins(r.Context())
-	toDTO := func(c collection) collectionDTO {
-		ids := make([]int64, 0, len(c.Members))
-		for _, m := range c.Members {
-			ids = append(ids, m.ID)
-		}
-		return collectionDTO{ID: c.CustomID, Key: c.SmartKey, Name: c.Name,
-			TitleIDs: ids, PinnedIDs: pins[c.SmartKey]}
-	}
 	group := func(cols []collection) []collectionDTO {
 		out := make([]collectionDTO, 0, len(cols))
 		for _, c := range cols {
-			out = append(out, toDTO(c))
+			out = append(out, toCollectionDTO(c, pins))
 		}
 		return out
 	}
@@ -233,11 +225,7 @@ func (a *apiV1) collectionGet(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, c := range custom {
 		if c.CustomID == id {
-			ids := make([]int64, 0, len(c.Members))
-			for _, m := range c.Members {
-				ids = append(ids, m.ID)
-			}
-			writeJSON(w, http.StatusOK, collectionDTO{ID: c.CustomID, Name: c.Name, TitleIDs: ids})
+			writeJSON(w, http.StatusOK, toCollectionDTO(c, nil))
 			return
 		}
 	}

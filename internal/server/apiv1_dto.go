@@ -188,6 +188,32 @@ type collectionDTO struct {
 	Name      string  `json:"name"`
 	TitleIDs  []int64 `json:"title_ids"`
 	PinnedIDs []int64 `json:"pinned_ids,omitempty"`
+	Chapters  int64   `json:"chapters"`
+	Volumes   int64   `json:"volumes"`
+	Pages     int64   `json:"pages"`
+	SizeBytes int64   `json:"size_bytes"`
+	ReadPct   int64   `json:"read_pct"`
+}
+
+// toCollectionDTO aggregates member stats the same way the web card does.
+func toCollectionDTO(c collection, pins map[string][]int64) collectionDTO {
+	d := collectionDTO{ID: c.CustomID, Key: c.SmartKey, Name: c.Name,
+		TitleIDs: make([]int64, 0, len(c.Members))}
+	if pins != nil {
+		d.PinnedIDs = pins[c.SmartKey]
+	}
+	var total, read int64
+	for _, m := range c.Members {
+		d.TitleIDs = append(d.TitleIDs, m.ID)
+		d.Chapters += m.DiscoveredCount
+		d.Volumes += m.VolumeCount
+		d.Pages += m.Pages + m.VolumePages
+		d.SizeBytes += m.SizeBytes + m.VolumeBytes
+		total += m.DiscoveredCount + m.VolumeCount
+		read += m.ReadCount + m.VolumeReadCount
+	}
+	d.ReadPct = percent(read, total)
+	return d
 }
 
 type screenDTO struct {
