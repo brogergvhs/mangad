@@ -29,6 +29,7 @@ struct DownloadsView: View {
             }
             .nordScreen()
             .navigationTitle("Downloads")
+            .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: Int64.self) { LocalTitleView(titleId: $0) }
             .task { await app.store.prune() }
         }

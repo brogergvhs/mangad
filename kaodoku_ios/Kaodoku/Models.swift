@@ -126,6 +126,11 @@ struct CollectionEntry: Decodable, Hashable {
     var name: String
     var titleIds: [Int64]
     var pinnedIds: [Int64]?
+    var chapters: Int64
+    var volumes: Int64
+    var pages: Int64
+    var sizeBytes: Int64
+    var readPct: Int64
 
     var uid: String { key ?? id.map { "c\($0)" } ?? name }
 }

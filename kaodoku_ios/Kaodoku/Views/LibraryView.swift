@@ -261,7 +261,10 @@ struct LibraryView: View {
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .nordScreen()
             .navigationTitle("Library")
+            .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: Int64.self) { TitleDetailView(titleID: $0) }
+            .navigationDestination(for: CollectionsRoute.self) { _ in CollectionsView() }
+            .navigationDestination(for: CollectionEntry.self) { CollectionMembersView(entry: $0) }
             .onChange(of: app.libraryNav) { _, nav in handleNav(nav) }
             .onAppear { handleNav(app.libraryNav) }
             .searchable(text: $query)
@@ -273,8 +276,8 @@ struct LibraryView: View {
                 await load()
             }
             .toolbar {
-                NavigationLink {
-                    CollectionsView()
+                Button {
+                    path.append(CollectionsRoute())
                 } label: {
                     Image(systemName: "square.stack.3d.up")
                 }

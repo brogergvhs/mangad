@@ -1,6 +1,8 @@
 import SwiftUI
 
-// CollectionsView mirrors the web Collections page: Authors, Smart and Custom collections.
+// Value-routed: view-destination links break in a path-driven stack.
+struct CollectionsRoute: Hashable {}
+
 struct CollectionsView: View {
     @Environment(AppState.self) private var app
     @State private var groups: CollectionGroups?
@@ -22,53 +24,15 @@ struct CollectionsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            Picker("Group", selection: $mode) {
-                Text("Authors").tag("author")
-                Text("Series").tag("smart")
-                Text("Custom").tag("custom")
+        VStack(spacing: 12) {
+            picker
+            ScrollView {
+                content
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            if let entries {
-                if entries.isEmpty {
-                    Text(mode == "custom" ? "No collections yet — create one with +." : "Nothing here yet.")
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 60)
-                }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 16) {
-                    ForEach(entries, id: \.uid) { entry in
-                        NavigationLink(value: entry) {
-                            CollectionCard(entry: entry)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            if entry.id != nil {
-                                Button("Rename", systemImage: "pencil") {
-                                    renameText = entry.name
-                                    renaming = entry
-                                }
-                                Button("Delete", systemImage: "trash", role: .destructive) {
-                                    deleting = entry
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-            } else {
-                ProgressView().padding(.top, 80)
-            }
-            if let error {
-                Text(error).foregroundStyle(Theme.error).font(.footnote).padding()
-            }
+            .refreshable { await load() }
         }
         .nordScreen()
-        .navigationTitle("Collections")
-        .navigationDestination(for: CollectionEntry.self) {
-            CollectionMembersView(entry: $0) { Task { await load() } }
-        }
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if mode == "custom" {
                 Button {
@@ -79,8 +43,7 @@ struct CollectionsView: View {
                 }
             }
         }
-        .task { await load() }
-        .refreshable { await load() }
+        .onAppear { Task { await load() } } // re-fires after pop, unlike .task
         .alert("New collection", isPresented: $showCreate) {
             TextField("Name", text: $newName)
             Button("Create") { create() }
@@ -102,6 +65,53 @@ struct CollectionsView: View {
         }
     }
 
+    private var picker: some View {
+        Picker("Group", selection: $mode) {
+            Text("Authors").tag("author")
+            Text("Series").tag("smart")
+            Text("Custom").tag("custom")
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder private var content: some View {
+        if let entries {
+            if entries.isEmpty {
+                Text(mode == "custom" ? "No collections yet — create one with +." : "Nothing here yet.")
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 60)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 16) {
+                ForEach(entries, id: \.uid) { entry in
+                    NavigationLink(value: entry) {
+                        CollectionCard(entry: entry)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        if entry.id != nil {
+                            Button("Rename", systemImage: "pencil") {
+                                renameText = entry.name
+                                renaming = entry
+                            }
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                deleting = entry
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+        } else {
+            ProgressView().padding(.top, 80)
+        }
+        if let error {
+            Text(error).foregroundStyle(Theme.error).font(.footnote).padding()
+        }
+    }
+
     private func load() async {
         guard let api = app.api else { return }
         do {
@@ -113,39 +123,32 @@ struct CollectionsView: View {
     }
 
     private func create() {
-        guard let api = app.api, !newName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        Task {
-            do {
-                _ = try await api.data("POST", "/api/v1/collections", body: ["name": newName])
-                await load()
-            } catch { self.error = error.localizedDescription }
-        }
+        mutate("POST", "/api/v1/collections", body: ["name": newName])
     }
 
     private func rename() {
-        guard let api = app.api, let id = renaming?.id else { return }
+        guard let id = renaming?.id else { return }
         renaming = nil
-        Task {
-            do {
-                _ = try await api.data("PATCH", "/api/v1/collections/\(id)", body: ["name": renameText])
-                await load()
-            } catch { self.error = error.localizedDescription }
-        }
+        mutate("PATCH", "/api/v1/collections/\(id)", body: ["name": renameText])
     }
 
     private func delete() {
-        guard let api = app.api, let id = deleting?.id else { return }
+        guard let id = deleting?.id else { return }
         deleting = nil
+        mutate("DELETE", "/api/v1/collections/\(id)")
+    }
+
+    private func mutate(_ method: String, _ path: String, body: [String: String]? = nil) {
+        guard let api = app.api else { return }
         Task {
             do {
-                _ = try await api.data("DELETE", "/api/v1/collections/\(id)")
+                _ = try await api.data(method, path, body: body)
                 await load()
             } catch { self.error = error.localizedDescription }
         }
     }
 }
 
-// CollectionCard: cover collage of the first members + name + count.
 struct CollectionCard: View {
     let entry: CollectionEntry
 
@@ -155,36 +158,91 @@ struct CollectionCard: View {
                 .aspectRatio(5 / 7, contentMode: .fit)
                 .overlay { collage }
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.neutral))
             Text(entry.name)
                 .font(.caption)
                 .lineLimit(2, reservesSpace: true)
                 .foregroundStyle(.primary)
-            Text("\(entry.titleIds.count) title\(entry.titleIds.count == 1 ? "" : "s")")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(entry.titleIds.count) titles").lineLimit(1)
+                Spacer(minLength: 8)
+                Text(humanBytes(entry.sizeBytes))
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            HStack {
+                if entry.chapters > 0 { Text("\(entry.chapters) ch") }
+                Spacer(minLength: 4)
+                if entry.volumes > 0 { Text("\(entry.volumes) vol") }
+                Spacer(minLength: 4)
+                if entry.pages > 0 { Text("\(entry.pages) pages") }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            BarView(read: Double(entry.readPct) / 100,
+                    full: entry.chapters + entry.volumes > 0 ? 1 : 0)
         }
     }
 
+    // Web card rules: 2 stack vertically; 2×2 grid; >4 → three covers + "+N".
     @ViewBuilder private var collage: some View {
-        let ids = Array(entry.titleIds.prefix(3))
-        HStack(spacing: 1) {
-            ForEach(ids, id: \.self) { id in
-                Color.clear.overlay {
-                    ServerImage(path: "/api/v1/covers/\(id)",
-                                maxPixelSize: CGSize(width: 240, height: 340))
+        let n = entry.titleIds.count
+        if n == 2 {
+            VStack(spacing: 8) {
+                cover(entry.titleIds[0])
+                cover(entry.titleIds[1])
+            }
+        } else {
+            let shown = n > 4 ? 3 : min(n, 4)
+            let extra = n > 4 ? n - 3 : 0
+            let ids = Array(entry.titleIds.prefix(shown))
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    cell(0, ids)
+                    cell(1, ids)
                 }
-                .clipped()
+                HStack(spacing: 8) {
+                    cell(2, ids)
+                    if extra > 0 {
+                        extraCell(extra)
+                    } else {
+                        cell(3, ids)
+                    }
+                }
             }
         }
     }
+
+    @ViewBuilder private func cell(_ i: Int, _ ids: [Int64]) -> some View {
+        if i < ids.count {
+            cover(ids[i])
+        } else {
+            Color.clear
+        }
+    }
+
+    private func cover(_ id: Int64) -> some View {
+        Color.clear
+            .overlay {
+                ServerImage(path: "/api/v1/covers/\(id)",
+                            maxPixelSize: CGSize(width: 240, height: 340))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func extraCell(_ n: Int) -> some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Theme.neutral)
+            .overlay {
+                Text("+\(n)")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+    }
 }
 
-// CollectionMembersView shows a titles as the standard library grid.
 struct CollectionMembersView: View {
     @Environment(AppState.self) private var app
     let entry: CollectionEntry
-    var onChanged: () -> Void = {}
     @State private var titles: [Title]?
     @State private var error: String?
 
@@ -213,6 +271,7 @@ struct CollectionMembersView: View {
         }
         .nordScreen()
         .navigationTitle(entry.name)
+        .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
 
@@ -239,7 +298,6 @@ struct CollectionMembersView: View {
                 } else {
                     await load() // an unpinned title can still be a relation member
                 }
-                onChanged()
             } catch { self.error = error.localizedDescription }
         }
     }

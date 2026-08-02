@@ -77,6 +77,7 @@ struct SettingsView: View {
             }
             .nordScreen()
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
             .task {
                 localAddr = app.endpoints?.localURL?.absoluteString ?? ""
                 publicAddr = app.endpoints?.publicURL?.absoluteString ?? ""

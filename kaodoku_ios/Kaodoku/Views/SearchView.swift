@@ -39,6 +39,7 @@ struct SearchView: View {
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .nordScreen()
             .navigationTitle(browsing ? "For you" : "Search")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search AniList")
             .toolbar {
                 Button {
