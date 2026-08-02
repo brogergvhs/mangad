@@ -1,12 +1,12 @@
 import Compression
 import Foundation
+@testable import Kaodoku
 import Testing
 import UIKit
-@testable import Kaodoku
 
 private extension Data {
     mutating func le16(_ value: Int) {
-        append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff)])
+        append(contentsOf: [UInt8(value & 0xFF), UInt8(value >> 8 & 0xFF)])
     }
 
     mutating func le32(_ value: Int) {
@@ -31,12 +31,13 @@ private func deflate(_ data: Data) -> Data {
 }
 
 private func archive(flags: Int = 0, method: Int = 0, payload: Data = Data([0x78]), size: Int? = nil,
-                     nameLength: Int = 5, headerOffset: Int = 0) -> Data {
+                     nameLength: Int = 5, headerOffset: Int = 0) -> Data
+{
     let name = Data("1.jpg".utf8)
     let compressed = method == 8 ? deflate(payload) : payload
     let declaredSize = size ?? payload.count
     var zip = Data()
-    zip.le32(0x0403_4b50)
+    zip.le32(0x0403_4B50)
     zip.le16(20)
     zip.le16(flags)
     zip.le16(method)
@@ -49,7 +50,7 @@ private func archive(flags: Int = 0, method: Int = 0, payload: Data = Data([0x78
     zip.append(compressed)
 
     let directoryOffset = zip.count
-    zip.le32(0x0201_4b50)
+    zip.le32(0x0201_4B50)
     zip.le16(20)
     zip.le16(20)
     zip.le16(flags)
@@ -66,7 +67,7 @@ private func archive(flags: Int = 0, method: Int = 0, payload: Data = Data([0x78
     zip.append(name)
 
     let directorySize = zip.count - directoryOffset
-    zip.le32(0x0605_4b50)
+    zip.le32(0x0605_4B50)
     zip.append(Data(repeating: 0, count: 4))
     zip.le16(1)
     zip.le16(1)
@@ -92,7 +93,7 @@ func zipSafety() throws {
     let stored = try #require(valid.imageEntries.first)
     #expect(valid.data(for: stored) == Data([0x78]))
 
-    let payload = Data(repeating: 0x78, count: 1_024)
+    let payload = Data(repeating: 0x78, count: 1024)
     let deflated = try parse(archive(method: 8, payload: payload), in: directory)
     let compressed = try #require(deflated.imageEntries.first)
     #expect(deflated.data(for: compressed) == payload)
@@ -102,9 +103,9 @@ func zipSafety() throws {
         (archive(method: 99), .unsupported),
         (archive(size: 129 << 20), .tooLarge),
         (Data(archive().dropLast()), .invalid),
-        (archive(nameLength: 65_535), .invalid),
-        (archive(headerOffset: 0xffff_fffe), .invalid),
-        (archive(headerOffset: 0xffff_ffff), .zip64),
+        (archive(nameLength: 65535), .invalid),
+        (archive(headerOffset: 0xFFFF_FFFE), .invalid),
+        (archive(headerOffset: 0xFFFF_FFFF), .zip64),
     ] {
         do {
             _ = try parse(data, in: directory)

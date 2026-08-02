@@ -51,7 +51,11 @@ struct CollectionsView: View {
             Button("Cancel", role: .cancel) {}
         }
         .alert("Rename collection", isPresented: Binding(
-            get: { renaming != nil }, set: { if !$0 { renaming = nil } }
+            get: { renaming != nil }, set: {
+                if !$0 {
+                    renaming = nil
+                }
+            }
         )) {
             TextField("Name", text: $renameText)
             Button("Rename") { rename() }
@@ -59,8 +63,13 @@ struct CollectionsView: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Delete \"\(deleting?.name ?? "")\"? Titles stay in the library.",
-                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-                            titleVisibility: .visible) {
+                            isPresented: Binding(get: { deleting != nil }, set: {
+                                if !$0 {
+                                    deleting = nil
+                                }
+                            }),
+                            titleVisibility: .visible)
+        {
             Button("Delete collection", role: .destructive) { delete() }
         }
     }
@@ -170,11 +179,17 @@ struct CollectionCard: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
             HStack {
-                if entry.chapters > 0 { Text("\(entry.chapters) ch") }
+                if entry.chapters > 0 {
+                    Text("\(entry.chapters) ch")
+                }
                 Spacer(minLength: 4)
-                if entry.volumes > 0 { Text("\(entry.volumes) vol") }
+                if entry.volumes > 0 {
+                    Text("\(entry.volumes) vol")
+                }
                 Spacer(minLength: 4)
-                if entry.pages > 0 { Text("\(entry.pages) pages") }
+                if entry.pages > 0 {
+                    Text("\(entry.pages) pages")
+                }
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -183,7 +198,7 @@ struct CollectionCard: View {
         }
     }
 
-    // Web card rules: 2 stack vertically; 2×2 grid; >4 → three covers + "+N".
+    /// Web card rules: 2 stack vertically; 2×2 grid; >4 → three covers + "+N".
     @ViewBuilder private var collage: some View {
         let n = entry.titleIds.count
         if n == 2 {
@@ -281,7 +296,8 @@ struct CollectionMembersView: View {
                 remove(title, path: "/api/v1/collections/\(id)/titles/\(title.id)")
             }
         } else if let key = entry.key, entry.pinnedIds?.contains(title.id) == true,
-                  let escaped = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
+                  let escaped = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        {
             Button("Unpin from series", systemImage: "pin.slash", role: .destructive) {
                 remove(title, path: "/api/v1/collections/smart/\(escaped)/pins/\(title.id)")
             }
@@ -314,7 +330,8 @@ struct CollectionMembersView: View {
         do {
             repeat {
                 let page: TitlePage = try await api.get(
-                    "/api/v1/library?ids=\(csv)&limit=200&cursor=\(cursor)")
+                    "/api/v1/library?ids=\(csv)&limit=200&cursor=\(cursor)"
+                )
                 all += page.items
                 cursor = page.nextCursor
             } while !cursor.isEmpty

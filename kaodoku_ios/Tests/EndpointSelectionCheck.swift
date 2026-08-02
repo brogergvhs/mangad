@@ -1,12 +1,13 @@
 import Foundation
-import Testing
 @testable import Kaodoku
+import Testing
 
 private let local = URL(string: "http://192.168.1.10:8080")!
 private let pub = URL(string: "https://kaodoku.example.com")!
 
 private func endpoints(_ mode: ServerEndpoints.Mode,
-                       local l: URL? = local, public p: URL? = pub) -> ServerEndpoints {
+                       local l: URL? = local, public p: URL? = pub) -> ServerEndpoints
+{
     ServerEndpoints(localURL: l, publicURL: p, instanceID: "abc", mode: mode)
 }
 

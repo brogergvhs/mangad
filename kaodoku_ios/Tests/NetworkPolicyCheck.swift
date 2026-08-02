@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Kaodoku
+import Testing
 
 @Test("Private and public hosts are classified exactly")
 func hostClassification() {
@@ -19,17 +19,17 @@ func hostClassification() {
 }
 
 @Test("Only HTTPS or private HTTP server URLs are allowed")
-func serverURLPolicy() {
-    #expect(isAllowedServerURL(URL(string: "https://example.com")!))
-    #expect(isAllowedServerURL(URL(string: "http://[fd00::1]:8080")!))
-    #expect(!isAllowedServerURL(URL(string: "http://example.com")!))
-    #expect(!isAllowedServerURL(URL(string: "ftp://192.168.1.1")!))
+func serverURLPolicy() throws {
+    #expect(try isAllowedServerURL(#require(URL(string: "https://example.com"))))
+    #expect(try isAllowedServerURL(#require(URL(string: "http://[fd00::1]:8080"))))
+    #expect(try !isAllowedServerURL(#require(URL(string: "http://example.com"))))
+    #expect(try !isAllowedServerURL(#require(URL(string: "ftp://192.168.1.1"))))
 }
 
 @Test("Redirects keep API keys only on the same allowed origin")
-func redirectPolicy() {
-    let source = URL(string: "https://reader.example/api")!
-    let response = HTTPURLResponse(url: source, statusCode: 302, httpVersion: nil, headerFields: nil)!
+func redirectPolicy() throws {
+    let source = try #require(URL(string: "https://reader.example/api"))
+    let response = try #require(HTTPURLResponse(url: source, statusCode: 302, httpVersion: nil, headerFields: nil))
 
     func redirected(to destination: String) -> URLRequest? {
         let task = URLSession.shared.dataTask(with: source)
@@ -45,10 +45,13 @@ func redirectPolicy() {
     }
 
     #expect(redirected(to: "https://reader.example:443/next")?.value(
-        forHTTPHeaderField: "X-API-Key") == "secret")
+        forHTTPHeaderField: "X-API-Key"
+    ) == "secret")
     #expect(redirected(to: "https://other.example/next")?.value(
-        forHTTPHeaderField: "X-API-Key") == nil)
+        forHTTPHeaderField: "X-API-Key"
+    ) == nil)
     #expect(redirected(to: "https://reader.example:8443/next")?.value(
-        forHTTPHeaderField: "X-API-Key") == nil)
+        forHTTPHeaderField: "X-API-Key"
+    ) == nil)
     #expect(redirected(to: "http://example.com/next") == nil)
 }

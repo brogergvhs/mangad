@@ -7,20 +7,26 @@ private actor PageArchiveCache {
     private var archives: [URL: ZipArchive] = [:]
 
     func archive(at url: URL) -> ZipArchive? {
-        if let archive = archives[url] { return archive }
+        if let archive = archives[url] {
+            return archive
+        }
         guard let archive = try? ZipArchive(url: url) else { return nil }
         // Cache the last 8 opened archives (adjacent-chapter navigation).
-        if archives.count >= 8 { archives.removeAll(keepingCapacity: true) }
+        if archives.count >= 8 {
+            archives.removeAll(keepingCapacity: true)
+        }
         archives[url] = archive
         return archive
     }
 
-    func clear() { archives.removeAll() }
+    func clear() {
+        archives.removeAll()
+    }
 }
 
-// LocalStore owns offline content in Documents (visible in the Files app as
-// the "Kaodoku" folder): one directory per title with CBZs inside, an index
-// at .index.json, and a queue of progress marks made while offline.
+/// LocalStore owns offline content in Documents (visible in the Files app as
+/// the "Kaodoku" folder): one directory per title with CBZs inside, an index
+/// at .index.json, and a queue of progress marks made while offline.
 @Observable @MainActor
 final class LocalStore {
     struct Entry: Codable, Identifiable, Sendable {
@@ -36,12 +42,17 @@ final class LocalStore {
         var pageAspects: [Double]
         var volume: Bool
 
-        var isRead: Bool { completed }
-        var isVolume: Bool { volume }
+        var isRead: Bool {
+            completed
+        }
+
+        var isVolume: Bool {
+            volume
+        }
     }
 
-    // TitleInfo snapshots the server title at download time so the Downloads
-    // grid and offline title page can render the web card/detail layout.
+    /// TitleInfo snapshots the server title at download time so the Downloads
+    /// grid and offline title page can render the web card/detail layout.
     struct TitleInfo: Codable, Identifiable, Sendable {
         var id: Int64
         var name: String
@@ -111,12 +122,16 @@ final class LocalStore {
     nonisolated static func indexURL(_ instance: String) -> URL {
         root.appendingPathComponent(instance).appendingPathComponent(".index.json")
     }
+
     nonisolated static func queueURL(_ instance: String) -> URL {
         root.appendingPathComponent(instance).appendingPathComponent(".marks.json")
     }
-    nonisolated private static let pageArchives = PageArchiveCache()
 
-    var requiresRecovery: Bool { corruptIndex || corruptQueue }
+    private nonisolated static let pageArchives = PageArchiveCache()
+
+    var requiresRecovery: Bool {
+        corruptIndex || corruptQueue
+    }
 
     init() {
         try? (Self.root as NSURL).setResourceValue(true, forKey: .isExcludedFromBackupKey)
@@ -136,11 +151,13 @@ final class LocalStore {
         chapters = loaded.chapters
         titleInfo = loaded.titles
         queue = loaded.queue
-        if loaded.needsPersist { persistIndex() }
+        if loaded.needsPersist {
+            persistIndex()
+        }
     }
 
-    // activate swaps the store to another server's downloads, persisting the
-    // current server's queue first.
+    /// activate swaps the store to another server's downloads, persisting the
+    /// current server's queue first.
     func activate(_ id: String?) async {
         guard id != instance else { return }
         await flush(nil)
@@ -196,9 +213,8 @@ final class LocalStore {
         )
     }
 
-
-    // prune drops index entries whose file was deleted through the Files app,
-    // and title records left without chapters.
+    /// prune drops index entries whose file was deleted through the Files app,
+    /// and title records left without chapters.
     func prune() async {
         let entries = Array(chapters.values)
         let scan: Task<[Entry], Never> = Task.detached(priority: .utility) {
@@ -206,7 +222,8 @@ final class LocalStore {
             for entry in entries {
                 guard !Task.isCancelled else { break }
                 if entry.pages == 0
-                    || !FileManager.default.fileExists(atPath: Self.root.appendingPathComponent(entry.path).path) {
+                    || !FileManager.default.fileExists(atPath: Self.root.appendingPathComponent(entry.path).path)
+                {
                     dead.append(entry)
                 }
             }
@@ -223,33 +240,41 @@ final class LocalStore {
             let k = key(entry.id, volume: entry.isVolume)
             guard let current = chapters[k], current.path == entry.path,
                   current.pages == 0
-                    || !FileManager.default.fileExists(
-                        atPath: Self.root.appendingPathComponent(current.path).path
-                    ) else { continue }
+                  || !FileManager.default.fileExists(
+                      atPath: Self.root.appendingPathComponent(current.path).path
+                  ) else { continue }
             chapters.removeValue(forKey: k)
             changed = true
         }
         let liveTitles = Set(chapters.values.map(\.titleId)).union(pending.values.map(\.titleId))
         let orphans = titleInfo.keys.filter { !liveTitles.contains($0) }
-        for id in orphans { titleInfo.removeValue(forKey: id) }
-        if changed || !orphans.isEmpty { persistIndex() }
+        for id in orphans {
+            titleInfo.removeValue(forKey: id)
+        }
+        if changed || !orphans.isEmpty {
+            persistIndex()
+        }
     }
 
-    private func key(_ id: Int64, volume: Bool) -> Int64 { volume ? -id : id }
+    private func key(_ id: Int64, volume: Bool) -> Int64 {
+        volume ? -id : id
+    }
 
-    func isDownloaded(_ id: Int64, volume: Bool = false) -> Bool { url(for: id, volume: volume) != nil }
+    func isDownloaded(_ id: Int64, volume: Bool = false) -> Bool {
+        url(for: id, volume: volume) != nil
+    }
 
     func canStore(bytes: Int64) -> Bool {
         guard bytes > 0,
               let available = try? Self.root.resourceValues(
-                forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+                  forKeys: [.volumeAvailableCapacityForImportantUsageKey]
               ).volumeAvailableCapacityForImportantUsage else { return true }
         let headroom: Int64 = 100 << 20
         return available > headroom && bytes <= available - headroom
     }
 
-    // url returns the local CBZ if the entry exists and the file survived
-    // (users can delete files through the Files app).
+    /// url returns the local CBZ if the entry exists and the file survived
+    /// (users can delete files through the Files app).
     func url(for id: Int64, volume: Bool = false) -> URL? {
         guard let e = chapters[key(id, volume: volume)] else { return nil }
         let u = Self.root.appendingPathComponent(e.path)
@@ -266,11 +291,26 @@ final class LocalStore {
         var info: TitleInfo
         var entries: [Entry]
         var pending: [Pending] = []
-        var chapterEntries: [Entry] { entries.filter { !$0.isVolume } }
-        var volumeEntries: [Entry] { entries.filter(\.isVolume) }
-        var pendingChapters: [Pending] { pending.filter { !$0.volume } }
-        var pendingVolumes: [Pending] { pending.filter(\.volume) }
-        var size: Int64 { entries.reduce(0) { $0 + $1.size } }
+        var chapterEntries: [Entry] {
+            entries.filter { !$0.isVolume }
+        }
+
+        var volumeEntries: [Entry] {
+            entries.filter(\.isVolume)
+        }
+
+        var pendingChapters: [Pending] {
+            pending.filter { !$0.volume }
+        }
+
+        var pendingVolumes: [Pending] {
+            pending.filter(\.volume)
+        }
+
+        var size: Int64 {
+            entries.reduce(0) { $0 + $1.size }
+        }
+
         var coverURL: URL? {
             info.cover.map(LocalStore.root.appendingPathComponent).flatMap {
                 FileManager.default.fileExists(atPath: $0.path) ? $0 : nil
@@ -281,8 +321,12 @@ final class LocalStore {
     var titles: [LocalTitle] {
         var groups = Dictionary(grouping: chapters.values, by: \.titleId)
         let pendingGroups = Dictionary(grouping: pending.values, by: \.titleId)
-        for id in titleInfo.keys where groups[id] == nil { groups[id] = [] }
-        for id in pendingGroups.keys where groups[id] == nil { groups[id] = [] }
+        for id in titleInfo.keys where groups[id] == nil {
+            groups[id] = []
+        }
+        for id in pendingGroups.keys where groups[id] == nil {
+            groups[id] = []
+        }
         return groups
             .map { id, list in
                 LocalTitle(id: id,
@@ -295,7 +339,9 @@ final class LocalStore {
     }
 
     func beginPending(_ items: [Pending]) {
-        for p in items { pending[key(p.id, volume: p.volume)] = p }
+        for p in items {
+            pending[key(p.id, volume: p.volume)] = p
+        }
     }
 
     func markActive(_ id: Int64, volume: Bool) {
@@ -307,8 +353,8 @@ final class LocalStore {
         activeDownload == key(p.id, volume: p.volume)
     }
 
-    // setProgress records the active item's fraction, stepping by 1% to avoid
-    // churning the UI on every byte.
+    /// setProgress records the active item's fraction, stepping by 1% to avoid
+    /// churning the UI on every byte.
     func setProgress(_ fraction: Double) {
         guard fraction >= 1 || abs(fraction - downloadProgress) >= 0.01 else { return }
         downloadProgress = fraction
@@ -323,19 +369,24 @@ final class LocalStore {
         }
     }
 
-    func clearPersistenceError() { persistenceError = nil }
+    func clearPersistenceError() {
+        persistenceError = nil
+    }
 
     func retryPersistence() {
         persistenceError = nil
         persistIndex()
-        if let instance { persist(queue, to: Self.queueURL(instance)) }
+        if let instance {
+            persist(queue, to: Self.queueURL(instance))
+        }
     }
 
     func resetCorruptMetadata() async {
         guard let instance else { return }
         do {
             for (corrupt, url) in [(corruptIndex, Self.indexURL(instance)), (corruptQueue, Self.queueURL(instance))]
-            where corrupt && FileManager.default.fileExists(atPath: url.path) {
+                where corrupt && FileManager.default.fileExists(atPath: url.path)
+            {
                 try FileManager.default.moveItem(
                     at: url,
                     to: url.appendingPathExtension("corrupt-\(UUID().uuidString)")
@@ -347,8 +398,8 @@ final class LocalStore {
         }
     }
 
-    // saveTitle snapshots the title card data and writes the cover image next
-    // to the chapters, so Downloads renders the web layout fully offline.
+    /// saveTitle snapshots the title card data and writes the cover image next
+    /// to the chapters, so Downloads renders the web layout fully offline.
     func saveTitle(_ info: TitleInfo, coverData: Data?) {
         var info = info
         let dir = dirName(titleId: info.id, titleName: info.name)
@@ -360,14 +411,16 @@ final class LocalStore {
                 info.cover = path
             }
         }
-        if info.cover == nil { info.cover = titleInfo[info.id]?.cover }
+        if info.cover == nil {
+            info.cover = titleInfo[info.id]?.cover
+        }
         titleInfo[info.id] = info
         persistIndex()
     }
 
-    // syncRead refreshes local read state from the server's chapter list.
-    // Chapters with queued (unflushed) offline marks are skipped — the local
-    // state is newer than what the server knows.
+    /// syncRead refreshes local read state from the server's chapter list.
+    /// Chapters with queued (unflushed) offline marks are skipped — the local
+    /// state is newer than what the server knows.
     func syncRead(_ list: [ChapterProgress], volumes: Bool = false) {
         var changed = false
         let pending = volumes ? Set(queue.compactMap(\.volumeId)) : Set(queue.map(\.chapterId))
@@ -380,13 +433,16 @@ final class LocalStore {
             chapters[k] = e
             changed = true
         }
-        if changed { persistIndex() }
+        if changed {
+            persistIndex()
+        }
     }
 
-    // save moves a downloaded temp file into place; sanitized names that would
-    // collide across titles or chapters get an id suffix.
+    /// save moves a downloaded temp file into place; sanitized names that would
+    /// collide across titles or chapters get an id suffix.
     func save(file src: URL, chapterID: Int64, titleId: Int64, titleName: String, label: String,
-              readPages: Int = 0, completed: Bool = false, volume: Bool = false) async throws {
+              readPages: Int = 0, completed: Bool = false, volume: Bool = false) async throws
+    {
         defer { try? FileManager.default.removeItem(at: src) }
         let prepared = try await Task.detached(priority: .utility) {
             try Self.prepareArchive(src, thumbnail: volume)
@@ -414,19 +470,21 @@ final class LocalStore {
             id: chapterID, titleId: titleId, titleName: titleName,
             label: label, path: path, pages: prepared.pages, size: prepared.size,
             readPages: readPages, completed: completed, pageAspects: prepared.pageAspects,
-            volume: volume)
+            volume: volume
+        )
         pending.removeValue(forKey: key(chapterID, volume: volume))
         persistIndex()
     }
 
-    // pageAspects reads each page's width/height from the CBZ headers (no full
-    // decode) so the strip reader knows exact page heights.
+    /// pageAspects reads each page's width/height from the CBZ headers (no full
+    /// decode) so the strip reader knows exact page heights.
     nonisolated static func pageAspects(at src: URL) -> [Double] {
         guard let zip = try? ZipArchive(url: src) else { return [] }
         return zip.imageEntries.map { entry -> Double in
             guard let data = zip.data(for: entry),
                   let image = CGImageSourceCreateWithData(
-                    data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                      data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
+                  ),
                   let props = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
                   let w = props[kCGImagePropertyPixelWidth] as? Double,
                   let h = props[kCGImagePropertyPixelHeight] as? Double, w > 0, h > 0 else { return 0 }
@@ -443,7 +501,7 @@ final class LocalStore {
             ? zip.data(for: images[0]).flatMap {
                 UIImage.downsampled($0, maxPixelSize: CGSize(width: 240, height: 240))
             }
-                .flatMap { $0.jpegData(compressionQuality: 0.7) }
+            .flatMap { $0.jpegData(compressionQuality: 0.7) }
             : nil
         let size = (try? FileManager.default.attributesOfItem(atPath: src.path))?[.size] as? Int64 ?? 0
         return PreparedArchive(pages: images.count, size: size, pageAspects: aspects, thumbnail: jpeg)
@@ -477,11 +535,13 @@ final class LocalStore {
     }
 
     func deleteTitle(_ titleId: Int64) {
-        for e in chapters.values where e.titleId == titleId { delete(e.id, volume: e.isVolume) }
+        for e in chapters.values where e.titleId == titleId {
+            delete(e.id, volume: e.isVolume)
+        }
     }
 
-    // recordMark batches server progress and throttles durable local progress
-    // writes while keeping every distinct chapter page used by read metrics.
+    /// recordMark batches server progress and throttles durable local progress
+    /// writes while keeping every distinct chapter page used by read metrics.
     func recordMark(id: Int64, volume: Bool, page: Int, totalPages: Int) {
         var changed = false
         if var e = chapters[key(id, volume: volume)] {
@@ -517,8 +577,8 @@ final class LocalStore {
         }
     }
 
-    // flush sends progress through the batch endpoint and keeps it on failure.
-    // Marks queued during the request survive, and concurrent flushes are skipped.
+    /// flush sends progress through the batch endpoint and keeps it on failure.
+    /// Marks queued during the request survive, and concurrent flushes are skipped.
     func flush(_ api: APIClient?) async {
         progressSaveTask?.cancel()
         progressSaveTask = nil
@@ -536,11 +596,13 @@ final class LocalStore {
         if (try? await api.data("POST", "/api/v1/reader/progress/batch", body: Batch(entries: sent))) != nil {
             let sent = Set(sent)
             queue.removeAll { sent.contains($0) }
-            if let instance { persist(queue, to: Self.queueURL(instance)) }
+            if let instance {
+                persist(queue, to: Self.queueURL(instance))
+            }
         }
     }
 
-    // pageImage extracts one page (1-based) from a local CBZ off the main actor.
+    /// pageImage extracts one page (1-based) from a local CBZ off the main actor.
     nonisolated static func pageImage(at url: URL, page: Int, maxPixelSize: CGSize, enhanced: Bool = false) async -> UIImage? {
         let load: Task<UIImage?, Never> = Task.detached(priority: .userInitiated) {
             guard let zip = await pageArchives.archive(at: url), !Task.isCancelled else { return nil }
@@ -608,8 +670,8 @@ final class LocalStore {
 }
 
 extension UIImage {
-    // Decode only the pixels that can be displayed, with a GPU-safe long side.
-    // enhanced doubles the decode budget and adds a GPU clarity pass.
+    /// Decode only the pixels that can be displayed, with a GPU-safe long side.
+    /// enhanced doubles the decode budget and adds a GPU clarity pass.
     nonisolated static func downsampled(_ data: Data, maxPixelSize: CGSize, enhanced: Bool = false) -> UIImage? {
         let budget = enhanced
             ? CGSize(width: maxPixelSize.width * 2, height: maxPixelSize.height * 2)
@@ -617,12 +679,13 @@ extension UIImage {
         guard let src = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
             return nil
         }
-        var maxPixel = min(2_600, max(budget.width, budget.height))
+        var maxPixel = min(2600, max(budget.width, budget.height))
         if let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
            let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
-           let h = props[kCGImagePropertyPixelHeight] as? CGFloat, w > 0, h > 0 {
+           let h = props[kCGImagePropertyPixelHeight] as? CGFloat, w > 0, h > 0
+        {
             let long = max(w, h)
-            let scale = min(1, min(budget.width / w, min(budget.height / h, 16_000 / long)))
+            let scale = min(1, min(budget.width / w, min(budget.height / h, 16000 / long)))
             maxPixel = long * scale
         }
         guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
@@ -638,8 +701,8 @@ extension UIImage {
     }
 }
 
-// Metal-backed clarity pass: Lanczos-upscale sources smaller than the decode
-// budget, then a subtle unsharp mask.
+/// Metal-backed clarity pass: Lanczos-upscale sources smaller than the decode
+/// budget, then a subtle unsharp mask.
 enum ImageEnhancer {
     nonisolated(unsafe) static let context = CIContext()
 

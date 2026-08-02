@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// ZoomablePage renders one paged display unit inside a native UIScrollView pinch-zoom.
+/// ZoomablePage renders one paged display unit inside a native UIScrollView pinch-zoom.
 struct ZoomablePage: UIViewRepresentable {
     struct Slot: Equatable {
         let image: UIImage
@@ -11,9 +11,11 @@ struct ZoomablePage: UIViewRepresentable {
     let slots: [Slot] // in visual left-to-right order
     @Binding var zoom: CGFloat
 
-    func makeUIView(context: Context) -> ZoomPageUIView { ZoomPageUIView() }
+    func makeUIView(context _: Context) -> ZoomPageUIView {
+        ZoomPageUIView()
+    }
 
-    func updateUIView(_ v: ZoomPageUIView, context: Context) {
+    func updateUIView(_ v: ZoomPageUIView, context _: Context) {
         v.onZoomEnd = { zoom = $0 }
         v.set(slots: slots)
         v.applyZoom(zoom)
@@ -37,7 +39,10 @@ final class ZoomPageUIView: UIView, UIScrollViewDelegate {
         addSubview(scroll)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
     func set(slots: [ZoomablePage.Slot]) {
         guard slots != current else { return }
@@ -69,8 +74,8 @@ final class ZoomPageUIView: UIView, UIScrollViewDelegate {
         layoutContent()
     }
 
-    // layoutContent fits the combined slots into the view at zoom 1, then
-    // restores the current zoom on top.
+    /// layoutContent fits the combined slots into the view at zoom 1, then
+    /// restores the current zoom on top.
     private func layoutContent() {
         let combined = aspects.reduce(0, +)
         guard combined > 0, bounds.width > 0, bounds.height > 0 else { return }
@@ -97,11 +102,15 @@ final class ZoomPageUIView: UIView, UIScrollViewDelegate {
         scroll.contentInset = UIEdgeInsets(top: dy, left: dx, bottom: dy, right: dx)
     }
 
-    func viewForZooming(in s: UIScrollView) -> UIView? { content }
+    func viewForZooming(in _: UIScrollView) -> UIView? {
+        content
+    }
 
-    func scrollViewDidZoom(_ s: UIScrollView) { centerContent() }
+    func scrollViewDidZoom(_: UIScrollView) {
+        centerContent()
+    }
 
-    func scrollViewDidEndZooming(_ s: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+    func scrollViewDidEndZooming(_: UIScrollView, with _: UIView?, atScale scale: CGFloat) {
         onZoomEnd?(scale)
     }
 }

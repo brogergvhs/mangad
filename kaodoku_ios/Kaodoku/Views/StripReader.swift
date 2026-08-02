@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// StripReader is a UICollectionView-backed vertical reader with pinch zoom.
+/// StripReader is a UICollectionView-backed vertical reader with pinch zoom.
 struct StripReader: UIViewRepresentable {
     struct Jump: Equatable {
         var id: Int
@@ -17,7 +17,9 @@ struct StripReader: UIViewRepresentable {
     let loadImage: (ReaderView.PageRef, CGSize) async -> UIImage?
     let onPage: (Int) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
 
     func makeUIView(context: Context) -> ZoomStripView {
         let v = ZoomStripView()
@@ -29,13 +31,15 @@ struct StripReader: UIViewRepresentable {
         return v
     }
 
-    func updateUIView(_ v: ZoomStripView, context: Context) {
+    func updateUIView(_: ZoomStripView, context: Context) {
         context.coordinator.apply(self)
     }
 
-    // aspect returns width/height for a page.
+    /// aspect returns width/height for a page.
     static func aspect(_ ref: ReaderView.PageRef, estimate: CGFloat) -> CGFloat {
-        if ref.transition { return 3 }
+        if ref.transition {
+            return 3
+        }
         let key = "\(ref.volume ? "v" : "c")\(ref.chapterID)-\(ref.page)"
         return max(ReaderView.aspects[key] ?? estimate, 0.05)
     }
@@ -51,7 +55,7 @@ struct StripReader: UIViewRepresentable {
 
         init(_ parent: StripReader) {
             self.parent = parent
-            self.pages = parent.pages
+            pages = parent.pages
         }
 
         func apply(_ parent: StripReader) {
@@ -68,9 +72,9 @@ struct StripReader: UIViewRepresentable {
                 let old = pages.count
                 pages = newPages
                 syncAspects()
-                if grew && didResume {
+                if grew, didResume {
                     v.collectionView.performBatchUpdates {
-                        v.collectionView.insertItems(at: (old..<newPages.count).map { IndexPath(item: $0, section: 0) })
+                        v.collectionView.insertItems(at: (old ..< newPages.count).map { IndexPath(item: $0, section: 0) })
                     }
                 } else {
                     v.collectionView.reloadData()
@@ -109,7 +113,9 @@ struct StripReader: UIViewRepresentable {
             parent.onPage(i)
         }
 
-        func collectionView(_ cv: UICollectionView, numberOfItemsInSection section: Int) -> Int { pages.count }
+        func collectionView(_: UICollectionView, numberOfItemsInSection _: Int) -> Int {
+            pages.count
+        }
 
         func collectionView(_ cv: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
             let cell = cv.dequeueReusableCell(withReuseIdentifier: StripCell.id, for: indexPath) as! StripCell
@@ -121,8 +127,8 @@ struct StripReader: UIViewRepresentable {
     }
 }
 
-// ZoomStripView pairs the rendering collection view with the gesture-owning
-// overlay scroll view.
+/// ZoomStripView pairs the rendering collection view with the gesture-owning
+/// overlay scroll view.
 final class ZoomStripView: UIView, UIScrollViewDelegate {
     let layout = ZoomStripLayout()
     private(set) lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
@@ -144,7 +150,10 @@ final class ZoomStripView: UIView, UIScrollViewDelegate {
         addSubview(overlay)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -187,15 +196,21 @@ final class ZoomStripView: UIView, UIScrollViewDelegate {
         layout.invalidateLayout()
     }
 
-    func viewForZooming(in s: UIScrollView) -> UIView? { dummy }
-
+    func viewForZooming(in _: UIScrollView) -> UIView? {
+        dummy
+    }
 }
 
 final class ZoomStripLayout: UICollectionViewLayout {
     var scale: CGFloat = 1
     var aspects: [CGFloat] = [] {
-        didSet { if aspects != oldValue { invalidateLayout() } }
+        didSet {
+            if aspects != oldValue {
+                invalidateLayout()
+            }
+        }
     }
+
     private var frames: [CGRect] = []
     private var size: CGSize = .zero
     private var lastWidth: CGFloat = 0
@@ -219,7 +234,9 @@ final class ZoomStripLayout: UICollectionViewLayout {
         size = CGSize(width: width, height: y)
     }
 
-    override var collectionViewContentSize: CGSize { size }
+    override var collectionViewContentSize: CGSize {
+        size
+    }
 
     override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
         guard !frames.isEmpty else { return [] }
@@ -281,10 +298,14 @@ final class StripCell: UICollectionViewCell {
         contentView.addSubview(label)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
     func load(_ page: ReaderView.PageRef, size: CGSize,
-              using loader: @escaping (ReaderView.PageRef, CGSize) async -> UIImage?) {
+              using loader: @escaping (ReaderView.PageRef, CGSize) async -> UIImage?)
+    {
         guard page != pageKey else { return }
         pageKey = page
         task?.cancel()

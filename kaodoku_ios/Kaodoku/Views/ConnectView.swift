@@ -1,6 +1,6 @@
 import SwiftUI
 
-// SavedServersList renders the saved servers, marking the active one.
+/// SavedServersList renders the saved servers, marking the active one.
 struct SavedServersList: View {
     @Environment(AppState.self) private var app
     var onSelect: ((SavedServer) -> Void)? = nil
@@ -105,10 +105,18 @@ struct ServerLoginSheet: View {
                         Task {
                             let ok = await app.connect(saved: server, username: username, password: password)
                             busy = false
-                            if ok { dismiss() } else { error = app.errorMessage; app.errorMessage = nil }
+                            if ok {
+                                dismiss()
+                            } else {
+                                error = app.errorMessage; app.errorMessage = nil
+                            }
                         }
                     } label: {
-                        if busy { ProgressView() } else { Text("Connect") }
+                        if busy {
+                            ProgressView()
+                        } else {
+                            Text("Connect")
+                        }
                     }
                     .disabled(busy)
                 }
@@ -251,9 +259,13 @@ struct ServerEditSheet: View {
 
     private func parse(_ raw: String) -> URL?? {
         let raw = raw.trimmingCharacters(in: .whitespaces)
-        if raw.isEmpty { return .some(nil) }
+        if raw.isEmpty {
+            return .some(nil)
+        }
         var url = URL(string: raw)
-        if url?.scheme == nil { url = URL(string: "https://\(raw)") }
+        if url?.scheme == nil {
+            url = URL(string: "https://\(raw)")
+        }
         guard let url, isAllowedServerURL(url) else { return nil }
         return url
     }
@@ -279,7 +291,11 @@ struct ManualConnectForm: View {
                 busy = false
             }
         } label: {
-            if busy { ProgressView() } else { Text("Connect") }
+            if busy {
+                ProgressView()
+            } else {
+                Text("Connect")
+            }
         }
         .disabled(server.isEmpty || busy)
     }

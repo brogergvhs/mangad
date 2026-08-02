@@ -20,7 +20,9 @@ struct TitleDetailView: View {
     @State private var activity: TitleActivity?
     @State private var pollGen = 0
 
-    private var canManage: Bool { app.me?.can("library.manage") == true }
+    private var canManage: Bool {
+        app.me?.can("library.manage") == true
+    }
 
     var body: some View {
         List {
@@ -67,7 +69,8 @@ struct TitleDetailView: View {
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 guard let api = app.api,
                       let latest: TitleActivity = try? await api.get(
-                        "/api/v1/library/\(titleID)/activity") else { return }
+                          "/api/v1/library/\(titleID)/activity"
+                      ) else { return }
                 activity = latest
                 if !latest.busy {
                     await load()
@@ -90,7 +93,9 @@ struct TitleDetailView: View {
         }
         .sheet(isPresented: $showRange) {
             RangeSheet(title: "Download range", action: "Download to device") { from, to in
-                if let p = progress { downloadToDevice(p) { $0.numberMain >= from && $0.numberMain <= to } }
+                if let p = progress {
+                    downloadToDevice(p) { $0.numberMain >= from && $0.numberMain <= to }
+                }
             }
         }
         .sheet(isPresented: $showSources) {
@@ -105,7 +110,9 @@ struct TitleDetailView: View {
                 let todo = p.chapters.filter {
                     app.store.isDownloaded($0.id) && $0.numberMain >= from && $0.numberMain <= to
                 }
-                for ch in todo { app.store.delete(ch.id) }
+                for ch in todo {
+                    app.store.delete(ch.id)
+                }
 
                 note = "Removed \(todo.count) chapters from device"
             }
@@ -139,8 +146,8 @@ struct TitleDetailView: View {
         }
     }
 
-    // header mirrors the web title page on mobile: centered cover on top, then
-    // title, progress block, and the mangaDetail badges/description/genres.
+    /// header mirrors the web title page on mobile: centered cover on top, then
+    /// title, progress block, and the mangaDetail badges/description/genres.
     private func header(_ p: TitleReadProgress) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -159,8 +166,8 @@ struct TitleDetailView: View {
         }
     }
 
-    // contentHeader is the web titleContent header: tab switcher plus the
-    // full-width Read/Continue button above the list.
+    /// contentHeader is the web titleContent header: tab switcher plus the
+    /// full-width Read/Continue button above the list.
     @ViewBuilder private var activityBanner: some View {
         if let a = activity, a.busy {
             HStack(spacing: 8) {
@@ -211,7 +218,8 @@ struct TitleDetailView: View {
             }
             if volumes ? p.title.volumeCount > 0 : p.title.completedCount > 0,
                let next = p.chapters.first(where: { $0.id == p.nextChapterId })
-                   ?? p.chapters.first(where: { volumes || $0.downloaded }) {
+               ?? p.chapters.first(where: { volumes || $0.downloaded })
+            {
                 Button {
                     readerChapter = next
                 } label: {
@@ -232,8 +240,8 @@ struct TitleDetailView: View {
         return started ? "Continue reading" : "Read"
     }
 
-    // actionsMenu mirrors the web title dropdown, plus the device-download
-    // scopes; management actions stay gated like the web.
+    /// actionsMenu mirrors the web title dropdown, plus the device-download
+    /// scopes; management actions stay gated like the web.
     private func actionsMenu(_ p: TitleReadProgress) -> some View {
         Menu {
             Menu {
@@ -266,7 +274,8 @@ struct TitleDetailView: View {
                 Divider()
                 if p.title.linked, p.title.missingCount > 0 || p.title.failedCount > 0 {
                     Button("Download missing" + (p.title.failedCount > 0 ? " · \(p.title.failedCount) failed" : ""),
-                           systemImage: "arrow.down.circle") {
+                           systemImage: "arrow.down.circle")
+                    {
                         enqueue("download_missing", done: "Download queued")
                     }
                 }
@@ -285,7 +294,8 @@ struct TitleDetailView: View {
                     }
                 }
                 Button(p.title.monitored ? "Stop monitoring" : "Monitor",
-                       systemImage: p.title.monitored ? "bell.slash" : "bell") {
+                       systemImage: p.title.monitored ? "bell.slash" : "bell")
+                {
                     patch(["monitored": JSONValue.bool(!p.title.monitored)],
                           done: p.title.monitored ? "Monitoring off" : "Monitoring on")
                 }
@@ -300,8 +310,8 @@ struct TitleDetailView: View {
         }
     }
 
-    // downloadToDevice pulls every server-downloaded chapter matching the
-    // scope that isn't on the device yet, then snapshots the title card.
+    /// downloadToDevice pulls every server-downloaded chapter matching the
+    /// scope that isn't on the device yet, then snapshots the title card.
     private func downloadToDevice(_ p: TitleReadProgress, scope: @escaping (ChapterProgress) -> Bool) {
         guard let api = app.api, !downloading else { return }
         let volumes = volumes
@@ -338,7 +348,8 @@ struct TitleDetailView: View {
                 let store = app.store
                 do {
                     let tmp = try await api.download("/api/v1/reader/\(kind)/\(ch.id)/archive",
-                                                     expectedBytes: ch.bytes) { fraction in
+                                                     expectedBytes: ch.bytes)
+                    { fraction in
                         Task { @MainActor in store.setProgress(fraction) }
                     }
                     try await app.store.save(file: tmp, chapterID: ch.id, titleId: titleID,
@@ -361,12 +372,14 @@ struct TitleDetailView: View {
         activity = try? await api.get("/api/v1/library/\(titleID)/activity")
         if let p = progress, !autoTabbed {
             autoTabbed = true
-            if p.title.discoveredCount == 0 && p.title.volumeCount > 0 {
+            if p.title.discoveredCount == 0, p.title.volumeCount > 0 {
                 volumes = true
                 return
             }
         }
-        if let p = progress { app.store.syncRead(p.chapters, volumes: volumes) }
+        if let p = progress {
+            app.store.syncRead(p.chapters, volumes: volumes)
+        }
         if canManage, !checkedAniList {
             checkedAniList = true
             if let status: AniListStatus = try? await api.get("/api/v1/anilist") {
@@ -389,7 +402,7 @@ struct TitleDetailView: View {
         Task {
             do {
                 _ = try await api.data("DELETE",
-                    "/api/v1/library/\(titleID)?delete_files=\(deleteFiles ? 1 : 0)&delete_anilist=\(deleteAniList ? 1 : 0)")
+                                       "/api/v1/library/\(titleID)?delete_files=\(deleteFiles ? 1 : 0)&delete_anilist=\(deleteAniList ? 1 : 0)")
                 app.tab = 0
                 app.libraryNav = .root
             } catch { note = error.localizedDescription }
@@ -424,7 +437,7 @@ struct TitleDetailView: View {
     }
 }
 
-// RangeSheet mirrors the web bulk from/to dropdowns (download, delete, …).
+/// RangeSheet mirrors the web bulk from/to dropdowns (download, delete, …).
 struct RangeSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
@@ -461,7 +474,7 @@ struct RangeSheet: View {
     }
 }
 
-// TitleSettingsSheet mirrors the web title-settings modal (refresh interval).
+/// TitleSettingsSheet mirrors the web title-settings modal (refresh interval).
 struct TitleSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State var interval: String
@@ -568,7 +581,7 @@ struct CollectionsSheet: View {
     }
 }
 
-// RemoveTitleSheet mirrors the web remove-title modal with both checkboxes.
+/// RemoveTitleSheet mirrors the web remove-title modal with both checkboxes.
 struct RemoveTitleSheet: View {
     @Environment(\.dismiss) private var dismiss
     let name: String
@@ -616,8 +629,8 @@ struct RemoveTitleSheet: View {
     }
 }
 
-// TitleProgressBlock is the web progressBar partial: two-color bar plus the
-// "X/Y read · N missing · size · vols" line (volumes fallback included).
+/// TitleProgressBlock is the web progressBar partial: two-color bar plus the
+/// "X/Y read · N missing · size · vols" line (volumes fallback included).
 struct TitleProgressBlock: View {
     let title: Title
 
@@ -637,26 +650,40 @@ struct TitleProgressBlock: View {
 
     private var line: String {
         var parts = ["\(title.readCount)/\(title.discoveredCount) read"]
-        if title.missingCount > 0 { parts.append("\(title.missingCount) missing") }
-        if title.failedCount > 0 { parts.append("\(title.failedCount) failed") }
+        if title.missingCount > 0 {
+            parts.append("\(title.missingCount) missing")
+        }
+        if title.failedCount > 0 {
+            parts.append("\(title.failedCount) failed")
+        }
         parts.append(humanBytes(title.sizeBytes))
-        if title.volumeCount > 0 { parts.append("\(title.volumeReadCount)/\(title.volumeCount) vols") }
+        if title.volumeCount > 0 {
+            parts.append("\(title.volumeReadCount)/\(title.volumeCount) vols")
+        }
         return parts.joined(separator: " · ")
     }
 }
 
-// MangaDetailBlock is the web mangaDetail cell: badge row, description,
-// authors/AniList-counts line, genre chips.
+/// MangaDetailBlock is the web mangaDetail cell: badge row, description,
+/// authors/AniList-counts line, genre chips.
 struct MangaDetailBlock: View {
     let manga: MangaDetail
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             WrapLayout {
-                if let s = manga.status, !s.isEmpty { Badge(text: s, style: .soft) }
-                if let f = manga.format, !f.isEmpty { Badge(text: f) }
-                if let sc = manga.averageScore, sc > 0 { Badge(text: "★ \(sc)%", style: .warning) }
-                if let y = manga.year, y > 0 { Badge(text: String(y)) }
+                if let s = manga.status, !s.isEmpty {
+                    Badge(text: s, style: .soft)
+                }
+                if let f = manga.format, !f.isEmpty {
+                    Badge(text: f)
+                }
+                if let sc = manga.averageScore, sc > 0 {
+                    Badge(text: "★ \(sc)%", style: .warning)
+                }
+                if let y = manga.year, y > 0 {
+                    Badge(text: String(y))
+                }
             }
             if let d = manga.description, !d.isEmpty {
                 Text(d.strippedHTML).font(.subheadline).foregroundStyle(.secondary)
@@ -674,14 +701,20 @@ struct MangaDetailBlock: View {
 
     private var metaLine: String {
         var parts: [String] = []
-        if let a = manga.authors, !a.isEmpty { parts.append("By \(a.joined(separator: ", "))") }
-        if let c = manga.chapters, c > 0 { parts.append("\(c) chapters (AniList)") }
-        if let v = manga.volumes, v > 0 { parts.append("\(v) volumes (AniList)") }
+        if let a = manga.authors, !a.isEmpty {
+            parts.append("By \(a.joined(separator: ", "))")
+        }
+        if let c = manga.chapters, c > 0 {
+            parts.append("\(c) chapters (AniList)")
+        }
+        if let v = manga.volumes, v > 0 {
+            parts.append("\(v) volumes (AniList)")
+        }
         return parts.joined(separator: " · ")
     }
 }
 
-// JSONValue lets small mixed-type bodies stay one-liners.
+/// JSONValue lets small mixed-type bodies stay one-liners.
 enum JSONValue: Encodable {
     case string(String)
     case int(Int64)
@@ -690,9 +723,9 @@ enum JSONValue: Encodable {
     func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         switch self {
-        case .string(let v): try c.encode(v)
-        case .int(let v): try c.encode(v)
-        case .bool(let v): try c.encode(v)
+        case let .string(v): try c.encode(v)
+        case let .int(v): try c.encode(v)
+        case let .bool(v): try c.encode(v)
         }
     }
 }

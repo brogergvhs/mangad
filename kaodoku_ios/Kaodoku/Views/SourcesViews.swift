@@ -1,8 +1,8 @@
 import SwiftUI
 
-// TitleSourcesSheet mirrors the web title page's Sources section: linked
-// sources, find + match candidates, and manual page-URL linking — the missing
-// middle step between adding a title and downloading chapters.
+/// TitleSourcesSheet mirrors the web title page's Sources section: linked
+/// sources, find + match candidates, and manual page-URL linking — the missing
+/// middle step between adding a title and downloading chapters.
 struct TitleSourcesSheet: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -112,7 +112,7 @@ struct TitleSourcesSheet: View {
         data = try? await api.get("/api/v1/library/\(titleID)/sources")
     }
 
-    // refreshLoop polls while a find job is running, like the web's HTMX poll.
+    /// refreshLoop polls while a find job is running, like the web's HTMX poll.
     private func refreshLoop() async {
         await load()
         while !Task.isCancelled, data?.finding == true {
@@ -121,8 +121,8 @@ struct TitleSourcesSheet: View {
         }
     }
 
-    // find kicks the match job, then bumps pollGen to restart the poll loop on
-    // the view's task (a detached poller would outlive the sheet).
+    /// find kicks the match job, then bumps pollGen to restart the poll loop on
+    /// the view's task (a detached poller would outlive the sheet).
     private func find() {
         guard let api = app.api else { return }
         busy = true
@@ -145,7 +145,8 @@ struct TitleSourcesSheet: View {
     private func linkByURL() {
         guard let source = linkSource else { return }
         post("/api/v1/library/\(titleID)/sources/link-url",
-             body: ["source_id": source.id, "url": linkURL.trimmingCharacters(in: .whitespaces)]) {
+             body: ["source_id": source.id, "url": linkURL.trimmingCharacters(in: .whitespaces)])
+        {
             onChanged()
             dismiss()
         }
@@ -171,8 +172,8 @@ struct TitleSourcesSheet: View {
     }
 }
 
-// SourcesManageView mirrors the web /sources page: health rows with enable
-// toggles and re-verification (gated on sources.manage).
+/// SourcesManageView mirrors the web /sources page: health rows with enable
+/// toggles and re-verification (gated on sources.manage).
 struct SourcesManageView: View {
     @Environment(AppState.self) private var app
     @State private var items: [SourceManageRow] = []
@@ -229,9 +230,15 @@ struct SourcesManageView: View {
 
     private func meta(_ src: SourceManageRow) -> String {
         var parts = [src.id]
-        if !src.status.isEmpty { parts.append(src.status) }
-        if src.chaptersFound > 0 { parts.append("\(src.chaptersFound) chapters found") }
-        if src.nsfw { parts.append("NSFW") }
+        if !src.status.isEmpty {
+            parts.append(src.status)
+        }
+        if src.chaptersFound > 0 {
+            parts.append("\(src.chaptersFound) chapters found")
+        }
+        if src.nsfw {
+            parts.append("NSFW")
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -245,7 +252,9 @@ struct SourcesManageView: View {
             get: { items.first { $0.id == src.id }?.enabled ?? src.enabled },
             set: { on in
                 guard let api = app.api else { return }
-                if let i = items.firstIndex(where: { $0.id == src.id }) { items[i].enabled = on }
+                if let i = items.firstIndex(where: { $0.id == src.id }) {
+                    items[i].enabled = on
+                }
                 Task {
                     do { _ = try await api.data("POST", "/api/v1/sources/\(src.id)/enabled", body: ["on": on]) }
                     catch {

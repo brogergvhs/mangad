@@ -3,7 +3,7 @@ import Network
 import Observation
 import UIKit
 
-// SavedServer is a named connection the user can pick on the connect screen.
+/// SavedServer is a named connection the user can pick on the connect screen.
 struct SavedServer: Codable, Identifiable, Hashable {
     var id = UUID()
     var name: String
@@ -12,8 +12,8 @@ struct SavedServer: Codable, Identifiable, Hashable {
     var mode: ServerEndpoints.Mode = .auto
 }
 
-// ServerEndpoints stores up to two addresses for the same server: a LAN one
-// and a public one. instanceID  proves they are the same installation.
+/// ServerEndpoints stores up to two addresses for the same server: a LAN one
+/// and a public one. instanceID  proves they are the same installation.
 struct ServerEndpoints: Codable, Equatable {
     enum Mode: String, Codable { case auto, local, external }
     var localURL: URL? = nil
@@ -26,14 +26,18 @@ struct ServerEndpoints: Codable, Equatable {
         return !sameOrigin(l, p)
     }
 
-    var wantsProbe: Bool { verifiable && mode != .external }
+    var wantsProbe: Bool {
+        verifiable && mode != .external
+    }
 
     func activeURL(localVerified: Bool) -> URL? {
         switch mode {
         case .external:
             return publicURL ?? localURL
         case .local:
-            if verifiable && !localVerified { return publicURL }
+            if verifiable, !localVerified {
+                return publicURL
+            }
             return localURL ?? publicURL
         case .auto:
             return localVerified ? (localURL ?? publicURL) : (publicURL ?? localURL)
@@ -41,8 +45,8 @@ struct ServerEndpoints: Codable, Equatable {
     }
 }
 
-// AppState holds the connection to one server: URL in UserDefaults, token in
-// the Keychain. connected == usable client (token present or single-user).
+/// AppState holds the connection to one server: URL in UserDefaults, token in
+/// the Keychain. connected == usable client (token present or single-user).
 @Observable @MainActor
 final class AppState {
     enum LibraryNav: Equatable {
@@ -93,21 +97,26 @@ final class AppState {
     private func persistServers() {
         UserDefaults.standard.set(try? JSONEncoder().encode(savedServers), forKey: Self.savedServersKey)
     }
+
     private static let deviceIDKey = "device_id"
 
-    // Stable per-install id; the server keeps one active token per install.
+    /// Stable per-install id; the server keeps one active token per install.
     static var deviceID: String {
-        if let id = UserDefaults.standard.string(forKey: deviceIDKey) { return id }
+        if let id = UserDefaults.standard.string(forKey: deviceIDKey) {
+            return id
+        }
         let id = UUID().uuidString
         UserDefaults.standard.set(id, forKey: deviceIDKey)
         return id
     }
 
-    // Per-title reader mode.
+    /// Per-title reader mode.
     var readerModeOverrides: [String: String] =
         UserDefaults.standard.dictionary(forKey: modeOverridesKey) as? [String: String] ?? [:]
 
-    func readerMode(forTitle id: Int64) -> String? { readerModeOverrides["\(id)"] }
+    func readerMode(forTitle id: Int64) -> String? {
+        readerModeOverrides["\(id)"]
+    }
 
     func setReaderMode(_ mode: String?, forTitle id: Int64) {
         if let mode {
@@ -117,13 +126,17 @@ final class AppState {
         }
         UserDefaults.standard.set(readerModeOverrides, forKey: Self.modeOverridesKey)
     }
+
     private static let tokenAccount = "api_token"
     private var settingsDirty = false
     private var settingsTask: Task<Void, Never>?
     private var reselectTask: Task<Void, Never>?
     private let pathMonitor = NWPathMonitor()
 
-    var connected: Bool { api != nil }
+    var connected: Bool {
+        api != nil
+    }
+
     var reachable = true // false once a probe/request shows the server is unreachable
 
     func refreshReachability() async {
@@ -133,14 +146,16 @@ final class AppState {
 
     init() {
         if let data = UserDefaults.standard.data(forKey: Self.endpointsKey),
-           let stored = try? JSONDecoder().decode(ServerEndpoints.self, from: data) {
+           let stored = try? JSONDecoder().decode(ServerEndpoints.self, from: data)
+        {
             endpoints = stored
         }
         if let url = endpoints?.activeURL(localVerified: false) {
             api = APIClient(baseURL: url, token: Keychain.load(account: Self.tokenAccount))
         }
         if let data = UserDefaults.standard.data(forKey: Self.settingsKey),
-           let cached = try? JSONDecoder().decode(UserSettings.self, from: data) {
+           let cached = try? JSONDecoder().decode(UserSettings.self, from: data)
+        {
             settings = cached
         }
         pathMonitor.pathUpdateHandler = { [weak self] _ in
@@ -159,7 +174,7 @@ final class AppState {
         }
     }
 
-    // reselect probes the local address and switches the client.
+    /// reselect probes the local address and switches the client.
     func reselect() async {
         guard let e = endpoints, api != nil else { return }
         var localVerified = false
@@ -191,14 +206,20 @@ final class AppState {
             errorMessage = APIError.badURL.localizedDescription
             return false
         }
-        if url.scheme == nil { url = URL(string: "https://\(server)") ?? url }
+        if url.scheme == nil {
+            url = URL(string: "https://\(server)") ?? url
+        }
         guard isAllowedServerURL(url) else {
             errorMessage = "Use HTTPS, or HTTP only for a private local server."
             return false
         }
         guard let id = await authenticate(url: url, username: username, password: password) else { return false }
         var e = endpoints?.instanceID == id ? endpoints! : ServerEndpoints(instanceID: id)
-        if isPrivateHost(url.host) { e.localURL = url } else { e.publicURL = url }
+        if isPrivateHost(url.host) {
+            e.localURL = url
+        } else {
+            e.publicURL = url
+        }
         endpoints = e
         recordKnownServer(id, name: url.host ?? id)
         return true
@@ -223,8 +244,12 @@ final class AppState {
         var external = saved.publicURL
         for other in [saved.localURL, saved.publicURL] {
             guard let other, other != url, await Self.fetchInstanceID(other) != id else { continue }
-            if other == saved.localURL { local = nil }
-            if other == saved.publicURL { external = nil }
+            if other == saved.localURL {
+                local = nil
+            }
+            if other == saved.publicURL {
+                external = nil
+            }
         }
         endpoints = ServerEndpoints(localURL: local, publicURL: external, instanceID: id, mode: saved.mode)
         recordKnownServer(id, name: saved.name)
@@ -268,7 +293,9 @@ final class AppState {
         reachable = true
         await store.activate(endpoints?.instanceID)
         do {
-            if me == nil { me = try await api.get("/api/v1/me") }
+            if me == nil {
+                me = try await api.get("/api/v1/me")
+            }
             settings = try await api.get("/api/v1/me/settings")
             cacheSettings()
             await store.flush(api)
@@ -279,11 +306,13 @@ final class AppState {
         }
     }
 
-    // bootstrapStore loads the right server's downloads at launch.
+    /// bootstrapStore loads the right server's downloads at launch.
     func bootstrapStore() async {
         await store.load(instance: endpoints?.instanceID)
-        if connected { await refreshReachability() }
-        if (!connected || !reachable), store.titles.isEmpty, let alt = downloadedInstances().first {
+        if connected {
+            await refreshReachability()
+        }
+        if !connected || !reachable, store.titles.isEmpty, let alt = downloadedInstances().first {
             await store.activate(alt)
         }
     }
@@ -291,7 +320,9 @@ final class AppState {
     var knownServers: [String: String] =
         UserDefaults.standard.dictionary(forKey: "known_servers") as? [String: String] ?? [:]
 
-    func serverName(_ instance: String) -> String { knownServers[instance] ?? instance }
+    func serverName(_ instance: String) -> String {
+        knownServers[instance] ?? instance
+    }
 
     private func recordKnownServer(_ instance: String, name: String) {
         knownServers[instance] = name
@@ -304,7 +335,9 @@ final class AppState {
         return dirs.compactMap { url -> String? in
             let id = url.lastPathComponent
             guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { return nil }
-            if files.fileExists(atPath: LocalStore.indexURL(id).path) { return id }
+            if files.fileExists(atPath: LocalStore.indexURL(id).path) {
+                return id
+            }
             let contents = (try? files.contentsOfDirectory(atPath: url.path)) ?? []
             return contents.contains { !$0.hasPrefix(".") } ? id : nil
         }

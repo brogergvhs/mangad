@@ -1,8 +1,8 @@
 import SwiftUI
 
-// SearchView mirrors the web search page: personalized suggestions when the
-// query is empty, 400ms-debounced live search, tag include/exclude filters,
-// sort, one-tap add, and load-more paging.
+/// SearchView mirrors the web search page: personalized suggestions when the
+/// query is empty, 400ms-debounced live search, tag include/exclude filters,
+/// sort, one-tap add, and load-more paging.
 struct SearchView: View {
     @Environment(AppState.self) private var app
     @State private var query = ""
@@ -19,7 +19,9 @@ struct SearchView: View {
     @State private var selected: Manga?
     @State private var searchTask: Task<Void, Never>?
 
-    private var browsing: Bool { query.isEmpty && includeTags.isEmpty && excludeTags.isEmpty && sort.isEmpty }
+    private var browsing: Bool {
+        query.isEmpty && includeTags.isEmpty && excludeTags.isEmpty && sort.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -54,8 +56,12 @@ struct SearchView: View {
             .onDisappear { searchTask?.cancel() }
             .sheet(item: $selected) { manga in
                 MangaDetailSheet(manga: manga) { updated in
-                    if let i = items.firstIndex(where: { $0.id == updated.id }) { items[i] = updated }
-                    if let i = trendingCache.firstIndex(where: { $0.id == updated.id }) { trendingCache[i] = updated }
+                    if let i = items.firstIndex(where: { $0.id == updated.id }) {
+                        items[i] = updated
+                    }
+                    if let i = trendingCache.firstIndex(where: { $0.id == updated.id }) {
+                        trendingCache[i] = updated
+                    }
                 }
             }
             .sheet(isPresented: $showFilters, onDismiss: { debounceSearch(immediate: true) }) {
@@ -82,7 +88,9 @@ struct SearchView: View {
     private func startSearch(page: Int, delayed: Bool = false) {
         searchTask?.cancel()
         searchTask = Task {
-            if delayed { try? await Task.sleep(for: .milliseconds(400)) }
+            if delayed {
+                try? await Task.sleep(for: .milliseconds(400))
+            }
             guard !Task.isCancelled else { return }
             busy = true
             if browsing {
@@ -90,7 +98,9 @@ struct SearchView: View {
             } else {
                 await search(page: page)
             }
-            if !Task.isCancelled { busy = false }
+            if !Task.isCancelled {
+                busy = false
+            }
         }
     }
 
@@ -105,9 +115,15 @@ struct SearchView: View {
         if let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), !q.isEmpty {
             params.append("q=\(encoded)")
         }
-        if !included.isEmpty { params.append("include_tags=\(csvTags(included))") }
-        if !excluded.isEmpty { params.append("exclude_tags=\(csvTags(excluded))") }
-        if !ordering.isEmpty { params.append("sort=\(ordering)&dir=\(direction)") }
+        if !included.isEmpty {
+            params.append("include_tags=\(csvTags(included))")
+        }
+        if !excluded.isEmpty {
+            params.append("exclude_tags=\(csvTags(excluded))")
+        }
+        if !ordering.isEmpty {
+            params.append("sort=\(ordering)&dir=\(direction)")
+        }
         guard let result: SearchPage = try? await api.get("/api/v1/wanted/search?" + params.joined(separator: "&")),
               !Task.isCancelled, q == query, included == includeTags, excluded == excludeTags,
               ordering == sort, direction == dir else { return }
@@ -135,8 +151,8 @@ struct SearchResultsGrid: View, Equatable {
     }
 }
 
-// MangaCard matches the web card: uniform cover, adult outline, in-library
-// check, title, and the FORMAT · STATUS · ch · ★ caption.
+/// MangaCard matches the web card: uniform cover, adult outline, in-library
+/// check, title, and the FORMAT · STATUS · ch · ★ caption.
 struct MangaCard: View {
     let manga: Manga
     var onTap: () -> Void
@@ -166,8 +182,8 @@ struct MangaCard: View {
     }
 }
 
-// MangaDetailSheet mirrors the web detail: description plus the web's one-tap
-// add; the manual source picker stays available as the advanced path.
+/// MangaDetailSheet mirrors the web detail: description plus the web's one-tap
+/// add; the manual source picker stays available as the advanced path.
 struct MangaDetailSheet: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -177,7 +193,9 @@ struct MangaDetailSheet: View {
     @State private var busy = false
     @State private var error: String?
 
-    private var canAdd: Bool { app.me?.can("library.add") == true }
+    private var canAdd: Bool {
+        app.me?.can("library.add") == true
+    }
 
     var body: some View {
         NavigationStack {
@@ -199,7 +217,9 @@ struct MangaDetailSheet: View {
                         }
                     }
                 }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error {
+                    Text(error).foregroundStyle(.red)
+                }
                 if let desc = manga.description, !desc.isEmpty {
                     Section("About") {
                         Text(desc.strippedHTML).font(.subheadline)
@@ -208,7 +228,9 @@ struct MangaDetailSheet: View {
                 if manga.titleId == nil && canAdd {
                     Section("Advanced") {
                         if let matches {
-                            if matches.isEmpty { Text("No sources found.").foregroundStyle(.secondary) }
+                            if matches.isEmpty {
+                                Text("No sources found.").foregroundStyle(.secondary)
+                            }
                             ForEach(matches) { match in
                                 Button { track(match) } label: {
                                     VStack(alignment: .leading) {
@@ -349,7 +371,7 @@ struct SearchFiltersSheet: View {
     }
 }
 
-// TagCycle cycles a tag through neutral → include → exclude.
+/// TagCycle cycles a tag through neutral → include → exclude.
 struct TagCycle: View {
     let name: String
     @Binding var include: Set<String>
@@ -378,7 +400,7 @@ struct TagCycle: View {
 }
 
 extension String {
-    // strippedHTML flattens AniList's HTML descriptions to plain text.
+    /// strippedHTML flattens AniList's HTML descriptions to plain text.
     var strippedHTML: String {
         replacingOccurrences(of: "<br>", with: "\n")
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)

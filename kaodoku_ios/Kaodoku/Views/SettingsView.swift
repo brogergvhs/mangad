@@ -83,9 +83,12 @@ struct SettingsView: View {
             }
             .sheet(item: $editingServer) { ServerEditSheet(server: $0) }
             .confirmationDialog("Remove all downloaded chapters from this device?",
-                                isPresented: $confirmClear, titleVisibility: .visible) {
+                                isPresented: $confirmClear, titleVisibility: .visible)
+            {
                 Button("Remove all", role: .destructive) {
-                    for title in app.store.titles { app.store.deleteTitle(title.id) }
+                    for title in app.store.titles {
+                        app.store.deleteTitle(title.id)
+                    }
                 }
             }
             .overlay(alignment: .bottom) {
@@ -108,7 +111,9 @@ struct SettingsView: View {
         }
     }
 
-    private var totalSize: Int64 { app.store.titles.reduce(0) { $0 + $1.size } }
+    private var totalSize: Int64 {
+        app.store.titles.reduce(0) { $0 + $1.size }
+    }
 
     private func syncAniList() {
         guard let api = app.api else { return }

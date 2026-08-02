@@ -12,8 +12,8 @@ enum CoverCache {
     }
 }
 
-// ServerImage loads an image through the authed client 
-// (AsyncImage can't send the X-API-Key header).
+/// ServerImage loads an image through the authed client
+/// (AsyncImage can't send the X-API-Key header).
 struct ServerImage: View {
     @Environment(AppState.self) private var app
     let path: String
@@ -46,9 +46,9 @@ struct ServerImage: View {
     }
 }
 
-// Cover renders a uniform 5:7 cover cell (the web card's aspect) regardless
-// of the image's own size: the clear frame owns the layout, the image only
-// fills and clips. Adult titles get the web's red outline.
+/// Cover renders a uniform 5:7 cover cell (the web card's aspect) regardless
+/// of the image's own size: the clear frame owns the layout, the image only
+/// fills and clips. Adult titles get the web's red outline.
 struct Cover: View {
     @Environment(\.displayScale) private var displayScale
     let path: String
@@ -73,7 +73,7 @@ struct Cover: View {
     }
 }
 
-// LocalImage loads a file-backed image (offline covers).
+/// LocalImage loads a file-backed image (offline covers).
 struct LocalImage: View {
     let url: URL
     let maxPixelSize: CGSize
@@ -108,7 +108,7 @@ func humanBytes(_ n: Int64) -> String {
     n > 0 ? ByteCountFormatter.string(fromByteCount: n, countStyle: .file) : "0 B"
 }
 
-// BarView is the web "bar" partial: green read share, primary completed share.
+/// BarView is the web "bar" partial: green read share, primary completed share.
 struct BarView: View {
     let read: Double
     let full: Double
@@ -127,7 +127,7 @@ struct BarView: View {
     }
 }
 
-// Badge mirrors the web badge variants (soft / ghost / outline / warning).
+/// Badge mirrors the web badge variants (soft / ghost / outline / warning).
 struct Badge: View {
     enum Style { case soft, ghost, outline, warning }
     let text: String
@@ -150,15 +150,15 @@ struct Badge: View {
     }
 }
 
-// WrapLayout flows badge chips onto multiple lines like the web's flex-wrap.
+/// WrapLayout flows badge chips onto multiple lines like the web's flex-wrap.
 struct WrapLayout: Layout {
     var spacing: CGFloat = 6
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
         rows(in: proposal.width ?? .infinity, subviews: subviews).size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
         for (i, origin) in rows(in: bounds.width, subviews: subviews).origins.enumerated() {
             subviews[i].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
         }
@@ -183,7 +183,7 @@ struct WrapLayout: Layout {
     }
 }
 
-// TitleStats is the web card footer: counts + size line, then the bar.
+/// TitleStats is the web card footer: counts + size line, then the bar.
 struct TitleStats: View {
     let title: Title
 
@@ -211,14 +211,18 @@ struct TitleStats: View {
         }
     }
 
-    private var volumesOnly: Bool { title.discoveredCount == 0 && title.volumeCount > 0 }
+    private var volumesOnly: Bool {
+        title.discoveredCount == 0 && title.volumeCount > 0
+    }
 }
 
-func pct(_ a: Int64, _ b: Int64) -> Double { b > 0 ? Double(a) / Double(b) : 0 }
+func pct(_ a: Int64, _ b: Int64) -> Double {
+    b > 0 ? Double(a) / Double(b) : 0
+}
 
-// LibraryView mirrors the web library: server-side search, the web's filter
-// panel (favourites/monitored/progress/content/tags), the web's sort options,
-// and the web default order (last added, newest first).
+/// LibraryView mirrors the web library: server-side search, the web's filter
+/// panel (favourites/monitored/progress/content/tags), the web's sort options,
+/// and the web default order (last added, newest first).
 struct LibraryView: View {
     @Environment(AppState.self) private var app
     @State private var titles: [Title] = []
@@ -300,7 +304,7 @@ struct LibraryView: View {
         guard let nav else { return }
         app.libraryNav = nil
         switch nav {
-        case .title(let id): path = NavigationPath([id])
+        case let .title(id): path = NavigationPath([id])
         case .root: path = NavigationPath()
         }
         Task { await load() }
@@ -309,16 +313,30 @@ struct LibraryView: View {
     private func load(more: Bool = false) async {
         guard let api = app.api else { return }
         var params = ["limit=100", "sort=\(sort)", "dir=\(dir)"]
-        if more, !nextCursor.isEmpty { params.append("cursor=\(nextCursor)") }
+        if more, !nextCursor.isEmpty {
+            params.append("cursor=\(nextCursor)")
+        }
         if let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), !query.isEmpty {
             params.append("q=\(q)")
         }
-        if fav { params.append("favourite=1") }
-        if !monitored.isEmpty { params.append("monitored=\(monitored)") }
-        if progress != "all" { params.append("progress=\(progress)") }
-        if content != "all" { params.append("content=\(content)") }
-        if !includeTags.isEmpty { params.append("include_tags=\(csvTags(includeTags))") }
-        if !excludeTags.isEmpty { params.append("exclude_tags=\(csvTags(excludeTags))") }
+        if fav {
+            params.append("favourite=1")
+        }
+        if !monitored.isEmpty {
+            params.append("monitored=\(monitored)")
+        }
+        if progress != "all" {
+            params.append("progress=\(progress)")
+        }
+        if content != "all" {
+            params.append("content=\(content)")
+        }
+        if !includeTags.isEmpty {
+            params.append("include_tags=\(csvTags(includeTags))")
+        }
+        if !excludeTags.isEmpty {
+            params.append("exclude_tags=\(csvTags(excludeTags))")
+        }
         do {
             let page: TitlePage = try await api.get("/api/v1/library?" + params.joined(separator: "&"))
             guard !Task.isCancelled else { return }
@@ -338,7 +356,7 @@ func csvTags(_ set: Set<String>) -> String {
     set.sorted().joined(separator: ",").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
 }
 
-// LibraryFiltersSheet is the web library filter panel.
+/// LibraryFiltersSheet is the web library filter panel.
 struct LibraryFiltersSheet: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -442,10 +460,6 @@ struct LibraryFiltersSheet: View {
 struct LibraryGrid: View, Equatable {
     let titles: [Title]
 
-    nonisolated static func == (lhs: LibraryGrid, rhs: LibraryGrid) -> Bool {
-        lhs.titles == rhs.titles
-    }
-
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
             ForEach(titles) { title in
@@ -459,7 +473,7 @@ struct LibraryGrid: View, Equatable {
     }
 }
 
-// TitleCard is the web libraryCard: cover, 2-line title, counts + size, bar.
+/// TitleCard is the web libraryCard: cover, 2-line title, counts + size, bar.
 struct TitleCard: View {
     let title: Title
 

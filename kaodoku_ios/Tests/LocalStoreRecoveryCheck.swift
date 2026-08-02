@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import Kaodoku
+import Testing
 
 @MainActor
 @Test("Unreadable metadata can be reset without deleting CBZ files")

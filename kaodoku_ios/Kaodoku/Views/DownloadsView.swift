@@ -1,6 +1,6 @@
 import SwiftUI
 
-// DownloadsGrid renders the active store's titles.
+/// DownloadsGrid renders the active store's titles.
 struct DownloadsGrid: View {
     @Environment(AppState.self) private var app
 
@@ -28,9 +28,9 @@ struct DownloadsGrid: View {
     }
 }
 
-// DownloadsView mirrors the Library grid over local content: cover cards with
-// read progress of the downloaded chapters, sizes, then a title page identical
-// to the online one and the offline reader.
+/// DownloadsView mirrors the Library grid over local content: cover cards with
+/// read progress of the downloaded chapters, sizes, then a title page identical
+/// to the online one and the offline reader.
 struct DownloadsView: View {
     var body: some View {
         NavigationStack {
@@ -43,7 +43,7 @@ struct DownloadsView: View {
     }
 }
 
-// OfflineTabs is the disconnected shell.
+/// OfflineTabs is the disconnected shell.
 struct OfflineTabs: View {
     var body: some View {
         TabView {
@@ -101,8 +101,8 @@ struct OfflineView: View {
     }
 }
 
-// PendingRow is a queued/active device download and is never tappable: greyed
-// with an empty bar while queued, a filling bar + percentage while downloading.
+/// PendingRow is a queued/active device download and is never tappable: greyed
+/// with an empty bar while queued, a filling bar + percentage while downloading.
 struct PendingRow: View {
     let item: LocalStore.Pending
     let volumes: Bool
@@ -136,8 +136,8 @@ struct PendingRow: View {
     }
 }
 
-// LocalTitleCard matches TitleCard's web-card layout. The bar covers only the
-// downloaded chapters: green = read share of what's on the device.
+/// LocalTitleCard matches TitleCard's web-card layout. The bar covers only the
+/// downloaded chapters: green = read share of what's on the device.
 struct LocalTitleCard: View {
     let title: LocalStore.LocalTitle
 
@@ -161,7 +161,9 @@ struct LocalTitleCard: View {
 }
 
 extension LocalStore.LocalTitle {
-    var readCount: Int { entries.count { $0.isRead } }
+    var readCount: Int {
+        entries.count { $0.isRead }
+    }
 }
 
 extension LocalTitleCard {
@@ -196,7 +198,10 @@ struct LocalTitleView: View {
     @State private var showRemoveRange = false
     @State private var volumesTab = false
 
-    private var title: LocalStore.LocalTitle? { app.store.titles.first { $0.id == titleId } }
+    private var title: LocalStore.LocalTitle? {
+        app.store.titles.first { $0.id == titleId }
+    }
+
     private func rows(_ title: LocalStore.LocalTitle) -> [LocalStore.Entry] {
         volumesTab ? title.volumeEntries : title.chapterEntries
     }
@@ -221,7 +226,9 @@ struct LocalTitleView: View {
                     }
                     .onDelete { offsets in
                         let list = rows(title)
-                        for i in offsets { app.store.delete(list[i].id, volume: volumesTab) }
+                        for i in offsets {
+                            app.store.delete(list[i].id, volume: volumesTab)
+                        }
                     }
                     ForEach(volumesTab ? title.pendingVolumes : title.pendingChapters) { p in
                         PendingRow(item: p, volumes: volumesTab,
@@ -235,10 +242,15 @@ struct LocalTitleView: View {
         .nordScreen()
         .onAppear {
             if let t = title, t.chapterEntries.isEmpty, t.pendingChapters.isEmpty,
-               !(t.volumeEntries.isEmpty && t.pendingVolumes.isEmpty) { volumesTab = true }
+               !(t.volumeEntries.isEmpty && t.pendingVolumes.isEmpty)
+            {
+                volumesTab = true
+            }
         }
         .onChange(of: title == nil) { _, gone in
-            if gone { dismiss() }
+            if gone {
+                dismiss()
+            }
         }
         .navigationTitle(title?.info.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
@@ -326,8 +338,12 @@ struct LocalTitleView: View {
     private func headerLine(_ title: LocalStore.LocalTitle) -> String {
         var parts: [String] = []
         let ch = title.chapterEntries, vols = title.volumeEntries
-        if !ch.isEmpty { parts.append("\(ch.count { $0.isRead })/\(ch.count) read") }
-        if !vols.isEmpty { parts.append("\(vols.count { $0.isRead })/\(vols.count) vols") }
+        if !ch.isEmpty {
+            parts.append("\(ch.count { $0.isRead })/\(ch.count) read")
+        }
+        if !vols.isEmpty {
+            parts.append("\(vols.count { $0.isRead })/\(vols.count) vols")
+        }
         parts.append("\(humanBytes(title.size)) on device")
         return parts.joined(separator: " · ")
     }

@@ -50,14 +50,20 @@ struct KaodokuApp: App {
                     Task { await app.store.flush(nil) }
                 } else {
                     app.scheduleReselect()
-                    if app.connected && !app.reachable { Task { await app.refreshReachability() } }
+                    if app.connected && !app.reachable {
+                        Task { await app.refreshReachability() }
+                    }
                 }
             }
             .alert(app.store.requiresRecovery ? "Offline metadata is unreadable" : "Offline data wasn’t saved",
                    isPresented: Binding(
-                get: { app.store.persistenceError != nil },
-                set: { if !$0 && !app.store.requiresRecovery { app.store.clearPersistenceError() } }
-            )) {
+                       get: { app.store.persistenceError != nil },
+                       set: {
+                           if !$0, !app.store.requiresRecovery {
+                               app.store.clearPersistenceError()
+                           }
+                       }
+                   )) {
                 if app.store.requiresRecovery {
                     Button("Retry") { Task { await app.bootstrapStore() } }
                     Button("Reset Metadata", role: .destructive) {

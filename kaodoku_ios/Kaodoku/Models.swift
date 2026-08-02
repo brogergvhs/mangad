@@ -19,10 +19,13 @@ struct Me: Decodable {
         var role: String
         var allowAdult: Bool
     }
+
     var user: User
     var permissions: [String]
 
-    func can(_ perm: String) -> Bool { permissions.contains(perm) }
+    func can(_ perm: String) -> Bool {
+        permissions.contains(perm)
+    }
 }
 
 struct LoginResponse: Decodable {
@@ -53,14 +56,16 @@ struct Title: Decodable, Identifiable, Hashable {
     var volumeBytes: Int64
     var updatedAt: String
 
-    // linked mirrors the web's `linked` helper: a real source page is
-    // attached (imported-from-disk titles have a placeholder URL).
-    var linked: Bool { sourceUrl.hasPrefix("http") }
+    /// linked mirrors the web's `linked` helper: a real source page is
+    /// attached (imported-from-disk titles have a placeholder URL).
+    var linked: Bool {
+        sourceUrl.hasPrefix("http")
+    }
 }
 
-// MangaDetail is the catalog metadata block the web title page shows
-// (badges, description, authors, genres). Codable: it's also snapshotted
-// into the offline index.
+/// MangaDetail is the catalog metadata block the web title page shows
+/// (badges, description, authors, genres). Codable: it's also snapshotted
+/// into the offline index.
 struct MangaDetail: Codable, Hashable, Sendable {
     var description: String?
     var status: String?
@@ -117,7 +122,9 @@ struct TitleActivity: Decodable {
     var failed: Bool
     var error: String?
 
-    var busy: Bool { !active.isEmpty || !queued.isEmpty }
+    var busy: Bool {
+        !active.isEmpty || !queued.isEmpty
+    }
 }
 
 struct CollectionEntry: Decodable, Hashable {
@@ -132,7 +139,9 @@ struct CollectionEntry: Decodable, Hashable {
     var sizeBytes: Int64
     var readPct: Int64
 
-    var uid: String { key ?? id.map { "c\($0)" } ?? name }
+    var uid: String {
+        key ?? id.map { "c\($0)" } ?? name
+    }
 }
 
 struct CollectionGroups: Decodable {
@@ -148,6 +157,7 @@ struct Manifest: Decodable {
             var url: String
             var read: Bool
         }
+
         var id: Int64
         var label: String
         var pageCount: Int
@@ -155,6 +165,7 @@ struct Manifest: Decodable {
         var completed: Bool
         var pages: [Page]
     }
+
     var titleId: Int64
     var title: String
     var resumeChapterId: Int64
@@ -191,10 +202,15 @@ struct Manga: Decodable, Identifiable, Hashable {
     var isAdult: Bool
     var titleId: Int64?
 
-    // Browse results aren't DB-cached (catalog id 0), so identity is the
-    // stable AniList provider id.
-    var id: String { providerId }
-    var name: String { titleEnglish.isEmpty ? titleRomaji : titleEnglish }
+    /// Browse results aren't DB-cached (catalog id 0), so identity is the
+    /// stable AniList provider id.
+    var id: String {
+        providerId
+    }
+
+    var name: String {
+        titleEnglish.isEmpty ? titleRomaji : titleEnglish
+    }
 
     enum CodingKeys: String, CodingKey {
         case catalogId = "id"
@@ -202,13 +218,21 @@ struct Manga: Decodable, Identifiable, Hashable {
         case status, format, chapters, averageScore, isAdult, titleId
     }
 
-    // caption mirrors the web card: FORMAT · STATUS · N ch · ★ N%
+    /// caption mirrors the web card: FORMAT · STATUS · N ch · ★ N%
     var caption: String {
         var parts: [String] = []
-        if let format, !format.isEmpty { parts.append(format) }
-        if let status, !status.isEmpty { parts.append(status) }
-        if let chapters, chapters > 0 { parts.append("\(chapters) ch") }
-        if let averageScore, averageScore > 0 { parts.append("★ \(averageScore)%") }
+        if let format, !format.isEmpty {
+            parts.append(format)
+        }
+        if let status, !status.isEmpty {
+            parts.append(status)
+        }
+        if let chapters, chapters > 0 {
+            parts.append("\(chapters) ch")
+        }
+        if let averageScore, averageScore > 0 {
+            parts.append("★ \(averageScore)%")
+        }
         return parts.joined(separator: " · ")
     }
 }
@@ -222,7 +246,9 @@ struct SearchPage: Decodable {
 struct TagOption: Decodable, Identifiable, Hashable {
     var name: String
     var kind: String
-    var id: String { name }
+    var id: String {
+        name
+    }
 }
 
 struct Match: Decodable, Identifiable, Hashable {
@@ -248,7 +274,9 @@ struct LinkedSource: Decodable, Identifiable {
     var name: String
     var url: String
     var active: Bool
-    var id: String { url }
+    var id: String {
+        url
+    }
 }
 
 struct SourcePick: Decodable, Identifiable, Hashable {

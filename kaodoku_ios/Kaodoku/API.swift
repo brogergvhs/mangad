@@ -10,13 +10,13 @@ enum APIError: LocalizedError {
         switch self {
         case .badURL: return "Invalid server URL"
         case .unauthorized: return "Signed out by the server — reconnect"
-        case .server(let msg): return msg
+        case let .server(msg): return msg
         }
     }
 }
 
-// APIClient talks to one Kaodoku server. URLSession's URLCache honors the
-// server's ETag/Cache-Control, so page and cover images cache for free.
+/// APIClient talks to one Kaodoku server. URLSession's URLCache honors the
+/// server's ETag/Cache-Control, so page and cover images cache for free.
 struct APIClient {
     var baseURL: URL
     var token: String?
@@ -30,8 +30,10 @@ struct APIClient {
         return URLSession(configuration: cfg, delegate: redirectGuard, delegateQueue: nil)
     }()
 
-    // clearCache drops cached authenticated responses (covers, pages) on sign-out.
-    static func clearCache() { session.configuration.urlCache?.removeAllCachedResponses() }
+    /// clearCache drops cached authenticated responses (covers, pages) on sign-out.
+    static func clearCache() {
+        session.configuration.urlCache?.removeAllCachedResponses()
+    }
 
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -61,7 +63,7 @@ struct APIClient {
         let (data, resp) = try await Self.session.data(for: request(method, path, body: body))
         guard let http = resp as? HTTPURLResponse else { throw APIError.server("no response") }
         switch http.statusCode {
-        case 200..<300: return data
+        case 200 ..< 300: return data
         case 401: throw APIError.unauthorized
         default:
             let msg = (try? Self.decoder.decode(APIErrorBody.self, from: data))?.error
@@ -69,14 +71,15 @@ struct APIClient {
         }
     }
 
-    // download streams a large CBZ to a temp file, reporting 0…1 progress
-    // against the response length (expectedBytes covers a stripped length).
+    /// download streams a large CBZ to a temp file, reporting 0…1 progress
+    /// against the response length (expectedBytes covers a stripped length).
     func download(_ path: String, expectedBytes: Int64 = 0,
-                  progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
+                  progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL
+    {
         let (bytes, resp) = try await Self.session.bytes(for: request("GET", path))
         guard let http = resp as? HTTPURLResponse else { throw APIError.server("no response") }
         switch http.statusCode {
-        case 200..<300: break
+        case 200 ..< 300: break
         case 401: throw APIError.unauthorized
         default: throw APIError.server("HTTP \(http.statusCode)")
         }
@@ -93,7 +96,9 @@ struct APIClient {
                 try handle.write(contentsOf: buffer)
                 written += Int64(buffer.count)
                 buffer.removeAll(keepingCapacity: true)
-                if total > 0 { progress(Double(written) / Double(total)) }
+                if total > 0 {
+                    progress(Double(written) / Double(total))
+                }
             }
         }
         try handle.write(contentsOf: buffer)
@@ -110,8 +115,8 @@ struct APIClient {
     }
 }
 
-// sameOrigin compares scheme, host, and port — the token is bound to the exact
-// configured origin, so an http downgrade or a different port doesn't match.
+/// sameOrigin compares scheme, host, and port — the token is bound to the exact
+/// configured origin, so an http downgrade or a different port doesn't match.
 func sameOrigin(_ a: URL, _ b: URL) -> Bool {
     a.scheme?.lowercased() == b.scheme?.lowercased()
         && a.host?.lowercased() == b.host?.lowercased()
@@ -125,11 +130,21 @@ func isAllowedServerURL(_ url: URL) -> Bool {
 
 func isPrivateHost(_ rawHost: String?) -> Bool {
     guard var host = rawHost?.lowercased(), !host.isEmpty else { return false }
-    if host.first == "[", host.last == "]" { host = String(host.dropFirst().dropLast()) }
-    if let zone = host.firstIndex(of: "%") { host = String(host[..<zone]) }
-    if host.hasSuffix(".") { host.removeLast() }
-    if host == "localhost" || host.hasSuffix(".local") || host == "::1" { return true }
-    if host.hasPrefix("::ffff:") { return isPrivateHost(String(host.dropFirst(7))) }
+    if host.first == "[", host.last == "]" {
+        host = String(host.dropFirst().dropLast())
+    }
+    if let zone = host.firstIndex(of: "%") {
+        host = String(host[..<zone])
+    }
+    if host.hasSuffix(".") {
+        host.removeLast()
+    }
+    if host == "localhost" || host.hasSuffix(".local") || host == "::1" {
+        return true
+    }
+    if host.hasPrefix("::ffff:") {
+        return isPrivateHost(String(host.dropFirst(7)))
+    }
     if host.contains(":") {
         return host.hasPrefix("fc") || host.hasPrefix("fd")
             || ["fe8", "fe9", "fea", "feb"].contains { host.hasPrefix($0) }
@@ -137,10 +152,10 @@ func isPrivateHost(_ rawHost: String?) -> Bool {
     let parts = host.split(separator: ".", omittingEmptySubsequences: false)
     if parts.count == 4 {
         let octets = parts.compactMap { Int($0) }
-        guard octets.count == 4, octets.allSatisfy((0...255).contains) else { return false }
+        guard octets.count == 4, octets.allSatisfy((0 ... 255).contains) else { return false }
         switch (octets[0], octets[1]) {
         case (127, _), (10, _), (192, 168), (169, 254): return true
-        case (172, 16...31): return true
+        case (172, 16 ... 31): return true
         default: return false
         }
     }
@@ -151,12 +166,13 @@ private func defaultPort(_ scheme: String?) -> Int {
     scheme?.lowercased() == "https" ? 443 : 80
 }
 
-// RedirectGuard drops the X-API-Key header when a redirect crosses to a
-// different origin, so a malicious/compromised server can't replay the token.
+/// RedirectGuard drops the X-API-Key header when a redirect crosses to a
+/// different origin, so a malicious/compromised server can't replay the token.
 final class RedirectGuard: NSObject, URLSessionTaskDelegate {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) {
+    func urlSession(_: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection _: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void)
+    {
         guard let dest = request.url, isAllowedServerURL(dest) else {
             completionHandler(nil)
             return
@@ -173,14 +189,15 @@ final class RedirectGuard: NSObject, URLSessionTaskDelegate {
 
 final class NoRedirect: NSObject, URLSessionTaskDelegate, Sendable {
     static let shared = NoRedirect()
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) {
+    func urlSession(_: URLSession, task _: URLSessionTask,
+                    willPerformHTTPRedirection _: HTTPURLResponse, newRequest _: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void)
+    {
         completionHandler(nil)
     }
 }
 
-// Keychain stores the device API token.
+/// Keychain stores the device API token.
 enum Keychain {
     private static func query(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

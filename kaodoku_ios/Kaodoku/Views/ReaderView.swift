@@ -1,9 +1,9 @@
 import SwiftUI
 
-// ReaderView shows pages in paged (LTR/RTL) or vertical strip mode. Online it
-// follows the server manifest window; with localChapters it reads device CBZs
-// fully offline. Pages downloaded to the device always load locally first.
-// Each settled page is marked locally and queued for a batched upload.
+/// ReaderView shows pages in paged (LTR/RTL) or vertical strip mode. Online it
+/// follows the server manifest window; with localChapters it reads device CBZs
+/// fully offline. Pages downloaded to the device always load locally first.
+/// Each settled page is marked locally and queued for a batched upload.
 struct ReaderView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -24,8 +24,8 @@ struct ReaderView: View {
         var transition = false // synthetic "end of chapter" cell
     }
 
-    // Per-page width/height ratios, so the strip reader knows each page's exact
-    // height up front. Seeded from downloads on load, cleared per session.
+    /// Per-page width/height ratios, so the strip reader knows each page's exact
+    /// height up front. Seeded from downloads on load, cleared per session.
     @MainActor static var aspects: [String: CGFloat] = [:]
 
     struct DisplayPage: Hashable {
@@ -51,14 +51,15 @@ struct ReaderView: View {
     @State private var chapterRows: [ReaderChapterRow]?
     @State private var detectionDone = false
 
-    // stripLoader fetches a page for the UICollectionView reader: the device
-    // CBZ first, then the network, downsampled off the main thread.
+    /// stripLoader fetches a page for the UICollectionView reader: the device
+    /// CBZ first, then the network, downsampled off the main thread.
     private var stripLoader: (PageRef, CGSize) async -> UIImage? {
         let api = app.api
         let enhanced = app.settings.readerImageQuality == "enhanced"
         return { ref, size in
             if let local = ref.localURL,
-               let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size, enhanced: enhanced) {
+               let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size, enhanced: enhanced)
+            {
                 return img
             }
             guard let api, !ref.url.isEmpty, let data = try? await api.data("GET", ref.url) else { return nil }
@@ -71,7 +72,10 @@ struct ReaderView: View {
     private var paged: Bool {
         (app.readerMode(forTitle: titleID) ?? app.settings.readerMode ?? "paged") != "strip"
     }
-    private var rtl: Bool { app.settings.readerDir == "rtl" }
+
+    private var rtl: Bool {
+        app.settings.readerDir == "rtl"
+    }
 
     @State private var isLandscape = false
 
@@ -84,9 +88,11 @@ struct ReaderView: View {
         }
     }
 
-    private var splitWide: Bool { !doubleActive && (app.settings.readerSplitWide ?? false) }
+    private var splitWide: Bool {
+        !doubleActive && (app.settings.readerSplitWide ?? false)
+    }
 
-    // units chunks pages into paged display slots.
+    /// units chunks pages into paged display slots.
     private var units: [[DisplayPage]] {
         let dbl = doubleActive
         let split = splitWide
@@ -172,14 +178,16 @@ struct ReaderView: View {
                     .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
                     .ignoresSafeArea()
                     .onChange(of: scrollID) {
-                        if let u = scrollID, us.indices.contains(u) { onSettleUnit(us[u]) }
+                        if let u = scrollID, us.indices.contains(u) {
+                            onSettleUnit(us[u])
+                        }
                     }
                 } else {
                     StripReader(
                         pages: pages,
                         startIndex: index,
                         enhanced: app.settings.readerImageQuality == "enhanced",
-                        maxPixelSize: CGSize(width: pixels.width, height: 8_192),
+                        maxPixelSize: CGSize(width: pixels.width, height: 8192),
                         estimateAspect: geo.size.width / max(geo.size.height, 1),
                         jump: stripJump,
                         loadImage: stripLoader,
@@ -187,7 +195,9 @@ struct ReaderView: View {
                     )
                     .ignoresSafeArea()
                 }
-                if showBar { bar }
+                if showBar {
+                    bar
+                }
             }
             .statusBarHidden(!showBar)
             .onTapGesture { point in
@@ -197,14 +207,20 @@ struct ReaderView: View {
                 isLandscape = v
             }
             .onChange(of: doubleActive) {
-                if paged { scrollID = unitIndex(forPage: index) }
+                if paged {
+                    scrollID = unitIndex(forPage: index)
+                }
             }
             .onChange(of: splitWide) {
-                if paged { scrollID = unitIndex(forPage: index) }
+                if paged {
+                    scrollID = unitIndex(forPage: index)
+                }
             }
             .onChange(of: paged) {
                 stripJump = nil
-                if paged { scrollID = unitIndex(forPage: index) }
+                if paged {
+                    scrollID = unitIndex(forPage: index)
+                }
             }
         }
         .task { await load(chapter: startChapter, resume: true) }
@@ -266,7 +282,7 @@ struct ReaderView: View {
         }
     }
 
-    // bottomBar scrubs within the current chapter.
+    /// bottomBar scrubs within the current chapter.
     private var bottomBar: some View {
         let range = chapterIndices
         let pos = range.firstIndex(of: index) ?? 0
@@ -275,8 +291,8 @@ struct ReaderView: View {
             Slider(value: Binding(
                 get: { Double(pos) },
                 set: { jump(toPageIndex: range[min(max(Int($0.rounded()), 0), range.count - 1)]) }
-            ), in: 0...Double(max(range.count - 1, 1)), step: 1)
-            .disabled(range.count <= 1)
+            ), in: 0 ... Double(max(range.count - 1, 1)), step: 1)
+                .disabled(range.count <= 1)
             Text("\(range.count)").monospacedDigit()
         }
         .font(.footnote)
@@ -316,8 +332,12 @@ struct ReaderView: View {
 
     private func onSettleUnit(_ unit: [DisplayPage]) {
         guard let last = unit.last else { return }
-        if let i = pages.firstIndex(of: last.ref) { index = i }
-        for ref in Set(unit.map(\.ref)) where !ref.transition { mark(ref) }
+        if let i = pages.firstIndex(of: last.ref) {
+            index = i
+        }
+        for ref in Set(unit.map(\.ref)) where !ref.transition {
+            mark(ref)
+        }
         extendIfNeeded()
     }
 
@@ -356,7 +376,8 @@ struct ReaderView: View {
             return
         }
         if !volumes, let api = app.api,
-           let p: TitleReadProgress = try? await api.get("/api/v1/reader/titles/\(titleID)") {
+           let p: TitleReadProgress = try? await api.get("/api/v1/reader/titles/\(titleID)")
+        {
             chapterRows = p.chapters.map {
                 ReaderChapterRow(id: $0.id, label: $0.label, read: $0.completed, available: $0.downloaded)
             }
@@ -369,7 +390,7 @@ struct ReaderView: View {
         }
     }
 
-    // autoDetect flips a title to strip mode when the first page is very tall.
+    /// autoDetect flips a title to strip mode when the first page is very tall.
     private func autoDetect(aspect: CGFloat) {
         guard !detectionDone, aspect > 0 else { return }
         detectionDone = true
@@ -381,7 +402,9 @@ struct ReaderView: View {
     private func onSettle(_ i: Int) {
         guard pages.indices.contains(i) else { return }
         index = i
-        if !pages[i].transition { mark(pages[i]) }
+        if !pages[i].transition {
+            mark(pages[i])
+        }
         extendIfNeeded()
     }
 
@@ -406,7 +429,7 @@ struct ReaderView: View {
                                             page: 0, total: 0, url: "", localURL: nil,
                                             volume: volumeMode, transition: true))
                     }
-                    for page in 1...e.pages {
+                    for page in 1 ... e.pages {
                         refs.append(PageRef(chapterID: e.id, label: e.label, page: page,
                                             total: e.pages, url: "", localURL: local,
                                             volume: volumeMode))
@@ -499,7 +522,7 @@ struct ReaderView: View {
     }
 }
 
-// ReaderChapterRow feeds the in-reader chapter list.
+/// ReaderChapterRow feeds the in-reader chapter list.
 struct ReaderChapterRow: Identifiable {
     var id: Int64
     var label: String
@@ -613,7 +636,7 @@ struct ReaderSettingsSheet: View {
     }
 }
 
-// ReaderPage renders one paged display unit.
+/// ReaderPage renders one paged display unit.
 struct ReaderPage: View {
     @Environment(AppState.self) private var app
     @Environment(\.layoutDirection) private var layoutDirection
@@ -625,7 +648,9 @@ struct ReaderPage: View {
     @State private var images: [Int: UIImage] = [:]
     @State private var failed = false
 
-    private var transition: Bool { unit.first?.ref.transition == true }
+    private var transition: Bool {
+        unit.first?.ref.transition == true
+    }
 
     private struct LoadKey: Hashable {
         let active: Bool
@@ -633,12 +658,16 @@ struct ReaderPage: View {
         let enhanced: Bool
     }
 
-    private var enhanced: Bool { app.settings.readerImageQuality == "enhanced" }
+    private var enhanced: Bool {
+        app.settings.readerImageQuality == "enhanced"
+    }
 
     var body: some View {
         content
             .onChange(of: active) { _, a in
-                if !a { images = [:]; failed = false }
+                if !a {
+                    images = [:]; failed = false
+                }
             }
             .onChange(of: unit) {
                 images = [:]
@@ -665,8 +694,8 @@ struct ReaderPage: View {
         }
     }
 
-    // slots maps the reading-order unit into visual left-to-right slots for
-    // the UIKit zoom view.
+    /// slots maps the reading-order unit into visual left-to-right slots for
+    /// the UIKit zoom view.
     private var slots: [ZoomablePage.Slot] {
         let rtl = layoutDirection == .rightToLeft
         let ordered = rtl ? Array(unit.enumerated().reversed()) : Array(unit.enumerated())
@@ -689,12 +718,16 @@ struct ReaderPage: View {
         guard active, !transition, images.count < unit.count else { return }
         for (i, dp) in unit.enumerated() where images[i] == nil {
             guard let img = await load(dp) else {
-                if !Task.isCancelled { failed = true }
+                if !Task.isCancelled {
+                    failed = true
+                }
                 return
             }
             guard !Task.isCancelled else { return }
             images[i] = img
-            if i == 0 { onImage?(img.size.width / max(img.size.height, 1)) }
+            if i == 0 {
+                onImage?(img.size.width / max(img.size.height, 1))
+            }
         }
     }
 
@@ -704,7 +737,8 @@ struct ReaderPage: View {
         let enhanced = enhanced
         let ref = dp.ref
         if let local = ref.localURL,
-           let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size, enhanced: enhanced) {
+           let img = await LocalStore.pageImage(at: local, page: ref.page, maxPixelSize: size, enhanced: enhanced)
+        {
             return img
         }
         guard let api = app.api, !ref.url.isEmpty, let data = try? await api.data("GET", ref.url) else {
