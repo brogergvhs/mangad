@@ -23,10 +23,10 @@ struct KaodokuApp: App {
                 if !storeReady {
                     ProgressView("Loading downloads…")
                         .task {
-                            await app.store.load()
+                            await app.bootstrapStore()
                             storeReady = true
                         }
-                } else if app.connected {
+                } else if app.connected && app.reachable {
                     @Bindable var app = app
                     TabView(selection: $app.tab) {
                         LibraryView().tabItem { Label("Library", systemImage: "books.vertical") }.tag(0)
@@ -36,6 +36,8 @@ struct KaodokuApp: App {
                     }
                     .task { await app.loadSession() }
                     .task { prewarmKeyboard() }
+                } else if !app.downloadedInstances().isEmpty {
+                    OfflineTabs()
                 } else {
                     ConnectView()
                 }
@@ -48,6 +50,7 @@ struct KaodokuApp: App {
                     Task { await app.store.flush(nil) }
                 } else {
                     app.scheduleReselect()
+                    if app.connected && !app.reachable { Task { await app.refreshReachability() } }
                 }
             }
             .alert(app.store.requiresRecovery ? "Offline metadata is unreadable" : "Offline data wasn’t saved",
@@ -56,7 +59,7 @@ struct KaodokuApp: App {
                 set: { if !$0 && !app.store.requiresRecovery { app.store.clearPersistenceError() } }
             )) {
                 if app.store.requiresRecovery {
-                    Button("Retry") { Task { await app.store.load() } }
+                    Button("Retry") { Task { await app.bootstrapStore() } }
                     Button("Reset Metadata", role: .destructive) {
                         Task { await app.store.resetCorruptMetadata() }
                     }

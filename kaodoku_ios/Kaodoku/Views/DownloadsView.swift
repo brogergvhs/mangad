@@ -1,37 +1,102 @@
 import SwiftUI
 
-// DownloadsView mirrors the Library grid over local content: cover cards with
-// read progress of the downloaded chapters, sizes, then a title page identical
-// to the online one and the offline reader.
-struct DownloadsView: View {
+// DownloadsGrid renders the active store's titles.
+struct DownloadsGrid: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
         let titles = app.store.titles
-        NavigationStack {
-            ScrollView {
-                if titles.isEmpty {
-                    Text("Nothing downloaded yet. Use a title's ⋯ menu to download chapters to this device.")
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                        .padding(.top, 80)
-                }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
-                    ForEach(titles) { title in
-                        NavigationLink(value: title.id) {
-                            LocalTitleCard(title: title)
-                        }
-                        .buttonStyle(.plain)
+        ScrollView {
+            if titles.isEmpty {
+                Text("Nothing downloaded yet. Use a title's ⋯ menu to download chapters to this device.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .padding(.top, 80)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 16) {
+                ForEach(titles) { title in
+                    NavigationLink(value: title.id) {
+                        LocalTitleCard(title: title)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal)
+            }
+            .padding(.horizontal)
+        }
+        .task { await app.store.prune() }
+    }
+}
+
+// DownloadsView mirrors the Library grid over local content: cover cards with
+// read progress of the downloaded chapters, sizes, then a title page identical
+// to the online one and the offline reader.
+struct DownloadsView: View {
+    var body: some View {
+        NavigationStack {
+            DownloadsGrid()
+                .nordScreen()
+                .navigationTitle("Downloads")
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationDestination(for: Int64.self) { LocalTitleView(titleId: $0) }
+        }
+    }
+}
+
+// OfflineTabs is the disconnected shell.
+struct OfflineTabs: View {
+    var body: some View {
+        TabView {
+            OfflineView().tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+            ConnectView().tabItem { Label("Connect", systemImage: "link") }
+        }
+    }
+}
+
+struct OfflineServer: Hashable { let id: String }
+
+struct OfflineView: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let instances = app.downloadedInstances()
+        NavigationStack {
+            Group {
+                if instances.count == 1 {
+                    DownloadsGrid()
+                        .task { await app.store.activate(instances[0]) }
+                        .navigationTitle(app.serverName(instances[0]))
+                } else {
+                    List {
+                        Section("Downloaded servers") {
+                            ForEach(instances, id: \.self) { id in
+                                NavigationLink(value: OfflineServer(id: id)) {
+                                    Text(app.serverName(id))
+                                }
+                            }
+                        }
+                        .nordRows()
+                    }
+                    .navigationTitle("Offline")
+                }
             }
             .nordScreen()
-            .navigationTitle("Downloads")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: Int64.self) { LocalTitleView(titleId: $0) }
-            .task { await app.store.prune() }
+            .navigationDestination(for: OfflineServer.self) { server in
+                DownloadsGrid()
+                    .task { await app.store.activate(server.id) }
+                    .nordScreen()
+                    .navigationTitle(app.serverName(server.id))
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .toolbar {
+                if app.connected {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Retry") { Task { await app.refreshReachability() } }
+                    }
+                }
+            }
         }
     }
 }

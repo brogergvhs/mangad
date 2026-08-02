@@ -105,9 +105,15 @@ final class LocalStore {
     private var progressSaveTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
 
+    private(set) var instance: String?
+
     nonisolated static let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    nonisolated private static let indexURL = root.appendingPathComponent(".index.json")
-    nonisolated private static let queueURL = root.appendingPathComponent(".marks.json")
+    nonisolated static func indexURL(_ instance: String) -> URL {
+        root.appendingPathComponent(instance).appendingPathComponent(".index.json")
+    }
+    nonisolated static func queueURL(_ instance: String) -> URL {
+        root.appendingPathComponent(instance).appendingPathComponent(".marks.json")
+    }
     nonisolated private static let pageArchives = PageArchiveCache()
 
     var requiresRecovery: Bool { corruptIndex || corruptQueue }
@@ -116,8 +122,14 @@ final class LocalStore {
         try? (Self.root as NSURL).setResourceValue(true, forKey: .isExcludedFromBackupKey)
     }
 
-    func load() async {
-        let loaded = await Task.detached(priority: .utility) { Self.loadFiles() }.value
+    func load(instance: String?) async {
+        self.instance = instance
+        guard let instance else {
+            chapters = [:]; titleInfo = [:]; queue = []
+            corruptIndex = false; corruptQueue = false; persistenceError = nil
+            return
+        }
+        let loaded = await Task.detached(priority: .utility) { Self.loadFiles(instance) }.value
         corruptIndex = loaded.corruptIndex
         corruptQueue = loaded.corruptQueue
         persistenceError = recoveryMessage
@@ -127,19 +139,29 @@ final class LocalStore {
         if loaded.needsPersist { persistIndex() }
     }
 
-    private nonisolated static func loadFiles() -> Loaded {
+    // activate swaps the store to another server's downloads, persisting the
+    // current server's queue first.
+    func activate(_ id: String?) async {
+        guard id != instance else { return }
+        await flush(nil)
+        await load(instance: id)
+    }
+
+    private nonisolated static func loadFiles(_ instance: String) -> Loaded {
         let files = FileManager.default
+        let indexURL = indexURL(instance)
+        let queueURL = queueURL(instance)
         var entries: [Entry] = []
         var titles: [TitleInfo] = []
         var corruptIndex = false
-        if let data = try? Data(contentsOf: Self.indexURL) {
+        if let data = try? Data(contentsOf: indexURL) {
             if let idx = try? JSONDecoder().decode(Index.self, from: data) {
                 entries = idx.chapters
                 titles = idx.titles
             } else {
                 corruptIndex = true
             }
-        } else if files.fileExists(atPath: Self.indexURL.path) {
+        } else if files.fileExists(atPath: indexURL.path) {
             corruptIndex = true
         }
         let entryCount = entries.count
@@ -154,13 +176,13 @@ final class LocalStore {
         let info = Dictionary(titles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var queue: [QueuedMark] = []
         var corruptQueue = false
-        if let data = try? Data(contentsOf: Self.queueURL) {
+        if let data = try? Data(contentsOf: queueURL) {
             if let decoded = try? JSONDecoder().decode([QueuedMark].self, from: data) {
                 queue = decoded
             } else {
                 corruptQueue = true
             }
-        } else if files.fileExists(atPath: Self.queueURL.path) {
+        } else if files.fileExists(atPath: queueURL.path) {
             corruptQueue = true
         }
         return Loaded(
@@ -173,6 +195,7 @@ final class LocalStore {
             corruptQueue: corruptQueue
         )
     }
+
 
     // prune drops index entries whose file was deleted through the Files app,
     // and title records left without chapters.
@@ -305,20 +328,20 @@ final class LocalStore {
     func retryPersistence() {
         persistenceError = nil
         persistIndex()
-        persist(queue, to: Self.queueURL)
+        if let instance { persist(queue, to: Self.queueURL(instance)) }
     }
 
     func resetCorruptMetadata() async {
-        // ponytail: CBZ names do not contain stable IDs, so preserve them and reset only metadata.
+        guard let instance else { return }
         do {
-            for (corrupt, url) in [(corruptIndex, Self.indexURL), (corruptQueue, Self.queueURL)]
+            for (corrupt, url) in [(corruptIndex, Self.indexURL(instance)), (corruptQueue, Self.queueURL(instance))]
             where corrupt && FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.moveItem(
                     at: url,
                     to: url.appendingPathExtension("corrupt-\(UUID().uuidString)")
                 )
             }
-            await load()
+            await load(instance: instance)
         } catch {
             persistenceError = "Metadata could not be reset. Check Files access, then retry. \(error.localizedDescription)"
         }
@@ -427,11 +450,11 @@ final class LocalStore {
     }
 
     private func dirName(titleId: Int64, titleName: String) -> String {
-        if let e = chapters.values.first(where: { $0.titleId == titleId }),
-           let dir = e.path.split(separator: "/").first {
-            return String(dir)
+        if let e = chapters.values.first(where: { $0.titleId == titleId }) {
+            return e.path.split(separator: "/").dropLast().joined(separator: "/")
         }
-        let base = Self.safe(titleName)
+        let prefix = instance.map { "\($0)/" } ?? ""
+        let base = prefix + Self.safe(titleName)
         let taken = chapters.values.contains { $0.titleId != titleId && $0.path.hasPrefix(base + "/") }
         return taken ? "\(base) (\(titleId))" : base
     }
@@ -513,7 +536,7 @@ final class LocalStore {
         if (try? await api.data("POST", "/api/v1/reader/progress/batch", body: Batch(entries: sent))) != nil {
             let sent = Set(sent)
             queue.removeAll { sent.contains($0) }
-            persist(queue, to: Self.queueURL)
+            if let instance { persist(queue, to: Self.queueURL(instance)) }
         }
     }
 
@@ -540,14 +563,16 @@ final class LocalStore {
     }
 
     private func persistIndex() {
-        persist(Index(titles: Array(titleInfo.values), chapters: Array(chapters.values)), to: Self.indexURL)
+        guard let instance else { return }
+        persist(Index(titles: Array(titleInfo.values), chapters: Array(chapters.values)),
+                to: Self.indexURL(instance))
     }
 
     private func persistProgress() {
-        guard progressDirty else { return }
+        guard progressDirty, let instance else { return }
         progressDirty = false
         persistIndex()
-        persist(queue, to: Self.queueURL)
+        persist(queue, to: Self.queueURL(instance))
     }
 
     private func persist(_ value: some Encodable & Sendable, to url: URL) {

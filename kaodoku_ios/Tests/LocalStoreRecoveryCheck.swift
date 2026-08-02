@@ -6,36 +6,21 @@ import Testing
 @Test("Unreadable metadata can be reset without deleting CBZ files")
 func localStoreRecovery() async throws {
     let files = FileManager.default
-    let root = LocalStore.root
-    let index = root.appendingPathComponent(".index.json")
-    let queue = root.appendingPathComponent(".marks.json")
-    let originalIndex = try? Data(contentsOf: index)
-    let originalQueue = try? Data(contentsOf: queue)
-    let originalNames = Set((try? files.contentsOfDirectory(atPath: root.path)) ?? [])
-    let sentinel = root.appendingPathComponent("RecoveryCheck-\(UUID().uuidString)", isDirectory: true)
-    let archive = sentinel.appendingPathComponent("chapter.cbz")
+    let instance = "test-\(UUID().uuidString)"
+    let dir = LocalStore.root.appendingPathComponent(instance, isDirectory: true)
+    let index = LocalStore.indexURL(instance)
+    let queue = LocalStore.queueURL(instance)
+    let archive = dir.appendingPathComponent("Title/chapter.cbz")
 
-    defer {
-        try? files.removeItem(at: sentinel)
-        try? files.removeItem(at: index)
-        try? files.removeItem(at: queue)
-        if let originalIndex { try? originalIndex.write(to: index, options: .atomic) }
-        if let originalQueue { try? originalQueue.write(to: queue, options: .atomic) }
-        if let names = try? files.contentsOfDirectory(atPath: root.path) {
-            for name in names where !originalNames.contains(name)
-                && (name.hasPrefix(".index.json.corrupt-") || name.hasPrefix(".marks.json.corrupt-")) {
-                try? files.removeItem(at: root.appendingPathComponent(name))
-            }
-        }
-    }
+    defer { try? files.removeItem(at: dir) }
 
-    try files.createDirectory(at: sentinel, withIntermediateDirectories: true)
+    try files.createDirectory(at: archive.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data([0]).write(to: archive)
     try Data("{".utf8).write(to: index, options: .atomic)
     try Data("{".utf8).write(to: queue, options: .atomic)
 
     let store = LocalStore()
-    await store.load()
+    await store.load(instance: instance)
     #expect(store.requiresRecovery)
     #expect(store.persistenceError != nil)
 
@@ -44,9 +29,37 @@ func localStoreRecovery() async throws {
     #expect(!store.requiresRecovery)
     #expect(store.persistenceError == nil)
     #expect(files.fileExists(atPath: archive.path))
-    let names = try files.contentsOfDirectory(atPath: root.path)
+    let names = try files.contentsOfDirectory(atPath: dir.path)
     #expect(names.contains { $0.hasPrefix(".index.json.corrupt-") })
     #expect(names.contains { $0.hasPrefix(".marks.json.corrupt-") })
+}
+
+@MainActor
+@Test("Downloads are namespaced per server and stay separated")
+func perInstanceSeparation() async throws {
+    let files = FileManager.default
+    let instance = "sep-\(UUID().uuidString)"
+    let dir = LocalStore.root.appendingPathComponent(instance, isDirectory: true)
+    let cbz = dir.appendingPathComponent("MyTitle/Chapter 1.cbz")
+
+    defer { try? files.removeItem(at: dir) }
+
+    try files.createDirectory(at: cbz.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data([0]).write(to: cbz)
+    let json = """
+    {"titles":[],"chapters":[{"id":5,"titleId":1,"titleName":"MyTitle","label":"1",\
+    "path":"\(instance)/MyTitle/Chapter 1.cbz","pages":1,"size":1,"readPages":0,\
+    "completed":false,"pageAspects":[0.7],"volume":false}]}
+    """
+    try Data(json.utf8).write(to: LocalStore.indexURL(instance), options: .atomic)
+
+    let store = LocalStore()
+    await store.load(instance: instance)
+    let url = try #require(store.url(for: 5))
+    #expect(url.path.contains("/\(instance)/MyTitle/"))
+
+    await store.activate("other-\(UUID().uuidString)")
+    #expect(store.url(for: 5) == nil)
 }
 
 @MainActor

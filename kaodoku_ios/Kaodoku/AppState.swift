@@ -124,6 +124,12 @@ final class AppState {
     private let pathMonitor = NWPathMonitor()
 
     var connected: Bool { api != nil }
+    var reachable = true // false once a probe/request shows the server is unreachable
+
+    func refreshReachability() async {
+        guard let e = endpoints, let api else { reachable = false; return }
+        reachable = await Self.fetchInstanceID(api.baseURL) == e.instanceID
+    }
 
     init() {
         if let data = UserDefaults.standard.data(forKey: Self.endpointsKey),
@@ -194,6 +200,7 @@ final class AppState {
         var e = endpoints?.instanceID == id ? endpoints! : ServerEndpoints(instanceID: id)
         if isPrivateHost(url.host) { e.localURL = url } else { e.publicURL = url }
         endpoints = e
+        recordKnownServer(id, name: url.host ?? id)
         return true
     }
 
@@ -220,6 +227,7 @@ final class AppState {
             if other == saved.publicURL { external = nil }
         }
         endpoints = ServerEndpoints(localURL: local, publicURL: external, instanceID: id, mode: saved.mode)
+        recordKnownServer(id, name: saved.name)
         return true
     }
 
@@ -257,6 +265,8 @@ final class AppState {
 
     func loadSession() async {
         guard let api else { return }
+        reachable = true
+        await store.activate(endpoints?.instanceID)
         do {
             if me == nil { me = try await api.get("/api/v1/me") }
             settings = try await api.get("/api/v1/me/settings")
@@ -266,6 +276,37 @@ final class AppState {
             signOut()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    // bootstrapStore loads the right server's downloads at launch.
+    func bootstrapStore() async {
+        await store.load(instance: endpoints?.instanceID)
+        if connected { await refreshReachability() }
+        if (!connected || !reachable), store.titles.isEmpty, let alt = downloadedInstances().first {
+            await store.activate(alt)
+        }
+    }
+
+    var knownServers: [String: String] =
+        UserDefaults.standard.dictionary(forKey: "known_servers") as? [String: String] ?? [:]
+
+    func serverName(_ instance: String) -> String { knownServers[instance] ?? instance }
+
+    private func recordKnownServer(_ instance: String, name: String) {
+        knownServers[instance] = name
+        UserDefaults.standard.set(knownServers, forKey: "known_servers")
+    }
+
+    func downloadedInstances() -> [String] {
+        let files = FileManager.default
+        let dirs = (try? files.contentsOfDirectory(at: LocalStore.root, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        return dirs.compactMap { url -> String? in
+            let id = url.lastPathComponent
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { return nil }
+            if files.fileExists(atPath: LocalStore.indexURL(id).path) { return id }
+            let contents = (try? files.contentsOfDirectory(atPath: url.path)) ?? []
+            return contents.contains { !$0.hasPrefix(".") } ? id : nil
         }
     }
 
