@@ -804,42 +804,6 @@ func jobsRunV1(runJobs func(context.Context) (service.RunSummary, error)) http.H
 	}
 }
 
-func (a *apiV1) notificationsList(w http.ResponseWriter, r *http.Request) {
-	sc := notificationScope(userFrom(r.Context()))
-	items, err := a.svc.Notifications(r.Context(), sc, clampLimit(r.URL.Query().Get("limit")))
-	if err != nil {
-		v1err(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	unread, _ := a.svc.UnreadNotificationCount(r.Context(), sc)
-	out := make([]notificationDTO, 0, len(items))
-	for _, n := range items {
-		out = append(out, toNotificationDTO(n))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": out, "unread": unread})
-}
-
-func (a *apiV1) notificationsRead(w http.ResponseWriter, r *http.Request) {
-	if err := a.svc.MarkNotificationsRead(r.Context(), notificationScope(userFrom(r.Context()))); err != nil {
-		v1err(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (a *apiV1) notificationDelete(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
-		return
-	}
-	if err := a.svc.DeleteNotification(r.Context(), notificationScope(userFrom(r.Context())), id); err != nil {
-		v1err(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // sourcesPick lists the minimal source picker for users without sources.manage.
 func (a *apiV1) sourcesPick(w http.ResponseWriter, r *http.Request) {
 	if err := a.svc.SyncSources(r.Context(), ""); err != nil {

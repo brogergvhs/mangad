@@ -2450,10 +2450,6 @@ func (s *JobService) runClaimedJob(ctx, markCtx context.Context, cfg *config.Con
 		if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {
 			return 0, 1, markErr
 		}
-		if latest, gerr := s.jobs.Get(markCtx, job.ID); gerr == nil && latest.Status == "dead" {
-			msg := fmt.Sprintf("Job #%d (%s) failed after retries: %s", job.ID, job.Type, truncateError(err.Error()))
-			_ = s.AddNotification(markCtx, 0, "error", msg, job.ID)
-		}
 		return 0, 1, nil
 	}
 	if err := s.jobs.MarkDone(markCtx, job.ID); err != nil {

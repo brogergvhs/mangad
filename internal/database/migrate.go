@@ -292,15 +292,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 	expires_at TEXT NOT NULL DEFAULT ''
 );
 
-CREATE TABLE IF NOT EXISTS notifications (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id INTEGER NOT NULL DEFAULT 0,
-	level TEXT NOT NULL DEFAULT 'error',
-	message TEXT NOT NULL,
-	job_id INTEGER NOT NULL DEFAULT 0,
-	read_at TEXT NOT NULL DEFAULT '',
-	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+DROP TABLE IF EXISTS notifications;
 
 CREATE TABLE IF NOT EXISTS sessions (
 	token_hash TEXT PRIMARY KEY,
@@ -421,7 +413,6 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"api_tokens", "last_seen_at", "TEXT NOT NULL DEFAULT ''"},
 		{"api_tokens", "device_id", "TEXT NOT NULL DEFAULT ''"},
 		{"chapter_read_progress", "manual", "INTEGER NOT NULL DEFAULT 0"}, // 1 = bulk/AniList mark, not page-by-page reading
-		{"notifications", "user_id", "INTEGER NOT NULL DEFAULT 0"},        // 0 = server-wide
 	} {
 		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)

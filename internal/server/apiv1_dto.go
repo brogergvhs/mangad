@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/catalog"
-	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/service"
@@ -181,25 +180,6 @@ func toJobDTO(j jobs.Job) jobDTO {
 		ParentID: j.ParentID, RunAfter: j.RunAfter, CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt,
 		TitleID: p.TitleID, SourceID: p.SourceID, CatalogID: p.CatalogID,
 	}
-}
-
-type notificationDTO struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-	Level     string `json:"level"`
-	Message   string `json:"message"`
-	JobID     int64  `json:"job_id"`
-	Read      bool   `json:"read"`
-	CreatedAt string `json:"created_at"`
-}
-
-func toNotificationDTO(n service.Notification) notificationDTO {
-	created := n.CreatedAt
-	if t, err := database.ParseTime(n.CreatedAt); err == nil && !t.IsZero() {
-		created = t.UTC().Format(time.RFC3339)
-	}
-	return notificationDTO{ID: n.ID, UserID: n.UserID, Level: n.Level, Message: n.Message,
-		JobID: n.JobID, Read: n.ReadAt != "", CreatedAt: created}
 }
 
 type collectionDTO struct {

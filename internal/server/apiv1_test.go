@@ -346,10 +346,6 @@ func TestAPIV1Actions(t *testing.T) {
 		t.Fatalf("source picker leaks fields: %+v", srcs.Items[0])
 	}
 
-	rec = do(t, api, http.MethodGet, "/api/v1/notifications", "", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("notifications = %d", rec.Code)
-	}
 }
 
 func TestAPIV1EnqueueOwnership(t *testing.T) {
@@ -458,7 +454,6 @@ func TestAPIV1RequiresAuth(t *testing.T) {
 		"POST /api/v1/wanted", "GET /api/v1/wanted/matches", "POST /api/v1/wanted/matches",
 		"POST /api/v1/wanted/track",
 		"GET /api/v1/jobs", "GET /api/v1/jobs/1", "POST /api/v1/jobs/enqueue", "POST /api/v1/jobs/run",
-		"GET /api/v1/notifications", "POST /api/v1/notifications/read", "DELETE /api/v1/notifications/1",
 		"GET /api/v1/sources",
 	}
 	for _, route := range routes {

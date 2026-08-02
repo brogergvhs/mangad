@@ -61,6 +61,15 @@ final class AppState {
     private static let endpointsKey = "server_endpoints"
     private static let settingsKey = "user_settings"
     private static let modeOverridesKey = "reader_mode_overrides"
+    private static let deviceIDKey = "device_id"
+
+    // Stable per-install id; the server keeps one active token per install.
+    static var deviceID: String {
+        if let id = UserDefaults.standard.string(forKey: deviceIDKey) { return id }
+        let id = UUID().uuidString
+        UserDefaults.standard.set(id, forKey: deviceIDKey)
+        return id
+    }
 
     // Per-title reader mode.
     var readerModeOverrides: [String: String] =
@@ -160,6 +169,7 @@ final class AppState {
                 let login: LoginResponse = try await client.post("/api/v1/auth/login", body: [
                     "username": username, "password": password,
                     "device_name": "iOS app · \(UIDevice.current.model)",
+                    "device_id": Self.deviceID,
                 ])
                 client.token = login.token
                 me = login.me

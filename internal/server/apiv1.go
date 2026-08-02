@@ -130,9 +130,6 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(con
 	mux.HandleFunc("GET /api/v1/jobs/{id}", a.jobGet)
 	mux.HandleFunc("POST /api/v1/jobs/enqueue", a.jobEnqueue)
 	mux.HandleFunc("POST /api/v1/jobs/run", jobsRunV1(runJobs))
-	mux.HandleFunc("GET /api/v1/notifications", a.notificationsList)
-	mux.HandleFunc("POST /api/v1/notifications/read", a.notificationsRead)
-	mux.HandleFunc("DELETE /api/v1/notifications/{id}", a.notificationDelete)
 	mux.HandleFunc("GET /api/v1/sources", a.sourcesPick)
 }
 
@@ -197,7 +194,7 @@ func (a *apiV1) meta(w http.ResponseWriter, _ *http.Request) {
 		ServerVersion: serverVersion(),
 		APIVersion:    1,
 		AuthRequired:  authEnabled(),
-		Features:      []string{"archives", "delta_sync", "progress_batch", "collections", "screens", "anilist", "notifications"},
+		Features:      []string{"archives", "delta_sync", "progress_batch", "collections", "screens", "anilist"},
 		ImageFormats:  []string{"jpg", "jpeg", "png", "webp", "gif", "avif"},
 		MaxPageBytes:  maxPageBytes,
 		InstanceID:    a.instanceID,
