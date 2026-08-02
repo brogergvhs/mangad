@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -23,9 +24,13 @@ func (u *webUI) sessionsFrag(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
-	rows := make([]sessionRowView, 0, len(list))
+	type sortedRow struct {
+		view sessionRowView
+		seen time.Time
+	}
+	rows := make([]sortedRow, 0, len(list))
 	for _, s := range list {
-		rows = append(rows, sessionRowView{
+		rows = append(rows, sortedRow{sessionRowView{
 			Username: s.Username,
 			Device:   uaDevice(s.UserAgent),
 			IP:       s.IP,
@@ -33,11 +38,11 @@ func (u *webUI) sessionsFrag(w http.ResponseWriter, r *http.Request) {
 			Online:   time.Since(s.LastSeenAt) < 5*time.Minute,
 			LastSeen: relTime(s.LastSeenAt),
 			Reading:  readingLabel(s.TokenHash),
-		})
+		}, s.LastSeenAt})
 	}
 	if devices, err := u.svc.Auth().ActiveDevices(r.Context()); err == nil {
 		for _, d := range devices {
-			rows = append(rows, sessionRowView{
+			rows = append(rows, sortedRow{sessionRowView{
 				Username: d.Username,
 				Device:   d.Name,
 				IP:       "—",
@@ -45,10 +50,15 @@ func (u *webUI) sessionsFrag(w http.ResponseWriter, r *http.Request) {
 				Online:   time.Since(d.LastSeenAt) < 5*time.Minute,
 				LastSeen: relTime(d.LastSeenAt),
 				Reading:  readingLabel(d.TokenHash),
-			})
+			}, d.LastSeenAt})
 		}
 	}
-	u.frag(w, "sessionsCard", rows)
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].seen.After(rows[j].seen) })
+	views := make([]sessionRowView, len(rows))
+	for i, r := range rows {
+		views[i] = r.view
+	}
+	u.frag(w, "sessionsCard", views)
 }
 
 // readingLabel formats a session's reader presence ("Title: Ch 5 · p 3/40").
