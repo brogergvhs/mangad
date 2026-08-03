@@ -1049,10 +1049,30 @@ func (s *JobService) aniListIdentity(ctx context.Context, userID int64) (context
 		return ctx, 0, false
 	}
 	token, err := s.secrets.Decrypt(token)
-	if err != nil || token == "" {
+	if err != nil {
+		log.Printf("anilist token decrypt failed for user %d: %v", userID, err)
+		return ctx, 0, false
+	}
+	if token == "" {
 		return ctx, 0, false
 	}
 	return catalog.WithToken(ctx, token), aid, true
+}
+
+// aniListConnected reports whether a token row exists at all, separating "not
+// connected" from "connected but the token can't be decrypted".
+func (s *JobService) aniListConnected(ctx context.Context, userID int64) bool {
+	var one int
+	return s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM user_anilist WHERE user_id = ? AND access_token != ''`, userID).Scan(&one) == nil
+}
+
+// aniListError explains why aniListIdentity failed, for user-facing messages.
+func (s *JobService) aniListError(ctx context.Context, userID int64) error {
+	if s.aniListConnected(ctx, userID) {
+		return fmt.Errorf("AniList token couldn't be read — reconnect AniList (the server's encryption key changed)")
+	}
+	return fmt.Errorf("no AniList account connected")
 }
 
 // runCatalogRefresh re-fetches AniList metadata for every catalog entry a
@@ -1234,7 +1254,7 @@ func (s *JobService) encryptLegacyTokens(ctx context.Context) error {
 // EnqueueAniListSync queues a progress sync for one user right now.
 func (s *JobService) EnqueueAniListSync(ctx context.Context, userID int64) error {
 	if _, _, ok := s.aniListIdentity(ctx, userID); !ok {
-		return fmt.Errorf("no AniList account connected")
+		return s.aniListError(ctx, userID)
 	}
 	_, err := s.enqueueExact(ctx, jobs.TypeSyncAniList, JobPayload{UserID: userID}, time.Now())
 	return err

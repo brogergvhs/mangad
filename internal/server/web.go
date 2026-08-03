@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -2902,6 +2903,7 @@ func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 		filter.Page = last
 		fetched, m, err := u.svc.SearchAniList(r.Context(), c.Q, searchPerPage, filter)
 		if err != nil {
+			log.Printf("anilist search failed: %v", err)
 			view.Error, view.RetryPage = true, page
 			u.frag(w, "searchResults", view)
 			return

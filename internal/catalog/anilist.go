@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 const AniListProvider = "anilist"
@@ -308,6 +310,8 @@ func (c *AniListClient) send(ctx context.Context, body []byte) (*http.Response, 
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("User-Agent", util.PickUserAgent(""))
 		if token := TokenFromContext(ctx); token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
