@@ -2,3 +2,6 @@ xcuserdata/
 DerivedData/
 *.xcworkspace/xcshareddata/swiftpm
 build/
+# sourcekit-lsp build-server config: machine-specific absolute paths.
+buildServer.json
+.build/
