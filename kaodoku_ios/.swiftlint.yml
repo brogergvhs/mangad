@@ -6,6 +6,9 @@ disabled_rules:
   - todo
   - trailing_comma
   - opening_brace
+  - statement_position
+  - multiple_closures_with_trailing_closure
+  - implicit_optional_initialization
 
 # UIKit `dequeueReusableCell(...) as! Cell` is safe.
 force_cast: warning

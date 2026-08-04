@@ -118,7 +118,9 @@ struct StripReader: UIViewRepresentable {
     }
 
     func collectionView(_ cv: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-      let cell = cv.dequeueReusableCell(withReuseIdentifier: StripCell.id, for: indexPath) as! StripCell
+      guard let cell = cv.dequeueReusableCell(withReuseIdentifier: StripCell.id, for: indexPath) as? StripCell else {
+        return UICollectionViewCell()
+      }
       let page = pages[indexPath.item]
       let loader = parent.loadImage
       cell.load(page, size: parent.maxPixelSize) { await loader($0, $1) }

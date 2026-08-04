@@ -238,12 +238,12 @@ struct ServerEditSheet: View {
     let wasActive = active
     verifying = true
     Task {
-      for url in [localURL, publicURL].compactMap(\.self) {
-        if await AppState.fetchInstanceID(url) == nil {
-          verifying = false
-          error = "\(url.host ?? "The address") is not a reachable Kaodoku server."
-          return
-        }
+      for url in [localURL, publicURL].compactMap(\.self)
+        where await AppState.fetchInstanceID(url) == nil
+      {
+        verifying = false
+        error = "\(url.host ?? "The address") is not a reachable Kaodoku server."
+        return
       }
       verifying = false
       server.localURL = localURL
