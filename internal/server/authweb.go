@@ -81,6 +81,8 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermJobsManage
 	case p == "/api/v1/jobs/enqueue":
 		return "" // ownership scoping in the handler
+	case strings.HasPrefix(p, "/api/v1/jobs/") && strings.HasSuffix(p, "/cancel"):
+		return auth.PermJobsManage
 	case strings.HasPrefix(p, "/api/v1/jobs"):
 		return auth.PermJobsView
 	case p == "/api/v1/wanted/track":

@@ -25,6 +25,10 @@ func TestRequiredPerm(t *testing.T) {
 		{"GET", "/users", auth.PermUsersManage},
 		{"POST", "/ui/users/3/delete", auth.PermUsersManage},
 		{"POST", "/ui/sources/x/delete", auth.PermSourcesManage},
+		{"GET", "/api/v1/jobs", auth.PermJobsView},
+		{"GET", "/api/v1/jobs/5", auth.PermJobsView},
+		{"POST", "/api/v1/jobs/5/cancel", auth.PermJobsManage},
+		{"POST", "/api/v1/jobs/run", auth.PermJobsManage},
 	}
 	for _, c := range cases {
 		r := httptest.NewRequest(c.method, c.path, nil)

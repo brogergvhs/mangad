@@ -129,6 +129,7 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(con
 	mux.HandleFunc("GET /api/v1/jobs", a.jobsList)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", a.jobGet)
 	mux.HandleFunc("POST /api/v1/jobs/enqueue", a.jobEnqueue)
+	mux.HandleFunc("POST /api/v1/jobs/{id}/cancel", a.jobCancel)
 	mux.HandleFunc("POST /api/v1/jobs/run", jobsRunV1(runJobs))
 	mux.HandleFunc("GET /api/v1/sources", a.sourcesPick)
 }

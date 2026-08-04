@@ -746,6 +746,22 @@ func (a *apiV1) jobGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toJobDTO(j))
 }
 
+// jobCancel stops a running job (and its children) or marks a pending one
+// cancelled — the API twin of the web UI's /ui/jobs/{id}/cancel. Gated by
+// jobs.manage in requiredPerm.
+func (a *apiV1) jobCancel(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if err := a.svc.CancelJob(r.Context(), id); err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // titleScopedJobTypes may be enqueued with library.manage alone.
 var titleScopedJobTypes = map[string]bool{
 	jobs.TypeRefreshTitle:    true,
