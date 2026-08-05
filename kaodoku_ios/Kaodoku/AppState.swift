@@ -75,6 +75,9 @@ final class AppState {
   private static let settingsKey = "user_settings"
   private static let modeOverridesKey = "reader_mode_overrides"
   private static let savedServersKey = "saved_servers"
+  private static let readerWarmthKey = "reader_warmth"
+  private static let readerDimKey = "reader_dim"
+  private static let readerWhiteOnlyKey = "reader_white_only"
 
   var savedServers: [SavedServer] =
     (UserDefaults.standard.data(forKey: savedServersKey))
@@ -125,6 +128,24 @@ final class AppState {
       readerModeOverrides.removeValue(forKey: "\(id)")
     }
     UserDefaults.standard.set(readerModeOverrides, forKey: Self.modeOverridesKey)
+  }
+
+  var readerWarmth = UserDefaults.standard.double(forKey: readerWarmthKey) {
+    didSet { UserDefaults.standard.set(readerWarmth, forKey: Self.readerWarmthKey) }
+  }
+
+  var readerDim = UserDefaults.standard.double(forKey: readerDimKey) {
+    didSet { UserDefaults.standard.set(readerDim, forKey: Self.readerDimKey) }
+  }
+
+  /// When on, warmth/dim only touch white/near-white pixels so colored pages
+  /// keep their hues.
+  var readerWhiteOnly = UserDefaults.standard.bool(forKey: readerWhiteOnlyKey) {
+    didSet { UserDefaults.standard.set(readerWhiteOnly, forKey: Self.readerWhiteOnlyKey) }
+  }
+
+  var readerComfort: ComfortParams {
+    ComfortParams(warmth: readerWarmth, dim: readerDim, whiteOnly: readerWhiteOnly)
   }
 
   private static let tokenAccount = "api_token"

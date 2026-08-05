@@ -10,6 +10,7 @@ struct ZoomablePage: UIViewRepresentable {
 
   let slots: [Slot] // in visual left-to-right order
   @Binding var zoom: CGFloat
+  var params = ComfortParams(warmth: 0, dim: 0, whiteOnly: false)
 
   func makeUIView(context _: Context) -> ZoomPageUIView {
     ZoomPageUIView()
@@ -17,7 +18,7 @@ struct ZoomablePage: UIViewRepresentable {
 
   func updateUIView(_ v: ZoomPageUIView, context _: Context) {
     v.onZoomEnd = { zoom = $0 }
-    v.set(slots: slots)
+    v.set(slots: slots, params: params)
     v.applyZoom(zoom)
   }
 }
@@ -27,7 +28,8 @@ final class ZoomPageUIView: UIView, UIScrollViewDelegate {
   private let content = UIView()
   private var imageViews: [UIImageView] = []
   private var aspects: [CGFloat] = []
-  private var current: [ZoomablePage.Slot] = []
+  private var current: [ZoomablePage.Slot] = [] // originals, pre-filter
+  private var appliedParams = ComfortParams(warmth: 0, dim: 0, whiteOnly: false)
   var onZoomEnd: ((CGFloat) -> Void)?
 
   override init(frame: CGRect) {
@@ -44,22 +46,29 @@ final class ZoomPageUIView: UIView, UIScrollViewDelegate {
     fatalError()
   }
 
-  func set(slots: [ZoomablePage.Slot]) {
-    guard slots != current else { return }
-    current = slots
-    imageViews.forEach { $0.removeFromSuperview() }
-    imageViews = slots.map { slot in
-      let iv = UIImageView(image: slot.image)
-      iv.contentMode = .scaleToFill
-      iv.layer.contentsRect = slot.contentsRect
-      content.addSubview(iv)
-      return iv
+  func set(slots: [ZoomablePage.Slot], params: ComfortParams) {
+    if slots != current {
+      current = slots
+      appliedParams = params
+      imageViews.forEach { $0.removeFromSuperview() }
+      imageViews = slots.map { slot in
+        let iv = UIImageView(image: ReaderComfort.apply(slot.image, params))
+        iv.contentMode = .scaleToFill
+        iv.layer.contentsRect = slot.contentsRect
+        content.addSubview(iv)
+        return iv
+      }
+      aspects = slots.map {
+        $0.image.size.width / max($0.image.size.height, 1) * $0.contentsRect.width
+      }
+      scroll.zoomScale = 1
+      layoutContent()
+    } else if params != appliedParams {
+      appliedParams = params
+      for (iv, slot) in zip(imageViews, current) {
+        iv.image = ReaderComfort.apply(slot.image, params)
+      }
     }
-    aspects = slots.map {
-      $0.image.size.width / max($0.image.size.height, 1) * $0.contentsRect.width
-    }
-    scroll.zoomScale = 1
-    layoutContent()
   }
 
   func applyZoom(_ z: CGFloat) {

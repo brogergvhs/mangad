@@ -14,8 +14,10 @@ struct StripReader: UIViewRepresentable {
   let maxPixelSize: CGSize
   let estimateAspect: CGFloat
   var jump: Jump?
+  var comfort = ComfortParams(warmth: 0, dim: 0, whiteOnly: false)
   let loadImage: (ReaderView.PageRef, CGSize) async -> UIImage?
   let onPage: (Int) -> Void
+  let onFinished: (Int) -> Void
 
   func makeCoordinator() -> Coordinator {
     Coordinator(self)
@@ -50,12 +52,16 @@ struct StripReader: UIViewRepresentable {
     weak var view: ZoomStripView?
     private var didResume = false
     private var reported = -1
+    private var finished = -1
+    private var jumping = false
     private var lastJumpID = 0
     private var enhanced = false
+    private var comfort: ComfortParams
 
     init(_ parent: StripReader) {
       self.parent = parent
       pages = parent.pages
+      comfort = parent.comfort
     }
 
     func apply(_ parent: StripReader) {
@@ -64,6 +70,12 @@ struct StripReader: UIViewRepresentable {
       if parent.enhanced != enhanced {
         enhanced = parent.enhanced
         v.collectionView.reloadData()
+      }
+      if parent.comfort != comfort {
+        comfort = parent.comfort
+        for case let cell as StripCell in v.collectionView.visibleCells {
+          cell.setComfort(comfort)
+        }
       }
       let newPages = parent.pages
       if newPages.count != pages.count {
@@ -87,8 +99,11 @@ struct StripReader: UIViewRepresentable {
       resumeIfNeeded()
       if let j = parent.jump, j.id != lastJumpID, didResume, pages.indices.contains(j.index) {
         lastJumpID = j.id
-        v.scrollToItem(j.index)
         reported = j.index
+        finished = j.index - 1
+        jumping = true
+        v.scrollToItem(j.index)
+        jumping = false
         let onPage = parent.onPage
         DispatchQueue.main.async { onPage(j.index) }
       }
@@ -104,10 +119,17 @@ struct StripReader: UIViewRepresentable {
       v.scrollToItem(i)
       didResume = true
       reported = i
+      finished = i - 1
     }
 
     func reportPage() {
-      guard didResume, let v = view else { return }
+      guard didResume, !jumping, let v = view else { return }
+      if let f = v.finishedItem(), f > finished {
+        for j in (finished + 1) ... f where pages.indices.contains(j) {
+          parent.onFinished(j)
+        }
+        finished = f
+      }
       guard let i = v.topItem(), i != reported else { return }
       reported = i
       parent.onPage(i)
@@ -123,6 +145,7 @@ struct StripReader: UIViewRepresentable {
       }
       let page = pages[indexPath.item]
       let loader = parent.loadImage
+      cell.setComfort(comfort)
       cell.load(page, size: parent.maxPixelSize) { await loader($0, $1) }
       return cell
     }
@@ -187,6 +210,21 @@ final class ZoomStripView: UIView, UIScrollViewDelegate {
                                                 y: overlay.contentOffset.y + 1))?.item
   }
 
+  /// finishedItem returns the last item whose bottom edge has scrolled into view.
+  func finishedItem() -> Int? {
+    guard layout.preparedScale == overlay.zoomScale else { return nil }
+    let count = collectionView.numberOfItems(inSection: 0)
+    guard count > 0 else { return nil }
+    let bottomY = overlay.contentOffset.y + bounds.height
+    if bottomY >= layout.collectionViewContentSize.height - 0.5 {
+      return count - 1
+    }
+    guard let item = collectionView.indexPathForItem(at: CGPoint(x: overlay.contentOffset.x + 1,
+                                                                 y: bottomY))?.item,
+      item > 0 else { return nil }
+    return item - 1
+  }
+
   func scrollViewDidScroll(_ s: UIScrollView) {
     collectionView.contentOffset = s.contentOffset
     onScroll?()
@@ -216,11 +254,13 @@ final class ZoomStripLayout: UICollectionViewLayout {
   private var frames: [CGRect] = []
   private var size: CGSize = .zero
   private var lastWidth: CGFloat = 0
+  private(set) var preparedScale: CGFloat = 1
 
   override func prepare() {
     super.prepare()
     guard let cv = collectionView else { return }
     lastWidth = cv.bounds.width
+    preparedScale = scale
     let px = cv.traitCollection.displayScale > 0 ? cv.traitCollection.displayScale : 1
     let width = cv.bounds.width * scale
     frames.removeAll(keepingCapacity: true)
@@ -282,6 +322,8 @@ final class StripCell: UICollectionViewCell {
   private let label = UILabel()
   private var task: Task<Void, Never>?
   private var pageKey: ReaderView.PageRef?
+  private var original: UIImage? // pre-filter, so comfort can re-apply live
+  private var comfort = ComfortParams(warmth: 0, dim: 0, whiteOnly: false)
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -321,7 +363,17 @@ final class StripCell: UICollectionViewCell {
     task = Task { @MainActor in
       let img = await loader(page, size)
       guard !Task.isCancelled else { return }
-      imageView.image = img
+      original = img
+      imageView.image = img.map { ReaderComfort.apply($0, comfort) }
+    }
+  }
+
+  /// setComfort re-tints the already-loaded page without a reload.
+  func setComfort(_ p: ComfortParams) {
+    guard p != comfort else { return }
+    comfort = p
+    if let original {
+      imageView.image = ReaderComfort.apply(original, p)
     }
   }
 
@@ -330,6 +382,7 @@ final class StripCell: UICollectionViewCell {
     task?.cancel()
     task = nil
     pageKey = nil
+    original = nil
     imageView.image = nil
   }
 }

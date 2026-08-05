@@ -3,7 +3,6 @@ import SwiftUI
 /// ReaderView shows pages in paged (LTR/RTL) or vertical strip mode. Online it
 /// follows the server manifest window; with localChapters it reads device CBZs
 /// fully offline. Pages downloaded to the device always load locally first.
-/// Each settled page is marked locally and queued for a batched upload.
 struct ReaderView: View {
   @Environment(AppState.self) private var app
   @Environment(\.dismiss) private var dismiss
@@ -190,8 +189,14 @@ struct ReaderView: View {
             maxPixelSize: CGSize(width: pixels.width, height: 8192),
             estimateAspect: geo.size.width / max(geo.size.height, 1),
             jump: stripJump,
+            comfort: app.readerComfort,
             loadImage: stripLoader,
-            onPage: onSettle
+            onPage: onSettle,
+            onFinished: { i in
+              if pages.indices.contains(i), !pages[i].transition {
+                mark(pages[i])
+              }
+            }
           )
           .ignoresSafeArea()
         }
@@ -399,12 +404,10 @@ struct ReaderView: View {
     app.setReaderMode("strip", forTitle: titleID)
   }
 
+  /// onSettle tracks the strip reader's top page for the UI and resume index.
   private func onSettle(_ i: Int) {
     guard pages.indices.contains(i) else { return }
     index = i
-    if !pages[i].transition {
-      mark(pages[i])
-    }
     extendIfNeeded()
   }
 
@@ -628,11 +631,34 @@ struct ReaderSettingsSheet: View {
           Text("Standard").tag("standard")
           Text("Enhanced").tag("enhanced")
         }
+        Section("Eye comfort") {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Warmth").font(.caption).foregroundStyle(.secondary)
+            HStack {
+              Image(systemName: "sun.max")
+              Slider(value: $app.readerWarmth, in: 0 ... 1)
+              Image(systemName: "flame.fill")
+            }
+            .foregroundStyle(.secondary)
+          }
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Dimming").font(.caption).foregroundStyle(.secondary)
+            HStack {
+              Image(systemName: "circle.lefthalf.filled")
+              Slider(value: $app.readerDim, in: 0 ... 1)
+              Image(systemName: "moon.fill")
+            }
+            .foregroundStyle(.secondary)
+          }
+          Toggle("White pages only", isOn: $app.readerWhiteOnly)
+          Text("Keeps colored pages true — only white/near-white areas are tinted and dimmed.")
+            .font(.caption).foregroundStyle(.secondary)
+        }
       }
       .navigationTitle("Reader")
       .navigationBarTitleDisplayMode(.inline)
     }
-    .presentationDetents([.height(430)])
+    .presentationDetents([.height(660)])
   }
 }
 
@@ -686,7 +712,7 @@ struct ReaderPage: View {
         .font(.callout)
         .foregroundStyle(.secondary)
     } else if images.count == unit.count {
-      ZoomablePage(slots: slots, zoom: $zoom)
+      ZoomablePage(slots: slots, zoom: $zoom, params: app.readerComfort)
     } else if failed {
       Label("Page failed to load", systemImage: "exclamationmark.triangle").foregroundStyle(.white)
     } else {
