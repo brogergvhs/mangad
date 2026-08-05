@@ -1,4 +1,7 @@
-# Kaodoku
+<div align="center">
+  <img src="assets/nord-icons/icon-rounded.png" alt="Kaodoku" width="150" />
+  <h1>Kaodoku</h1>
+</div>
 
 A self-hosted manga server. Point it at the sites you read, add the titles you
 want, and Kaodoku keeps them downloaded — fetching new chapters as they release
@@ -15,6 +18,8 @@ at read time, and your files stay portable CBZ you can take anywhere.
   releases, so your library stays current without manual work.
 - **Read in the browser.** A built-in long-strip reader integrated into the UI.
   Both chapters and volumes are supported.
+- **Read on iPhone & iPad.** The companion [App](./kaodoku_ios) app connects to your
+  server to read downloaded manga on iOS — online or fully offline.
 - **Track your progress.** Automatic reading state per user through the reader.
   If you are a veteran who has been using AniList for a while and don't want to
   lose anything - connect the personal account to sync progress both ways.
