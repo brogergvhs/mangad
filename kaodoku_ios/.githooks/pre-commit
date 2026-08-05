@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+files=$(git diff --cached --name-only --diff-filter=ACM -- kaodoku_ios | grep '\.swift$' || true)
+[ -z "$files" ] && exit 0
+
+# prefer tools on path, fall back to the nvim/mason install.
+resolve() { command -v "$1" 2>/dev/null || echo "$HOME/.local/share/nvim/mason/bin/$1"; }
+swiftformat=$(resolve swiftformat)
+swiftlint=$(resolve swiftlint)
+if [ ! -x "$swiftformat" ] || [ ! -x "$swiftlint" ]; then
+    echo "pre-commit: swiftformat/swiftlint not found — skipping (brew install swiftformat swiftlint)" >&2
+    exit 0
+fi
+
+lintcfg="kaodoku_ios/.swiftlint.yml"
+
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 "$swiftformat" --quiet
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 git add
+
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 "$swiftlint" lint --quiet --config "$lintcfg"

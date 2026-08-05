@@ -54,7 +54,7 @@ func (u *webUI) accountRevokeSessions(w http.ResponseWriter, r *http.Request) {
 func (u *webUI) accountTokenCreate(w http.ResponseWriter, r *http.Request) {
 	user := userFrom(r.Context())
 	ttlDays, _ := strconv.Atoi(r.FormValue("ttl_days"))
-	token, err := u.svc.Auth().CreateAPIToken(r.Context(), user.ID, r.FormValue("name"), ttlDays)
+	token, err := u.svc.Auth().CreateAPIToken(r.Context(), user.ID, r.FormValue("name"), "", ttlDays)
 	if err != nil {
 		u.fail(w, err)
 		return

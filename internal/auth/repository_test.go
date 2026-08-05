@@ -145,7 +145,7 @@ func TestAPITokenExpiry(t *testing.T) {
 	}
 
 	// A never-expiring token resolves.
-	never, err := svc.CreateAPIToken(ctx, EnvAdminID, "forever", 0)
+	never, err := svc.CreateAPIToken(ctx, EnvAdminID, "forever", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestAPITokenExpiry(t *testing.T) {
 	}
 
 	// A token with a future TTL resolves; APITokens reports its expiry.
-	live, err := svc.CreateAPIToken(ctx, EnvAdminID, "live", 30)
+	live, err := svc.CreateAPIToken(ctx, EnvAdminID, "live", "", 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestAPITokenExpiry(t *testing.T) {
 	}
 
 	// Force an already-expired token and confirm it neither resolves nor survives purge.
-	expired, err := svc.CreateAPIToken(ctx, EnvAdminID, "stale", 1)
+	expired, err := svc.CreateAPIToken(ctx, EnvAdminID, "stale", "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

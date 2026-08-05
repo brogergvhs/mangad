@@ -2,8 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
-	"sync"
 	"io"
 	"mime"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
@@ -26,13 +28,30 @@ const maxPageBytes = 64 << 20 // per-image download cap
 const appTokenTTLDays = 90
 
 type apiV1 struct {
-	svc     *service.JobService
-	runJobs func(context.Context) (service.RunSummary, error)
+	svc        *service.JobService
+	runJobs    func(context.Context) (service.RunSummary, error)
+	instanceID string
+}
+
+func loadInstanceID(svc *service.JobService) string {
+	ctx := context.Background()
+	if id := svc.Setting(ctx, "instance_id", ""); id != "" {
+		return id
+	}
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return ""
+	}
+	id := hex.EncodeToString(raw)
+	if err := svc.SetSetting(ctx, "instance_id", id); err != nil {
+		return ""
+	}
+	return id
 }
 
 // registerAPIV1 mounts the /api/v1 surface consumed by the native app.
 func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(context.Context) (service.RunSummary, error)) {
-	a := &apiV1{svc: svc, runJobs: runJobs}
+	a := &apiV1{svc: svc, runJobs: runJobs, instanceID: loadInstanceID(svc)}
 	mux.HandleFunc("GET /api/v1/meta", a.meta)
 	mux.HandleFunc("POST /api/v1/auth/login", a.login)
 	mux.HandleFunc("GET /api/v1/me", a.me)
@@ -110,10 +129,8 @@ func registerAPIV1(mux *http.ServeMux, svc *service.JobService, runJobs func(con
 	mux.HandleFunc("GET /api/v1/jobs", a.jobsList)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", a.jobGet)
 	mux.HandleFunc("POST /api/v1/jobs/enqueue", a.jobEnqueue)
+	mux.HandleFunc("POST /api/v1/jobs/{id}/cancel", a.jobCancel)
 	mux.HandleFunc("POST /api/v1/jobs/run", jobsRunV1(runJobs))
-	mux.HandleFunc("GET /api/v1/notifications", a.notificationsList)
-	mux.HandleFunc("POST /api/v1/notifications/read", a.notificationsRead)
-	mux.HandleFunc("DELETE /api/v1/notifications/{id}", a.notificationDelete)
 	mux.HandleFunc("GET /api/v1/sources", a.sourcesPick)
 }
 
@@ -136,6 +153,7 @@ type metaDTO struct {
 	Features      []string `json:"features"`
 	ImageFormats  []string `json:"image_formats"`
 	MaxPageBytes  int64    `json:"max_page_bytes"`
+	InstanceID    string   `json:"instance_id,omitempty"`
 }
 
 type meDTO struct {
@@ -177,9 +195,10 @@ func (a *apiV1) meta(w http.ResponseWriter, _ *http.Request) {
 		ServerVersion: serverVersion(),
 		APIVersion:    1,
 		AuthRequired:  authEnabled(),
-		Features:      []string{"archives", "delta_sync", "progress_batch", "collections", "screens", "anilist", "notifications"},
+		Features:      []string{"archives", "delta_sync", "progress_batch", "collections", "screens", "anilist"},
 		ImageFormats:  []string{"jpg", "jpeg", "png", "webp", "gif", "avif"},
 		MaxPageBytes:  maxPageBytes,
+		InstanceID:    a.instanceID,
 	})
 }
 
@@ -221,6 +240,7 @@ func (a *apiV1) login(w http.ResponseWriter, r *http.Request) {
 		Username   string `json:"username"`
 		Password   string `json:"password"`
 		DeviceName string `json:"device_name"`
+		DeviceID   string `json:"device_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		v1err(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -235,7 +255,11 @@ func (a *apiV1) login(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "iOS app"
 	}
-	token, err := a.svc.Auth().CreateAPIToken(r.Context(), id, name, appTokenTTLDays)
+	if err := a.svc.Auth().DeleteAPITokensForDevice(r.Context(), id, body.DeviceID); err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	token, err := a.svc.Auth().CreateAPIToken(r.Context(), id, name, body.DeviceID, appTokenTTLDays)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -430,6 +454,21 @@ func (a *apiV1) libraryList(w http.ResponseWriter, r *http.Request) {
 		for _, t := range titles {
 			ids = append(ids, t.ID)
 			if database.FormatTime(t.UpdatedAt) >= since {
+				kept = append(kept, t)
+			}
+		}
+		titles = kept
+	}
+	if rawIDs := q.Get("ids"); rawIDs != "" {
+		want := map[int64]bool{}
+		for _, part := range strings.Split(rawIDs, ",") {
+			if id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64); err == nil {
+				want[id] = true
+			}
+		}
+		kept := titles[:0]
+		for _, t := range titles {
+			if want[t.ID] {
 				kept = append(kept, t)
 			}
 		}

@@ -61,6 +61,8 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 		ctx := auth.WithUser(r.Context(), user)
 		if c, err := r.Cookie("kaodoku_session"); err == nil {
 			ctx = withSessionKey(ctx, c.Value)
+		} else if t := headerToken(r); t != "" {
+			ctx = withSessionKey(ctx, t)
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -77,9 +79,9 @@ func requiredPerm(r *http.Request) string {
 		return "" // public or any-signed-in
 	case p == "/api/v1/jobs/run":
 		return auth.PermJobsManage
-	case p == "/api/v1/jobs/enqueue" || strings.HasPrefix(p, "/api/v1/notifications") && r.Method == http.MethodGet:
-		return "" // ownership / visibility scoping in the handler
-	case strings.HasPrefix(p, "/api/v1/notifications"):
+	case p == "/api/v1/jobs/enqueue":
+		return "" // ownership scoping in the handler
+	case strings.HasPrefix(p, "/api/v1/jobs/") && strings.HasSuffix(p, "/cancel"):
 		return auth.PermJobsManage
 	case strings.HasPrefix(p, "/api/v1/jobs"):
 		return auth.PermJobsView
@@ -126,10 +128,6 @@ func requiredPerm(r *http.Request) string {
 	case strings.HasPrefix(p, "/ui/jobs/") && r.Method != http.MethodGet:
 		return auth.PermJobsManage
 	case strings.HasPrefix(p, "/ui/jobs/"):
-		return auth.PermJobsView
-	case strings.HasPrefix(p, "/ui/notifications") && r.Method != http.MethodGet:
-		return auth.PermJobsManage
-	case strings.HasPrefix(p, "/ui/notifications"):
 		return auth.PermJobsView
 	case p == "/search" || strings.HasPrefix(p, "/ui/search") || p == "/ui/library/add":
 		return auth.PermLibraryAdd

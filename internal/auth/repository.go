@@ -505,8 +505,18 @@ type APIToken struct {
 	ExpiresAt string // "" = never expires
 }
 
-// CreateAPIToken mints a token (shown once). ttlDays > 0 sets an expiry; else never.
-func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string, ttlDays int) (string, error) {
+// DeleteAPITokensForDevice removes the tokens one app install minted, so a
+// re-login replaces them.
+func (s *Service) DeleteAPITokensForDevice(ctx context.Context, userID int64, deviceID string) error {
+	if deviceID == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id = ? AND device_id = ?`, userID, deviceID)
+	return err
+}
+
+// CreateAPIToken mints a token (shown once); deviceID "" for manual tokens.
+func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name, deviceID string, ttlDays int) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "token"
@@ -521,8 +531,8 @@ func (s *Service) CreateAPIToken(ctx context.Context, userID int64, name string,
 	if ttlDays > 0 {
 		expires = database.FormatTime(time.Now().AddDate(0, 0, ttlDays))
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO api_tokens (token_hash, user_id, name, expires_at) VALUES (?, ?, ?, ?)`,
-		hex.EncodeToString(sum[:]), userID, name, expires); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO api_tokens (token_hash, user_id, name, device_id, expires_at) VALUES (?, ?, ?, ?, ?)`,
+		hex.EncodeToString(sum[:]), userID, name, deviceID, expires); err != nil {
 		return "", err
 	}
 	return token, nil
@@ -570,15 +580,60 @@ func (s *Service) UserByAPIToken(ctx context.Context, token string) (*User, erro
 		return nil, nil
 	}
 	sum := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(sum[:])
 	var userID int64
 	err := s.db.QueryRowContext(ctx,
 		`SELECT user_id FROM api_tokens WHERE token_hash = ? AND (expires_at = '' OR expires_at > ?)`,
-		hex.EncodeToString(sum[:]), database.FormatTime(time.Now())).Scan(&userID)
+		tokenHash, database.FormatTime(time.Now())).Scan(&userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	s.touchAPIToken(ctx, tokenHash)
 	return s.GetUser(ctx, userID)
+}
+
+// touchAPIToken records token usage, throttled like session touches.
+func (s *Service) touchAPIToken(ctx context.Context, tokenHash string) {
+	if last, ok := s.touched.Load(tokenHash); ok && time.Since(last.(time.Time)) < time.Minute {
+		return
+	}
+	s.touched.Store(tokenHash, time.Now())
+	_, _ = s.db.ExecContext(ctx, `UPDATE api_tokens SET last_seen_at = CURRENT_TIMESTAMP WHERE token_hash = ?`, tokenHash)
+}
+
+// ActiveDevice is an API-token client with recorded usage.
+type ActiveDevice struct {
+	TokenHash  string
+	Username   string
+	Name       string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+}
+
+// ActiveDevices lists unexpired API tokens with recorded usage, newest first.
+func (s *Service) ActiveDevices(ctx context.Context) ([]ActiveDevice, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.token_hash, u.username, t.name, t.created_at, t.last_seen_at
+		FROM api_tokens t JOIN users u ON u.id = t.user_id
+		WHERE t.last_seen_at != '' AND (t.expires_at = '' OR t.expires_at > ?)
+		ORDER BY t.last_seen_at DESC`, database.FormatTime(time.Now()))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ActiveDevice
+	for rows.Next() {
+		var d ActiveDevice
+		var created, seen string
+		if err := rows.Scan(&d.TokenHash, &d.Username, &d.Name, &created, &seen); err != nil {
+			return nil, err
+		}
+		d.CreatedAt, _ = database.ParseTime(created)
+		d.LastSeenAt, _ = database.ParseTime(seen)
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }

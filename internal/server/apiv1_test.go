@@ -142,7 +142,9 @@ func TestAPIV1ReaderAndLibrary(t *testing.T) {
 	defer closeDB()
 	api := New(svc,
 		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
-		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
 	)
 	tid := strconv.FormatInt(title.ID, 10)
 	cid := strconv.FormatInt(chapter.ID, 10)
@@ -278,7 +280,9 @@ func TestAPIV1Actions(t *testing.T) {
 	defer closeDB()
 	api := New(svc,
 		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
-		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
 	)
 	tid := strconv.FormatInt(titleID, 10)
 
@@ -342,10 +346,6 @@ func TestAPIV1Actions(t *testing.T) {
 		t.Fatalf("source picker leaks fields: %+v", srcs.Items[0])
 	}
 
-	rec = do(t, api, http.MethodGet, "/api/v1/notifications", "", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("notifications = %d", rec.Code)
-	}
 }
 
 func TestAPIV1EnqueueOwnership(t *testing.T) {
@@ -383,7 +383,9 @@ func TestAPIV1EnqueueOwnership(t *testing.T) {
 
 	api := New(svc,
 		func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
-		func(context.Context, string) (service.SourceVerifyResult, error) { return service.SourceVerifyResult{}, nil },
+		func(context.Context, string) (service.SourceVerifyResult, error) {
+			return service.SourceVerifyResult{}, nil
+		},
 	)
 	login := func(user, pass string) string {
 		rec := do(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": user, "password": pass})
@@ -452,7 +454,6 @@ func TestAPIV1RequiresAuth(t *testing.T) {
 		"POST /api/v1/wanted", "GET /api/v1/wanted/matches", "POST /api/v1/wanted/matches",
 		"POST /api/v1/wanted/track",
 		"GET /api/v1/jobs", "GET /api/v1/jobs/1", "POST /api/v1/jobs/enqueue", "POST /api/v1/jobs/run",
-		"GET /api/v1/notifications", "POST /api/v1/notifications/read", "DELETE /api/v1/notifications/1",
 		"GET /api/v1/sources",
 	}
 	for _, route := range routes {
@@ -491,5 +492,69 @@ func TestAPIV1LoginRateLimit(t *testing.T) {
 	}
 	if last != http.StatusTooManyRequests {
 		t.Fatalf("25th login = %d, want 429", last)
+	}
+}
+
+func TestAPIV1MetaInstanceIDStable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "kaodoku.db")
+	metaID := func() string {
+		svc, closeDB, err := service.OpenJobs(context.Background(), dbPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer closeDB()
+		api := New(svc, func(context.Context) (service.RunSummary, error) { return service.RunSummary{}, nil },
+			func(context.Context, string) (service.SourceVerifyResult, error) {
+				return service.SourceVerifyResult{}, nil
+			})
+		var meta metaDTO
+		rec := do(t, api, http.MethodGet, "/api/v1/meta", "", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("meta status = %d", rec.Code)
+		}
+		_ = json.NewDecoder(rec.Body).Decode(&meta)
+		return meta.InstanceID
+	}
+	first := metaID()
+	if len(first) != 32 {
+		t.Fatalf("instance_id = %q, want 32 hex chars", first)
+	}
+	if second := metaID(); second != first {
+		t.Fatalf("instance_id changed across restart: %q -> %q", first, second)
+	}
+}
+
+// A device re-login must replace that device's token, not accumulate them.
+func TestAPIV1LoginReplacesDeviceToken(t *testing.T) {
+	t.Setenv("KAODOKU_ADMIN_USER", "boss")
+	t.Setenv("KAODOKU_ADMIN_PASSWORD", "secret123")
+	api, closeDB := testAPI(t)
+	defer closeDB()
+
+	login := func(deviceID string) string {
+		rec := do(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+			"username": "boss", "password": "secret123",
+			"device_name": "iOS app · iPhone", "device_id": deviceID,
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("login status = %d", rec.Code)
+		}
+		var out struct {
+			Token string `json:"token"`
+		}
+		_ = json.NewDecoder(rec.Body).Decode(&out)
+		return out.Token
+	}
+	other := login("install-b") // same display name, different install
+	first := login("install-a")
+	second := login("install-a")
+	// Same-install re-login replaces only that install's token.
+	if rec := do(t, api, http.MethodGet, "/api/v1/me", first, nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("replaced install token still valid: %d", rec.Code)
+	}
+	for name, tok := range map[string]string{"other install": other, "new": second} {
+		if rec := do(t, api, http.MethodGet, "/api/v1/me", tok, nil); rec.Code != http.StatusOK {
+			t.Fatalf("%s token rejected: %d", name, rec.Code)
+		}
 	}
 }

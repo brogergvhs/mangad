@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -391,11 +392,6 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("POST /ui/account/sessions/revoke", u.accountRevokeSessions)
 	mux.HandleFunc("POST /ui/account/tokens", u.accountTokenCreate)
 	mux.HandleFunc("POST /ui/account/tokens/{id}/delete", u.accountTokenDelete)
-	mux.HandleFunc("GET /ui/notifications", u.notificationsCard)
-	mux.HandleFunc("GET /ui/notifications/badge", u.notificationsBadge)
-	mux.HandleFunc("POST /ui/notifications/read", u.notificationsRead)
-	mux.HandleFunc("POST /ui/notifications/clear", u.notificationsClear)
-	mux.HandleFunc("POST /ui/notifications/{id}/delete", u.notificationDelete)
 	mux.HandleFunc("GET /users", u.usersPage)
 	mux.HandleFunc("GET /ui/users", u.usersFrag)
 	mux.HandleFunc("POST /ui/users", u.userCreate)
@@ -863,7 +859,15 @@ func (u *webUI) collectionsPage(w http.ResponseWriter, r *http.Request) {
 // buildAllCollections gathers the library once and returns the three collection
 // groupings plus whether any relation edges are stored.
 func (u *webUI) buildAllCollections(ctx context.Context) (author, smart, custom []collection, hasRelations bool) {
-	titles, _ := u.svc.ListTitles(ctx)
+	author, smart, custom, hasRelations, _ = buildCollections(ctx, u.svc)
+	return author, smart, custom, hasRelations
+}
+
+func buildCollections(ctx context.Context, svc *service.JobService) (author, smart, custom []collection, hasRelations bool, err error) {
+	titles, err := svc.ListTitles(ctx)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
 	titles = filterRestrictedTitles(ctx, titles)
 	titleByID := make(map[int64]library.Title, len(titles))
 	ids := make([]int64, 0, len(titles))
@@ -873,15 +877,15 @@ func (u *webUI) buildAllCollections(ctx context.Context) (author, smart, custom 
 			ids = append(ids, *t.CatalogMangaID)
 		}
 	}
-	mangas, _ := u.svc.MangaByIDs(ctx, ids)
-	edges, _ := u.svc.CollectionEdges(ctx)
-	pins, _ := u.svc.SmartPins(ctx)
-	customs, _ := u.svc.CustomCollections(ctx)
-	members, _ := u.svc.CollectionMembers(ctx)
+	mangas, _ := svc.MangaByIDs(ctx, ids)
+	edges, _ := svc.CollectionEdges(ctx)
+	pins, _ := svc.SmartPins(ctx)
+	customs, _ := svc.CustomCollections(ctx)
+	members, _ := svc.CollectionMembers(ctx)
 	author = authorCollections(titles, mangas)
 	smart = relationCollections(titles, mangas, edges, pins, titleByID)
 	custom = customCollections(customs, members, titleByID)
-	return author, smart, custom, len(edges) > 0
+	return author, smart, custom, len(edges) > 0, nil
 }
 
 // collectionMembersPage renders a single collection's titles using the same
@@ -2899,6 +2903,7 @@ func (u *webUI) search(w http.ResponseWriter, r *http.Request) {
 		filter.Page = last
 		fetched, m, err := u.svc.SearchAniList(r.Context(), c.Q, searchPerPage, filter)
 		if err != nil {
+			log.Printf("anilist search failed: %v", err)
 			view.Error, view.RetryPage = true, page
 			u.frag(w, "searchResults", view)
 			return

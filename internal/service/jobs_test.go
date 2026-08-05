@@ -527,3 +527,23 @@ func addJobTitle(t *testing.T, ctx context.Context, svc *JobService, sourceURL s
 	}
 	return title
 }
+
+func TestLastJobTime(t *testing.T) {
+	ctx := context.Background()
+	svc, closeDB, err := OpenJobs(ctx, filepath.Join(t.TempDir(), "kaodoku.db"))
+	if err != nil {
+		t.Fatalf("OpenJobs() error = %v", err)
+	}
+	defer closeDB()
+
+	if got := svc.LastJobTime(ctx, jobs.TypeBackupUserData); !got.IsZero() {
+		t.Fatalf("LastJobTime(never ran) = %v, want zero", got)
+	}
+	if _, err := svc.Enqueue(ctx, jobs.TypeBackupUserData, 0, time.Now()); err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+	got := svc.LastJobTime(ctx, jobs.TypeBackupUserData)
+	if got.IsZero() || time.Since(got) > time.Minute {
+		t.Fatalf("LastJobTime(just enqueued) = %v, want recent", got)
+	}
+}

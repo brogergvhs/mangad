@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/catalog"
-	"github.com/brogergvhs/kaodoku/internal/database"
 	"github.com/brogergvhs/kaodoku/internal/jobs"
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/service"
@@ -183,30 +182,38 @@ func toJobDTO(j jobs.Job) jobDTO {
 	}
 }
 
-type notificationDTO struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-	Level     string `json:"level"`
-	Message   string `json:"message"`
-	JobID     int64  `json:"job_id"`
-	Read      bool   `json:"read"`
-	CreatedAt string `json:"created_at"`
-}
-
-func toNotificationDTO(n service.Notification) notificationDTO {
-	created := n.CreatedAt
-	if t, err := database.ParseTime(n.CreatedAt); err == nil && !t.IsZero() {
-		created = t.UTC().Format(time.RFC3339)
-	}
-	return notificationDTO{ID: n.ID, UserID: n.UserID, Level: n.Level, Message: n.Message,
-		JobID: n.JobID, Read: n.ReadAt != "", CreatedAt: created}
-}
-
 type collectionDTO struct {
-	ID       int64   `json:"id"`
-	Name     string  `json:"name"`
-	Kind     string  `json:"kind"`
-	TitleIDs []int64 `json:"title_ids,omitempty"`
+	ID        int64   `json:"id,omitempty"`
+	Key       string  `json:"key,omitempty"`
+	Name      string  `json:"name"`
+	TitleIDs  []int64 `json:"title_ids"`
+	PinnedIDs []int64 `json:"pinned_ids,omitempty"`
+	Chapters  int64   `json:"chapters"`
+	Volumes   int64   `json:"volumes"`
+	Pages     int64   `json:"pages"`
+	SizeBytes int64   `json:"size_bytes"`
+	ReadPct   int64   `json:"read_pct"`
+}
+
+// toCollectionDTO aggregates member stats the same way the web card does.
+func toCollectionDTO(c collection, pins map[string][]int64) collectionDTO {
+	d := collectionDTO{ID: c.CustomID, Key: c.SmartKey, Name: c.Name,
+		TitleIDs: make([]int64, 0, len(c.Members))}
+	if pins != nil {
+		d.PinnedIDs = pins[c.SmartKey]
+	}
+	var total, read int64
+	for _, m := range c.Members {
+		d.TitleIDs = append(d.TitleIDs, m.ID)
+		d.Chapters += m.DiscoveredCount
+		d.Volumes += m.VolumeCount
+		d.Pages += m.Pages + m.VolumePages
+		d.SizeBytes += m.SizeBytes + m.VolumeBytes
+		total += m.DiscoveredCount + m.VolumeCount
+		read += m.ReadCount + m.VolumeReadCount
+	}
+	d.ReadPct = percent(read, total)
+	return d
 }
 
 type screenDTO struct {
@@ -231,9 +238,12 @@ func toSourcePickDTO(s sources.Source) sourcePickDTO {
 }
 
 type userSettingsDTO struct {
-	ReaderMode string `json:"reader_mode,omitempty"`
-	ReaderDir  string `json:"reader_dir,omitempty"`
-	ReaderFit  string `json:"reader_fit,omitempty"`
-	ReaderZoom *float64 `json:"reader_zoom,omitempty"`
-	Theme      string `json:"theme,omitempty"`
+	ReaderMode         string   `json:"reader_mode,omitempty"`
+	ReaderDir          string   `json:"reader_dir,omitempty"`
+	ReaderFit          string   `json:"reader_fit,omitempty"`
+	ReaderZoom         *float64 `json:"reader_zoom,omitempty"`
+	ReaderPageLayout   string   `json:"reader_page_layout,omitempty"`
+	ReaderSplitWide    bool     `json:"reader_split_wide,omitempty"`
+	ReaderImageQuality string   `json:"reader_image_quality,omitempty"`
+	Theme              string   `json:"theme,omitempty"`
 }

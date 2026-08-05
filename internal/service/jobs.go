@@ -454,6 +454,20 @@ func (s *JobService) Setting(ctx context.Context, key, fallback string) string {
 	return value
 }
 
+// LastJobTime returns when a job of the given type was last enqueued, or the
+// zero time when none exists.
+func (s *JobService) LastJobTime(ctx context.Context, typ string) time.Time {
+	var raw sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT MAX(created_at) FROM jobs WHERE type = ?`, typ).Scan(&raw); err != nil || !raw.Valid {
+		return time.Time{}
+	}
+	t, err := database.ParseTime(raw.String)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
 // Auth exposes the user/role/session service.
 func (s *JobService) Auth() *auth.Service { return s.auth }
 
@@ -1035,10 +1049,30 @@ func (s *JobService) aniListIdentity(ctx context.Context, userID int64) (context
 		return ctx, 0, false
 	}
 	token, err := s.secrets.Decrypt(token)
-	if err != nil || token == "" {
+	if err != nil {
+		log.Printf("anilist token decrypt failed for user %d: %v", userID, err)
+		return ctx, 0, false
+	}
+	if token == "" {
 		return ctx, 0, false
 	}
 	return catalog.WithToken(ctx, token), aid, true
+}
+
+// aniListConnected reports whether a token row exists at all, separating "not
+// connected" from "connected but the token can't be decrypted".
+func (s *JobService) aniListConnected(ctx context.Context, userID int64) bool {
+	var one int
+	return s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM user_anilist WHERE user_id = ? AND access_token != ''`, userID).Scan(&one) == nil
+}
+
+// aniListError explains why aniListIdentity failed, for user-facing messages.
+func (s *JobService) aniListError(ctx context.Context, userID int64) error {
+	if s.aniListConnected(ctx, userID) {
+		return fmt.Errorf("AniList token couldn't be read — reconnect AniList (the server's encryption key changed)")
+	}
+	return fmt.Errorf("no AniList account connected")
 }
 
 // runCatalogRefresh re-fetches AniList metadata for every catalog entry a
@@ -1220,7 +1254,7 @@ func (s *JobService) encryptLegacyTokens(ctx context.Context) error {
 // EnqueueAniListSync queues a progress sync for one user right now.
 func (s *JobService) EnqueueAniListSync(ctx context.Context, userID int64) error {
 	if _, _, ok := s.aniListIdentity(ctx, userID); !ok {
-		return fmt.Errorf("no AniList account connected")
+		return s.aniListError(ctx, userID)
 	}
 	_, err := s.enqueueExact(ctx, jobs.TypeSyncAniList, JobPayload{UserID: userID}, time.Now())
 	return err
@@ -2435,10 +2469,6 @@ func (s *JobService) runClaimedJob(ctx, markCtx context.Context, cfg *config.Con
 	if err != nil {
 		if markErr := s.jobs.MarkFailed(markCtx, job.ID, err); markErr != nil {
 			return 0, 1, markErr
-		}
-		if latest, gerr := s.jobs.Get(markCtx, job.ID); gerr == nil && latest.Status == "dead" {
-			msg := fmt.Sprintf("Job #%d (%s) failed after retries: %s", job.ID, job.Type, truncateError(err.Error()))
-			_ = s.AddNotification(markCtx, 0, "error", msg, job.ID)
 		}
 		return 0, 1, nil
 	}

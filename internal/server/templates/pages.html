@@ -26,7 +26,6 @@
 {{end}}
 
 {{define "dashboard"}}
-{{if .User.Can "stats.view"}}<p class="text-sm text-base-content/60 mb-4">Library and reading statistics have moved to the <a class="link" href="/metrics">Metrics</a> page.</p>{{end}}
 {{if .User.Can "services.view"}}
 <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-2">Services</h2>
 <div id="services-health" hx-get="/ui/health" hx-trigger="load" hx-swap="outerHTML">
@@ -40,10 +39,6 @@
 </div>
 {{end}}
 {{if .User.Can "jobs.view"}}
-<h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mt-6 mb-2">Notifications</h2>
-<div id="notifications-card" hx-get="/ui/notifications" hx-trigger="load" hx-swap="outerHTML">
-  <div class="flex items-center gap-2 py-3 text-sm text-base-content/60"><span class="loading loading-sm"></span> Loading notifications…</div>
-</div>
 <div class="mt-6 mb-2 flex items-center justify-between">
   <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Recent jobs</h2>
   {{if .User.Can "jobs.manage"}}<button class="btn btn-sm btn-outline" onclick="job_start_modal.showModal()">Start a new job</button>{{end}}
@@ -88,33 +83,6 @@
   </table>
 </div>
 {{end}}
-
-{{define "notificationsCard"}}
-<div id="notifications-card" class="rounded-xl bg-base-100 p-3" hx-get="/ui/notifications" hx-trigger="every 30s" hx-swap="outerHTML" hx-sync="this:drop">
-  <div class="mb-2 flex items-center justify-between">
-    <span class="text-xs text-base-content/60">{{len .Items}} recent</span>
-    {{if and .Items .CanManage}}
-    <div class="flex gap-1">
-      <button class="btn btn-xs btn-ghost" hx-post="/ui/notifications/read" hx-target="#notifications-card" hx-swap="outerHTML">Mark all read</button>
-      <button class="btn btn-xs btn-ghost text-error" hx-post="/ui/notifications/clear" hx-target="#notifications-card" hx-swap="outerHTML" hx-confirm="Clear all notifications?">Clear</button>
-    </div>
-    {{end}}
-  </div>
-  {{range .Items}}
-  <div class="flex items-start justify-between gap-2 rounded-lg px-3 py-2 {{if not .ReadAt}}bg-base-200{{end}}">
-    <div class="min-w-0">
-      <div class="text-sm break-words {{if not .ReadAt}}font-medium{{end}}">{{.Message}}</div>
-      <div class="text-xs text-base-content/50">{{.CreatedAt}}</div>
-    </div>
-    {{if $.CanManage}}<button class="btn btn-ghost btn-xs shrink-0" hx-post="/ui/notifications/{{.ID}}/delete" hx-target="#notifications-card" hx-swap="outerHTML" aria-label="Dismiss notification">{{template "iconXCircle"}}</button>{{end}}
-  </div>
-  {{else}}
-  <p class="py-2 text-sm text-base-content/60">No notifications.</p>
-  {{end}}
-</div>
-{{end}}
-
-{{define "notificationsBadge"}}<span class="ml-auto" hx-get="/ui/notifications/badge" hx-trigger="every 30s" hx-swap="outerHTML" hx-sync="this:drop">{{if gt . 0}}<span class="badge badge-error badge-sm">{{.}}</span>{{end}}</span>{{end}}
 
 {{define "search"}}
 <form id="search-form" class="mb-4 grid gap-3" hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML" hx-indicator="#search-spin"

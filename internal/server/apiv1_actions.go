@@ -179,17 +179,22 @@ func (a *apiV1) ownsCollection(r *http.Request, id int64) bool {
 }
 
 func (a *apiV1) collectionsList(w http.ResponseWriter, r *http.Request) {
-	cols, err := a.svc.CustomCollections(r.Context())
+	author, smart, custom, _, err := buildCollections(r.Context(), a.svc)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	items := make([]collectionDTO, 0, len(cols))
-	for _, c := range cols {
-		items = append(items, collectionDTO{ID: c.ID, Name: c.Name, Kind: "manual"})
-	}
 	pins, _ := a.svc.SmartPins(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "smart_pins": pins})
+	group := func(cols []collection) []collectionDTO {
+		out := make([]collectionDTO, 0, len(cols))
+		for _, c := range cols {
+			out = append(out, toCollectionDTO(c, pins))
+		}
+		return out
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"author": group(author), "smart": group(smart), "custom": group(custom),
+	})
 }
 
 func (a *apiV1) collectionCreate(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +209,7 @@ func (a *apiV1) collectionCreate(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, collectionDTO{ID: id, Name: body.Name, Kind: "manual"})
+	writeJSON(w, http.StatusCreated, collectionDTO{ID: id, Name: body.Name})
 }
 
 func (a *apiV1) collectionGet(w http.ResponseWriter, r *http.Request) {
@@ -213,15 +218,14 @@ func (a *apiV1) collectionGet(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	cols, err := a.svc.CustomCollections(r.Context())
+	_, _, custom, _, err := buildCollections(r.Context(), a.svc)
 	if err != nil {
 		v1err(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	for _, c := range cols {
-		if c.ID == id {
-			members, _ := a.svc.CollectionMembers(r.Context())
-			writeJSON(w, http.StatusOK, collectionDTO{ID: c.ID, Name: c.Name, Kind: "manual", TitleIDs: members[id]})
+	for _, c := range custom {
+		if c.CustomID == id {
+			writeJSON(w, http.StatusOK, toCollectionDTO(c, nil))
 			return
 		}
 	}
@@ -248,7 +252,7 @@ func (a *apiV1) collectionPatch(w http.ResponseWriter, r *http.Request) {
 		v1err(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, collectionDTO{ID: id, Name: body.Name, Kind: "manual"})
+	writeJSON(w, http.StatusOK, collectionDTO{ID: id, Name: body.Name})
 }
 
 func (a *apiV1) collectionDelete(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +282,10 @@ func (a *apiV1) collectionMember(add bool) http.HandlerFunc {
 		}
 		if !titleAllowed(r.Context(), a.svc, titleID) {
 			v1err(w, http.StatusNotFound, "not_found", "title not found")
+			return
+		}
+		if !a.ownsCollection(r, id) {
+			v1err(w, http.StatusNotFound, "not_found", "collection not found")
 			return
 		}
 		fn := a.svc.RemoveFromCollection
@@ -392,6 +400,9 @@ func (a *apiV1) meSettingsGet(w http.ResponseWriter, r *http.Request) {
 	out := userSettingsDTO{
 		ReaderMode: stored["reader.mode"], ReaderDir: stored["reader.dir"],
 		ReaderFit: stored["reader.fit"], Theme: stored[service.SettingUITheme],
+		ReaderPageLayout:   stored["reader.page_layout"],
+		ReaderSplitWide:    stored["reader.split_wide"] == "true",
+		ReaderImageQuality: stored["reader.image_quality"],
 	}
 	if z, err := strconv.ParseFloat(stored["reader.zoom"], 64); err == nil {
 		out.ReaderZoom = &z
@@ -403,11 +414,14 @@ func (a *apiV1) meSettingsGet(w http.ResponseWriter, r *http.Request) {
 // a half-applied update; empty values clear the stored setting.
 func (a *apiV1) meSettingsPut(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ReaderMode *string  `json:"reader_mode"`
-		ReaderDir  *string  `json:"reader_dir"`
-		ReaderFit  *string  `json:"reader_fit"`
-		ReaderZoom *float64 `json:"reader_zoom"`
-		Theme      *string  `json:"theme"`
+		ReaderMode         *string  `json:"reader_mode"`
+		ReaderDir          *string  `json:"reader_dir"`
+		ReaderFit          *string  `json:"reader_fit"`
+		ReaderZoom         *float64 `json:"reader_zoom"`
+		ReaderPageLayout   *string  `json:"reader_page_layout"`
+		ReaderSplitWide    *bool    `json:"reader_split_wide"`
+		ReaderImageQuality *string  `json:"reader_image_quality"`
+		Theme              *string  `json:"theme"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
@@ -424,6 +438,15 @@ func (a *apiV1) meSettingsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.ReaderZoom != nil {
 		writes["reader.zoom"] = strconv.FormatFloat(*body.ReaderZoom, 'f', -1, 64)
+	}
+	if body.ReaderPageLayout != nil {
+		writes["reader.page_layout"] = *body.ReaderPageLayout
+	}
+	if body.ReaderSplitWide != nil {
+		writes["reader.split_wide"] = strconv.FormatBool(*body.ReaderSplitWide)
+	}
+	if body.ReaderImageQuality != nil {
+		writes["reader.image_quality"] = *body.ReaderImageQuality
 	}
 	if body.Theme != nil {
 		if *body.Theme != "" {
@@ -723,6 +746,22 @@ func (a *apiV1) jobGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toJobDTO(j))
 }
 
+// jobCancel stops a running job (and its children) or marks a pending one
+// cancelled — the API twin of the web UI's /ui/jobs/{id}/cancel. Gated by
+// jobs.manage in requiredPerm.
+func (a *apiV1) jobCancel(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if err := a.svc.CancelJob(r.Context(), id); err != nil {
+		v1err(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // titleScopedJobTypes may be enqueued with library.manage alone.
 var titleScopedJobTypes = map[string]bool{
 	jobs.TypeRefreshTitle:    true,
@@ -792,42 +831,6 @@ func jobsRunV1(runJobs func(context.Context) (service.RunSummary, error)) http.H
 		}
 		writeJSON(w, http.StatusOK, map[string]int{"done": sum.Done, "failed": sum.Failed})
 	}
-}
-
-func (a *apiV1) notificationsList(w http.ResponseWriter, r *http.Request) {
-	sc := notificationScope(userFrom(r.Context()))
-	items, err := a.svc.Notifications(r.Context(), sc, clampLimit(r.URL.Query().Get("limit")))
-	if err != nil {
-		v1err(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	unread, _ := a.svc.UnreadNotificationCount(r.Context(), sc)
-	out := make([]notificationDTO, 0, len(items))
-	for _, n := range items {
-		out = append(out, toNotificationDTO(n))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": out, "unread": unread})
-}
-
-func (a *apiV1) notificationsRead(w http.ResponseWriter, r *http.Request) {
-	if err := a.svc.MarkNotificationsRead(r.Context(), notificationScope(userFrom(r.Context()))); err != nil {
-		v1err(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (a *apiV1) notificationDelete(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		v1err(w, http.StatusBadRequest, "bad_request", "invalid id")
-		return
-	}
-	if err := a.svc.DeleteNotification(r.Context(), notificationScope(userFrom(r.Context())), id); err != nil {
-		v1err(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // sourcesPick lists the minimal source picker for users without sources.manage.
