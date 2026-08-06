@@ -98,6 +98,9 @@ func TestOPDSCatalog(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "kind=acquisition") {
 		t.Fatalf("title feed content-type = %q", ct)
 	}
+	if !strings.Contains(body, "/opds/v1.2/thumb/chapters/"+cid) {
+		t.Fatalf("chapter thumbnail link missing: %s", body)
+	}
 	if !strings.Contains(body, "/opds/v1.2/download/chapters/"+cid+".cbz") ||
 		!strings.Contains(body, `pse:count="3"`) ||
 		!strings.Contains(body, "/opds/v1.2/image/chapters/"+cid+"/{pageNumber}") {

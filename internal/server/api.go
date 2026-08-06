@@ -613,6 +613,7 @@ func gzipCompressible(p string) bool {
 		"/opds/v1.2/image/",
 		"/opds/v1.2/download/",
 		"/opds/v1.2/covers/",
+		"/opds/v1.2/thumb/",
 	} {
 		if strings.HasPrefix(p, skip) {
 			return false

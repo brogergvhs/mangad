@@ -11,6 +11,7 @@ import (
 
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/service"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 // OPDS 1.2 catalog feeds for third-party readers (Panels, Mihon, KOReader).
@@ -85,6 +86,8 @@ func registerOPDS(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET "+opdsBase+"/download/volumes/{file}", o.volumeArchive)
 	mux.HandleFunc("GET "+opdsBase+"/image/chapters/{id}/{page}", o.chapterPage)
 	mux.HandleFunc("GET "+opdsBase+"/image/volumes/{id}/{page}", o.volumePage)
+	mux.HandleFunc("GET "+opdsBase+"/thumb/chapters/{id}", o.chapterThumb)
+	mux.HandleFunc("GET "+opdsBase+"/thumb/volumes/{id}", o.volumeThumb)
 }
 
 func writeOPDS(w http.ResponseWriter, kind string, feed opdsFeed) {
@@ -118,13 +121,14 @@ func (o *opds) series(w http.ResponseWriter, r *http.Request) {
 	}
 	titles = filterRestrictedTitles(r.Context(), titles)
 	sort.Slice(titles, func(i, j int) bool { return titles[i].DisplayTitle < titles[j].DisplayTitle })
+	descriptions := o.descriptions(r, titles)
 	feed := opdsFeed{
 		ID: "urn:kaodoku:series", Title: "All series", Updated: opdsNow(),
 		Links: opdsSelfStart(opdsBase + "/series"),
 	}
 	for _, t := range titles {
 		id := strconv.FormatInt(t.ID, 10)
-		feed.Entries = append(feed.Entries, opdsEntry{
+		entry := opdsEntry{
 			Title: t.DisplayTitle, ID: "urn:kaodoku:series:" + id,
 			Updated: t.UpdatedAt.UTC().Format(time.RFC3339),
 			Links: []opdsLink{
@@ -132,9 +136,33 @@ func (o *opds) series(w http.ResponseWriter, r *http.Request) {
 				{Rel: opdsImageRel, Type: "image/jpeg", Href: opdsBase + "/covers/" + id},
 				{Rel: opdsThumbRel, Type: "image/jpeg", Href: opdsBase + "/covers/" + id},
 			},
-		})
+		}
+		if d := descriptions[t.ID]; d != "" {
+			entry.Content = &opdsText{Type: "text", Text: d}
+		}
+		feed.Entries = append(feed.Entries, entry)
 	}
 	writeOPDS(w, opdsNavType, feed)
+}
+
+// descriptions maps title ids to plain-text catalog description snippets.
+func (o *opds) descriptions(r *http.Request, titles []library.Title) map[int64]string {
+	ids := make([]int64, 0, len(titles))
+	for _, t := range titles {
+		if t.CatalogMangaID != nil {
+			ids = append(ids, *t.CatalogMangaID)
+		}
+	}
+	byCatalog, _ := o.svc.MangaByIDs(r.Context(), ids)
+	out := make(map[int64]string, len(byCatalog))
+	for _, t := range titles {
+		if t.CatalogMangaID != nil {
+			if m, ok := byCatalog[*t.CatalogMangaID]; ok && m.Description != "" {
+				out[t.ID] = util.PlainSnippet(m.Description, 300)
+			}
+		}
+	}
+	return out
 }
 
 // title renders the per-series feed: chapters and volumes as sibling
@@ -203,6 +231,7 @@ func (o *opds) writeChaptersFeed(w http.ResponseWriter, t library.Title, chapter
 			Title: chapterEntryTitle(t.DisplayTitle, ch), ID: "urn:kaodoku:chapter:" + id, Updated: updated,
 			Links: []opdsLink{
 				{Rel: opdsAcqRel, Type: opdsCbzType, Href: opdsBase + "/download/chapters/" + id + ".cbz"},
+				{Rel: opdsThumbRel, Type: "image/jpeg", Href: opdsBase + "/thumb/chapters/" + id},
 			},
 		}
 		if ch.Pages > 0 {
@@ -231,6 +260,7 @@ func (o *opds) writeVolumesFeed(w http.ResponseWriter, t library.Title, vols []l
 			Title: volumeEntryTitle(t.DisplayTitle, v), ID: "urn:kaodoku:volume:" + id, Updated: updated,
 			Links: []opdsLink{
 				{Rel: opdsAcqRel, Type: opdsCbzType, Href: opdsBase + "/download/volumes/" + id + ".cbz"},
+				{Rel: opdsThumbRel, Type: "image/jpeg", Href: opdsBase + "/thumb/volumes/" + id},
 			},
 		}
 		if v.Pages > 0 {
@@ -284,6 +314,36 @@ func (o *opds) downloadedChapters(r *http.Request, titleID int64) []library.Chap
 		}
 	}
 	return out
+}
+
+func (o *opds) chapterThumb(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	status, err := o.svc.ChapterReadStatus(r.Context(), id)
+	if err != nil || !titleAllowed(r.Context(), o.svc, status.TitleID) {
+		writeError(w, http.StatusNotFound, "chapter not found")
+		return
+	}
+	r.SetPathValue("page", "1")
+	serveChapterPage(w, r, o.svc)
+}
+
+func (o *opds) volumeThumb(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	vol, err := o.svc.GetVolume(r.Context(), id)
+	if err != nil || !titleAllowed(r.Context(), o.svc, vol.TitleID) {
+		writeError(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	r.SetPathValue("page", "1")
+	serveVolumePage(w, r, o.svc)
 }
 
 // opdsPage parses the {page} path value as a 0-based PSE page number.
