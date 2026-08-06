@@ -34,6 +34,13 @@ func registerKomga(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET /komga/api/v1/libraries", k.libraries)
 	mux.HandleFunc("GET /komga/api/v1/libraries/{id}", k.library)
 	mux.HandleFunc("GET /komga/api/v1/series", k.seriesList)
+	mux.HandleFunc("POST /komga/api/v1/series/list", k.seriesListPost)
+	mux.HandleFunc("GET /komga/api/v1/series/latest", k.seriesByTime("updated"))
+	mux.HandleFunc("GET /komga/api/v1/series/updated", k.seriesByTime("updated"))
+	mux.HandleFunc("GET /komga/api/v1/series/new", k.seriesByTime("created"))
+	mux.HandleFunc("GET /komga/api/v1/books", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v1/books/latest", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v1/books/ondeck", k.emptyPage)
 	mux.HandleFunc("GET /komga/api/v1/series/{id}", k.seriesGet)
 	mux.HandleFunc("GET /komga/api/v1/series/{id}/books", k.seriesBooks)
 	mux.HandleFunc("GET /komga/api/v1/series/{id}/thumbnail", k.seriesThumbnail)
@@ -94,32 +101,46 @@ type komgaAuthor struct {
 }
 
 type komgaSeriesMetadata struct {
-	Status               string   `json:"status"`
-	StatusLock           bool     `json:"statusLock"`
-	Title                string   `json:"title"`
-	TitleLock            bool     `json:"titleLock"`
-	TitleSort            string   `json:"titleSort"`
-	TitleSortLock        bool     `json:"titleSortLock"`
-	Summary              string   `json:"summary"`
-	SummaryLock          bool     `json:"summaryLock"`
-	ReadingDirection     string   `json:"readingDirection"`
-	ReadingDirectionLock bool     `json:"readingDirectionLock"`
-	Publisher            string   `json:"publisher"`
-	PublisherLock        bool     `json:"publisherLock"`
-	AgeRating            *int     `json:"ageRating"`
-	AgeRatingLock        bool     `json:"ageRatingLock"`
-	Language             string   `json:"language"`
-	LanguageLock         bool     `json:"languageLock"`
-	Genres               []string `json:"genres"`
-	GenresLock           bool     `json:"genresLock"`
-	Tags                 []string `json:"tags"`
-	TagsLock             bool     `json:"tagsLock"`
-	TotalBookCount       *int     `json:"totalBookCount"`
-	TotalBookCountLock   bool     `json:"totalBookCountLock"`
-	SharingLabels        []string `json:"sharingLabels"`
-	SharingLabelsLock    bool     `json:"sharingLabelsLock"`
-	Created              string   `json:"created"`
-	LastModified         string   `json:"lastModified"`
+	Status               string          `json:"status"`
+	StatusLock           bool            `json:"statusLock"`
+	Title                string          `json:"title"`
+	TitleLock            bool            `json:"titleLock"`
+	TitleSort            string          `json:"titleSort"`
+	TitleSortLock        bool            `json:"titleSortLock"`
+	Summary              string          `json:"summary"`
+	SummaryLock          bool            `json:"summaryLock"`
+	ReadingDirection     string          `json:"readingDirection"`
+	ReadingDirectionLock bool            `json:"readingDirectionLock"`
+	Publisher            string          `json:"publisher"`
+	PublisherLock        bool            `json:"publisherLock"`
+	AgeRating            *int            `json:"ageRating"`
+	AgeRatingLock        bool            `json:"ageRatingLock"`
+	Language             string          `json:"language"`
+	LanguageLock         bool            `json:"languageLock"`
+	Genres               []string        `json:"genres"`
+	GenresLock           bool            `json:"genresLock"`
+	Tags                 []string        `json:"tags"`
+	TagsLock             bool            `json:"tagsLock"`
+	TotalBookCount       *int            `json:"totalBookCount"`
+	TotalBookCountLock   bool            `json:"totalBookCountLock"`
+	SharingLabels        []string        `json:"sharingLabels"`
+	SharingLabelsLock    bool            `json:"sharingLabelsLock"`
+	Links                []komgaLink     `json:"links"`
+	LinksLock            bool            `json:"linksLock"`
+	AlternateTitles      []komgaAltTitle `json:"alternateTitles"`
+	AlternateTitlesLock  bool            `json:"alternateTitlesLock"`
+	Created              string          `json:"created"`
+	LastModified         string          `json:"lastModified"`
+}
+
+type komgaLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
+type komgaAltTitle struct {
+	Label string `json:"label"`
+	Title string `json:"title"`
 }
 
 type komgaBooksMetadata struct {
@@ -174,6 +195,10 @@ type komgaBookMetadata struct {
 	AuthorsLock     bool          `json:"authorsLock"`
 	Tags            []string      `json:"tags"`
 	TagsLock        bool          `json:"tagsLock"`
+	ISBN            string        `json:"isbn"`
+	ISBNLock        bool          `json:"isbnLock"`
+	Links           []komgaLink   `json:"links"`
+	LinksLock       bool          `json:"linksLock"`
 	Created         string        `json:"created"`
 	LastModified    string        `json:"lastModified"`
 }
@@ -205,6 +230,7 @@ type komgaBook struct {
 	Metadata         komgaBookMetadata  `json:"metadata"`
 	ReadProgress     *komgaReadProgress `json:"readProgress"`
 	Deleted          bool               `json:"deleted"`
+	FileHash         string             `json:"fileHash"`
 	Oneshot          bool               `json:"oneshot"`
 }
 
@@ -363,6 +389,7 @@ func (k *komga) toSeries(t library.Title, read, inProgress, books int) komgaSeri
 			Title:  t.DisplayTitle, TitleSort: t.DisplayTitle,
 			Summary: "", ReadingDirection: "", Publisher: "", Language: "",
 			Genres: []string{}, Tags: tags, SharingLabels: []string{},
+			Links: []komgaLink{}, AlternateTitles: []komgaAltTitle{},
 			Created: created, LastModified: modified,
 		},
 		BooksMetadata: komgaBooksMetadata{
@@ -494,6 +521,85 @@ func (k *komga) seriesList(w http.ResponseWriter, r *http.Request) {
 	komgaWrite(w, komgaPageOf(out, total, page, size, unpaged))
 }
 
+// seriesByTime serves the dashboard rows (latest/new/updated) as a sorted page.
+func (k *komga) seriesByTime(field string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		titles, err := k.svc.ListTitles(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		titles = filterRestrictedTitles(r.Context(), titles)
+		sort.SliceStable(titles, func(i, j int) bool {
+			if field == "created" {
+				return titles[i].CreatedAt.After(titles[j].CreatedAt)
+			}
+			return titles[i].UpdatedAt.After(titles[j].UpdatedAt)
+		})
+		k.writeSeriesPage(w, r, titles)
+	}
+}
+
+// seriesListPost is Komga's newer browse endpoint; the condition tree is
+// ignored beyond full-text search.
+func (k *komga) seriesListPost(w http.ResponseWriter, r *http.Request) {
+	titles, err := k.svc.ListTitles(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	titles = filterRestrictedTitles(r.Context(), titles)
+	var body struct {
+		FullTextSearch string `json:"fullTextSearch"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if q := strings.TrimSpace(body.FullTextSearch); q != "" {
+		kept := titles[:0]
+		for _, t := range titles {
+			if strings.Contains(strings.ToLower(t.DisplayTitle), strings.ToLower(q)) {
+				kept = append(kept, t)
+			}
+		}
+		titles = kept
+	}
+	sort.SliceStable(titles, func(i, j int) bool {
+		return strings.ToLower(titles[i].DisplayTitle) < strings.ToLower(titles[j].DisplayTitle)
+	})
+	k.writeSeriesPage(w, r, titles)
+}
+
+func (k *komga) writeSeriesPage(w http.ResponseWriter, r *http.Request, titles []library.Title) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 0 {
+		page = 0
+	}
+	size, _ := strconv.Atoi(q.Get("size"))
+	if size <= 0 {
+		size = 20
+	}
+	unpaged := q.Get("unpaged") == "true"
+	total := len(titles)
+	window := titles
+	if !unpaged {
+		lo := page * size
+		if lo > total {
+			lo = total
+		}
+		hi := lo + size
+		if hi > total {
+			hi = total
+		}
+		window = titles[lo:hi]
+	}
+	out := make([]komgaSeries, 0, len(window))
+	for _, t := range window {
+		books, read := seriesCounts(t)
+		out = append(out, k.toSeries(t, read, 0, books))
+	}
+	komgaWrite(w, komgaPageOf(out, total, page, size, unpaged))
+}
+
 func (k *komga) allowedTitle(w http.ResponseWriter, r *http.Request) (library.Title, bool) {
 	id, err := parseInt64Path(r, "id")
 	if err != nil {
@@ -575,7 +681,7 @@ func (k *komga) chapterBook(t library.Title, ch library.ChapterReadStatus) komga
 		Metadata: komgaBookMetadata{
 			Title: name, Summary: "", Number: ch.Label,
 			NumberSort: chapterNumberSort(ch),
-			Authors:    []komgaAuthor{}, Tags: []string{},
+			Authors:    []komgaAuthor{}, Tags: []string{}, Links: []komgaLink{},
 			Created: created, LastModified: modified,
 		},
 		ReadProgress: progress,
@@ -613,7 +719,7 @@ func (k *komga) volumeBook(t library.Title, v library.Volume) komgaBook {
 			Title: name, Summary: "",
 			Number:     strconv.FormatFloat(v.Number, 'f', -1, 64),
 			NumberSort: v.Number,
-			Authors:    []komgaAuthor{}, Tags: []string{},
+			Authors:    []komgaAuthor{}, Tags: []string{}, Links: []komgaLink{},
 			Created: stamp, LastModified: stamp,
 		},
 		ReadProgress: progress,

@@ -214,6 +214,24 @@ func TestKomgaAPI(t *testing.T) {
 	}
 
 	for _, path := range []string{
+		"/komga/api/v1/series/latest", "/komga/api/v1/series/new", "/komga/api/v1/series/updated",
+	} {
+		rec := do(t, api, http.MethodGet, path, "", nil)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"content":[{`) {
+			t.Fatalf("%s = %d %s", path, rec.Code, rec.Body.String()[:120])
+		}
+	}
+	if rec := do(t, api, http.MethodPost, "/komga/api/v1/series/list", "", map[string]any{"fullTextSearch": "exam"}); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"name":"Example"`) {
+		t.Fatalf("series/list POST = %d", rec.Code)
+	}
+	for _, path := range []string{"/komga/api/v1/books/latest", "/komga/api/v1/books/ondeck", "/komga/api/v1/books"} {
+		if rec := do(t, api, http.MethodGet, path, "", nil); rec.Code != http.StatusOK {
+			t.Fatalf("%s = %d", path, rec.Code)
+		}
+	}
+
+	for _, path := range []string{
 		"/komga/api/v1/collections?unpaged=true", "/komga/api/v1/readlists",
 		"/komga/api/v1/genres", "/komga/api/v1/tags", "/komga/api/v1/publishers",
 		"/komga/api/v1/authors",
