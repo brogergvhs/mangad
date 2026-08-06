@@ -24,7 +24,7 @@ const (
 	opdsImageRel = "http://opds-spec.org/image"
 	opdsThumbRel = "http://opds-spec.org/image/thumbnail"
 	opdsPseRel   = "http://vaemendis.net/opds-pse/stream"
-	opdsCbzType  = "application/vnd.comicbook+zip"
+	opdsCbzType  = "application/x-cbz"
 	opdsBase     = "/opds/v1.2"
 )
 
@@ -81,8 +81,8 @@ func registerOPDS(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET "+opdsBase+"/series/{id}/chapters", o.chapters)
 	mux.HandleFunc("GET "+opdsBase+"/series/{id}/volumes", o.volumes)
 	mux.HandleFunc("GET "+opdsBase+"/covers/{id}", o.cover)
-	mux.HandleFunc("GET "+opdsBase+"/download/chapters/{id}", o.chapterArchive)
-	mux.HandleFunc("GET "+opdsBase+"/download/volumes/{id}", o.volumeArchive)
+	mux.HandleFunc("GET "+opdsBase+"/download/chapters/{file}", o.chapterArchive)
+	mux.HandleFunc("GET "+opdsBase+"/download/volumes/{file}", o.volumeArchive)
 	mux.HandleFunc("GET "+opdsBase+"/image/chapters/{id}/{page}", o.chapterPage)
 	mux.HandleFunc("GET "+opdsBase+"/image/volumes/{id}/{page}", o.volumePage)
 }
@@ -214,7 +214,7 @@ func (o *opds) writeChaptersFeed(w http.ResponseWriter, t library.Title, chapter
 		entry := opdsEntry{
 			Title: chapterEntryTitle(t.DisplayTitle, ch), ID: "urn:kaodoku:chapter:" + id, Updated: updated,
 			Links: []opdsLink{
-				{Rel: opdsAcqRel, Type: opdsCbzType, Href: opdsBase + "/download/chapters/" + id},
+				{Rel: opdsAcqRel, Type: opdsCbzType, Href: opdsBase + "/download/chapters/" + id + ".cbz"},
 			},
 		}
 		if ch.Pages > 0 {
@@ -242,7 +242,7 @@ func (o *opds) writeVolumesFeed(w http.ResponseWriter, t library.Title, vols []l
 		entry := opdsEntry{
 			Title: volumeEntryTitle(t.DisplayTitle, v), ID: "urn:kaodoku:volume:" + id, Updated: updated,
 			Links: []opdsLink{
-				{Rel: opdsAcqRel, Type: opdsCbzType, Href: opdsBase + "/download/volumes/" + id},
+				{Rel: opdsAcqRel, Type: opdsCbzType, Href: opdsBase + "/download/volumes/" + id + ".cbz"},
 			},
 		}
 		if v.Pages > 0 {
@@ -318,8 +318,13 @@ func (o *opds) cover(w http.ResponseWriter, r *http.Request) {
 	serveTitleCover(w, r, o.svc, id)
 }
 
+// opdsDownloadID parses the {file} path value ("123" or "123.cbz").
+func opdsDownloadID(r *http.Request) (int64, error) {
+	return strconv.ParseInt(strings.TrimSuffix(r.PathValue("file"), ".cbz"), 10, 64)
+}
+
 func (o *opds) chapterArchive(w http.ResponseWriter, r *http.Request) {
-	id, err := parseInt64Path(r, "id")
+	id, err := opdsDownloadID(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
@@ -337,7 +342,7 @@ func (o *opds) chapterArchive(w http.ResponseWriter, r *http.Request) {
 }
 
 func (o *opds) volumeArchive(w http.ResponseWriter, r *http.Request) {
-	id, err := parseInt64Path(r, "id")
+	id, err := opdsDownloadID(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return

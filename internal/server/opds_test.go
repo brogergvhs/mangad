@@ -95,7 +95,7 @@ func TestOPDSCatalog(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "kind=acquisition") {
 		t.Fatalf("title feed content-type = %q", ct)
 	}
-	if !strings.Contains(body, "/opds/v1.2/download/chapters/"+cid) ||
+	if !strings.Contains(body, "/opds/v1.2/download/chapters/"+cid+".cbz") ||
 		!strings.Contains(body, `pse:count="3"`) ||
 		!strings.Contains(body, "/opds/v1.2/image/chapters/"+cid+"/{pageNumber}") {
 		t.Fatalf("title feed = %s", body)
@@ -104,7 +104,7 @@ func TestOPDSCatalog(t *testing.T) {
 		t.Fatalf("undownloaded chapter leaked into feed: %s", body)
 	}
 
-	rec = do(t, api, http.MethodGet, "/opds/v1.2/download/chapters/"+cid, "", nil)
+	rec = do(t, api, http.MethodGet, "/opds/v1.2/download/chapters/"+cid+".cbz", "", nil)
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/vnd.comicbook+zip" ||
 		!strings.HasPrefix(rec.Body.String(), "PK") {
 		t.Fatalf("download = %d %q", rec.Code, rec.Header().Get("Content-Type"))
