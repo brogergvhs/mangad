@@ -158,6 +158,7 @@ func (u *webUI) userUpdate(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	flushBasicCreds()
 	w.Header().Set("HX-Refresh", "true")
 }
 
