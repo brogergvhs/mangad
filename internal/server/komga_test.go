@@ -268,4 +268,27 @@ func TestKomgaBasicAuth(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("basic auth = %d; %s", rec.Code, rec.Body.String())
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/komga/api/v2/users/me", nil)
+	req.SetBasicAuth("boss", "secret123")
+	rec = httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	token := rec.Header().Get("X-Auth-Token")
+	if rec.Code != http.StatusOK || token == "" {
+		t.Fatalf("login session: code=%d token=%q", rec.Code, token)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/komga/api/v1/series/updated?page=0&size=20&oneshot=false", nil)
+	req.Header.Set("X-Auth-Token", token)
+	rec = httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session-token request = %d; %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/komga/api/v1/series/updated", nil)
+	req.AddCookie(&http.Cookie{Name: "KOMGA-SESSION", Value: token})
+	rec = httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session-cookie request = %d", rec.Code)
+	}
 }

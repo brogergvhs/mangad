@@ -191,6 +191,16 @@ func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 			return user
 		}
 	}
+	if t := r.Header.Get("X-Auth-Token"); t != "" {
+		if user, err := svc.Auth().UserBySession(ctx, t); err == nil && user != nil {
+			return user
+		}
+	}
+	if c, err := r.Cookie("KOMGA-SESSION"); err == nil {
+		if user, err := svc.Auth().UserBySession(ctx, c.Value); err == nil && user != nil {
+			return user
+		}
+	}
 	if username, password, ok := r.BasicAuth(); ok {
 		if user := basicAuthUser(r, svc, username, password); user != nil {
 			return user

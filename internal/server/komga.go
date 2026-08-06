@@ -320,11 +320,36 @@ func (k *komga) emptyObject(w http.ResponseWriter, _ *http.Request) {
 	komgaWrite(w, map[string]any{})
 }
 
+// issueSession mirrors Komga's session flow: a Basic-authed users/me call
+// returns X-Auth-Token + KOMGA-SESSION, which clients reuse for everything else.
+func (k *komga) issueSession(w http.ResponseWriter, r *http.Request) {
+	if !authEnabled() || r.Header.Get("X-Auth-Token") != "" {
+		return
+	}
+	if _, err := r.Cookie("KOMGA-SESSION"); err == nil {
+		return
+	}
+	username, password, ok := r.BasicAuth()
+	if !ok {
+		return
+	}
+	token, err := k.svc.Auth().Login(r.Context(), username, password, r.UserAgent(), clientIP(r))
+	if err != nil {
+		return
+	}
+	w.Header().Set("X-Auth-Token", token)
+	http.SetCookie(w, &http.Cookie{
+		Name: "KOMGA-SESSION", Value: token, Path: "/komga",
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureRequest(r),
+	})
+}
+
 func (k *komga) claim(w http.ResponseWriter, _ *http.Request) {
 	komgaWrite(w, map[string]any{"isClaimed": true})
 }
 
 func (k *komga) me(w http.ResponseWriter, r *http.Request) {
+	k.issueSession(w, r)
 	user := userFrom(r.Context())
 	roles := []string{"USER", "FILE_DOWNLOAD", "PAGE_STREAMING"}
 	if user.Can(auth.PermUsersManage) {
