@@ -39,6 +39,9 @@ func opdsTestAPI(t *testing.T) (http.Handler, *service.JobService, int64, int64)
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := repo.AddTitle(ctx, library.AddTitleParams{SourceURL: "https://example.test/empty", DisplayTitle: "Empty", Monitored: true}); err != nil {
+		t.Fatal(err)
+	}
 	chapter, err := repo.GetChapterByLabel(ctx, title.ID, "1")
 	if err != nil {
 		t.Fatal(err)

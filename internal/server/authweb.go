@@ -37,7 +37,7 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 		}
 		user := resolveUser(r, svc)
 		if user == nil {
-			if strings.HasPrefix(r.URL.Path, "/opds") {
+			if strings.HasPrefix(r.URL.Path, "/opds") || strings.HasPrefix(r.URL.Path, "/komga") {
 				w.Header().Set("WWW-Authenticate", `Basic realm="Kaodoku"`)
 				writeError(w, http.StatusUnauthorized, "unauthorized")
 				return
@@ -107,7 +107,7 @@ func requiredPerm(r *http.Request) string {
 		return auth.PermReaderUse
 	case strings.HasPrefix(p, "/api/v1/reader/"):
 		return auth.PermReaderUse
-	case strings.HasPrefix(p, "/opds"):
+	case strings.HasPrefix(p, "/opds") || strings.HasPrefix(p, "/komga"):
 		return auth.PermReaderUse
 	case strings.HasPrefix(p, "/api/v1/library") && strings.HasSuffix(p, "/favourite"):
 		return auth.PermLibraryView
