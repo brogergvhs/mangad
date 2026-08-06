@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"mime"
 	"net/http"
@@ -31,6 +32,8 @@ type komga struct {
 func registerKomga(mux *http.ServeMux, svc *service.JobService) {
 	k := &komga{svc: svc}
 	mux.HandleFunc("GET /komga/api/v2/users/me", k.me)
+	mux.HandleFunc("GET /komga/api/v1/users/me", k.me)
+	mux.HandleFunc("GET /komga/api/v1/claim", k.claim)
 	mux.HandleFunc("GET /komga/api/v1/libraries", k.libraries)
 	mux.HandleFunc("GET /komga/api/v1/libraries/{id}", k.library)
 	mux.HandleFunc("GET /komga/api/v1/series", k.seriesList)
@@ -61,6 +64,7 @@ func registerKomga(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET /komga/api/v1/authors", k.emptyList)
 	mux.HandleFunc("GET /komga/series/{id}", k.seriesWeb)
 	mux.HandleFunc("GET /komga/book/{id}", k.bookWeb)
+	mux.HandleFunc("/komga/", k.unmatched)
 }
 
 // --- DTOs: field sets mirror Komga; REQUIRED fields per Mihon must never be
@@ -298,6 +302,19 @@ func (k *komga) bookWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/library/"+strconv.FormatInt(ref.titleID, 10), http.StatusSeeOther)
+}
+
+// unmatched logs Komga-client requests we don't serve yet, so interop gaps
+// name themselves in the server log.
+func (k *komga) unmatched(w http.ResponseWriter, r *http.Request) {
+	log.Printf("komga: unmatched %s %s", r.Method, r.URL.Path)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(`{"error":"not found"}`))
+}
+
+func (k *komga) claim(w http.ResponseWriter, _ *http.Request) {
+	komgaWrite(w, map[string]any{"isClaimed": true})
 }
 
 func (k *komga) me(w http.ResponseWriter, r *http.Request) {

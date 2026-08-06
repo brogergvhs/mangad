@@ -73,9 +73,9 @@ type opds struct {
 
 func registerOPDS(mux *http.ServeMux, svc *service.JobService) {
 	o := &opds{svc: svc}
-	mux.HandleFunc("GET /opds", o.root)
-	mux.HandleFunc("GET /opds/{$}", o.root)
-	mux.HandleFunc("GET "+opdsBase+"/catalog", o.root)
+	mux.HandleFunc("GET /opds", o.series)
+	mux.HandleFunc("GET /opds/{$}", o.series)
+	mux.HandleFunc("GET "+opdsBase+"/catalog", o.series)
 	mux.HandleFunc("GET "+opdsBase+"/series", o.series)
 	mux.HandleFunc("GET "+opdsBase+"/series/{id}", o.title)
 	mux.HandleFunc("GET "+opdsBase+"/series/{id}/chapters", o.chapters)
@@ -101,25 +101,13 @@ func opdsNow() string { return time.Now().UTC().Format(time.RFC3339) }
 
 func opdsSelfStart(self string) []opdsLink {
 	kind := opdsAcqType
-	if self == opdsBase+"/catalog" || self == opdsBase+"/series" {
+	if self == opdsBase+"/series" {
 		kind = opdsNavType
 	}
 	return []opdsLink{
 		{Rel: "self", Type: kind, Href: self},
-		{Rel: "start", Type: opdsNavType, Href: opdsBase + "/catalog"},
+		{Rel: "start", Type: opdsNavType, Href: opdsBase + "/series"},
 	}
-}
-
-func (o *opds) root(w http.ResponseWriter, r *http.Request) {
-	writeOPDS(w, opdsNavType, opdsFeed{
-		ID: "urn:kaodoku:catalog", Title: "Kaodoku", Updated: opdsNow(),
-		Links: opdsSelfStart(opdsBase + "/catalog"),
-		Entries: []opdsEntry{{
-			Title: "All series", ID: "urn:kaodoku:series", Updated: opdsNow(),
-			Content: &opdsText{Type: "text", Text: "Every series in the library"},
-			Links:   []opdsLink{{Rel: "subsection", Type: opdsNavType, Href: opdsBase + "/series"}},
-		}},
-	})
 }
 
 func (o *opds) series(w http.ResponseWriter, r *http.Request) {
