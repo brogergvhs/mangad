@@ -32,7 +32,9 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" ||
 			r.URL.Path == "/api/v1/meta" || r.URL.Path == "/api/v1/auth/login" ||
-			r.URL.Path == "/komga/api/v1/claim" {
+			r.URL.Path == "/komga/api/v1/claim" ||
+			r.URL.Path == "/komga/api/v1/client-settings/global/list" ||
+			r.URL.Path == "/komga/api/v1/oauth2/providers" {
 			next.ServeHTTP(w, r)
 			return
 		}

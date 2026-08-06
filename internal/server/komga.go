@@ -34,6 +34,9 @@ func registerKomga(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET /komga/api/v2/users/me", k.me)
 	mux.HandleFunc("GET /komga/api/v1/users/me", k.me)
 	mux.HandleFunc("GET /komga/api/v1/claim", k.claim)
+	mux.HandleFunc("GET /komga/api/v1/client-settings/global/list", k.emptyObject)
+	mux.HandleFunc("GET /komga/api/v1/client-settings/user/list", k.emptyObject)
+	mux.HandleFunc("GET /komga/api/v1/oauth2/providers", k.emptyList)
 	mux.HandleFunc("GET /komga/api/v1/libraries", k.libraries)
 	mux.HandleFunc("GET /komga/api/v1/libraries/{id}", k.library)
 	mux.HandleFunc("GET /komga/api/v1/series", k.seriesList)
@@ -311,6 +314,10 @@ func (k *komga) unmatched(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = w.Write([]byte(`{"error":"not found"}`))
+}
+
+func (k *komga) emptyObject(w http.ResponseWriter, _ *http.Request) {
+	komgaWrite(w, map[string]any{})
 }
 
 func (k *komga) claim(w http.ResponseWriter, _ *http.Request) {

@@ -253,6 +253,14 @@ func TestKomgaBasicAuth(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("no-creds = %d", rec.Code)
 	}
+	for _, path := range []string{"/komga/api/v1/client-settings/global/list", "/komga/api/v1/oauth2/providers", "/komga/api/v1/claim"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		api.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("pre-login %s = %d, must be public", path, rec.Code)
+		}
+	}
 	req = httptest.NewRequest(http.MethodGet, "/komga/api/v1/libraries", nil)
 	req.SetBasicAuth("boss", "secret123")
 	rec = httptest.NewRecorder()
