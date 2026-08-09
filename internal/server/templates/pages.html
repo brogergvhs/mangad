@@ -439,21 +439,7 @@
 
 {{define "title"}}
 <div class="flex gap-5 mb-4 max-lg:flex-col">
-  <figure class="shrink-0 max-lg:self-center relative">
-    <img class="rounded-lg bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy">
-    {{if .User.Can "library.manage"}}
-    <details class="dropdown dropdown-end absolute top-1 right-1">
-      <summary class="btn btn-ghost btn-xs btn-square bg-base-100/70" aria-label="Cover actions">{{template "iconDots"}}</summary>
-      <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-52 p-2 shadow-lg border border-base-300">
-        <li><label>{{template "iconEdit"}}Upload cover
-          <input type="file" name="cover" accept="image/*" class="hidden"
-            hx-post="/ui/titles/{{.Title.ID}}/cover" hx-encoding="multipart/form-data" hx-trigger="change">
-        </label></li>
-        {{if .Title.CustomCover}}<li><button hx-post="/ui/titles/{{.Title.ID}}/cover/reset">{{template "iconRefresh"}}Use catalog cover</button></li>{{end}}
-      </ul>
-    </details>
-    {{end}}
-  </figure>
+  <figure class="shrink-0 max-lg:self-center"><img class="rounded-lg bg-base-300" src="{{.Title.CoverImage}}" alt="" loading="lazy"></figure>
   <div class="flex min-w-0 flex-1 flex-col gap-3">
     <div class="flex items-start justify-between gap-3">
       <h1 class="text-2xl font-bold text-balance">{{.Title.DisplayTitle}}</h1>
@@ -470,6 +456,11 @@
             <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
             {{if .AniList.Connected}}<li><button hx-post="/ui/library/{{.Title.ID}}/anilist-sync" hx-swap="none">{{template "iconVerify"}}Sync AniList</button></li>{{end}}
             {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+            <li><label>{{template "iconEdit"}}Upload cover
+              <input type="file" name="cover" accept="image/*" class="hidden"
+                hx-post="/ui/titles/{{.Title.ID}}/cover" hx-encoding="multipart/form-data" hx-trigger="change">
+            </label></li>
+            {{if .Title.CustomCover}}<li><button hx-post="/ui/titles/{{.Title.ID}}/cover/reset">{{template "iconRefresh"}}Use catalog cover</button></li>{{end}}
             <li><button hx-get="/ui/library/{{.Title.ID}}/collections" hx-target="#add-collection-body" hx-swap="innerHTML" onclick="add_to_collection_modal.showModal()">{{template "iconLayers"}}Add to collection</button></li>
             <li><button class="text-error" onclick="remove_title_modal.showModal()">{{template "iconTrash"}}Remove title</button></li>
           </ul>
