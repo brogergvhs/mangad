@@ -33,6 +33,8 @@ func New(
 	mux := http.NewServeMux()
 	registerUI(mux, svc, runJobs)
 	registerAPIV1(mux, svc, runJobs)
+	registerOPDS(mux, svc)
+	registerKomga(mux, svc)
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -608,10 +610,18 @@ func gzipCompressible(p string) bool {
 		"/api/v1/reader/volumes/",
 		"/api/v1/covers/",
 		"/api/v1/volumes/",
+		"/opds/v1.2/image/",
+		"/opds/v1.2/download/",
+		"/opds/v1.2/covers/",
+		"/opds/v1.2/thumb/",
 	} {
 		if strings.HasPrefix(p, skip) {
 			return false
 		}
+	}
+	if strings.HasPrefix(p, "/komga/") &&
+		(strings.Contains(p, "/pages/") || strings.HasSuffix(p, "/thumbnail") || strings.HasSuffix(p, "/file")) {
+		return false
 	}
 	return true
 }

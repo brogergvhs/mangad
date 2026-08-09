@@ -402,7 +402,12 @@ func (a *apiV1) titleCover(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	t, err := a.svc.GetTitle(r.Context(), id)
+	serveTitleCover(w, r, a.svc, id)
+}
+
+// serveTitleCover proxies a title's remote cover for authed clients.
+func serveTitleCover(w http.ResponseWriter, r *http.Request, svc *service.JobService, id int64) {
+	t, err := svc.GetTitle(r.Context(), id)
 	if err != nil || !contentAllowed(r.Context(), t.IsAdult, t.ContentTags) {
 		http.NotFound(w, r)
 		return

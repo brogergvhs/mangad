@@ -2,10 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
 	"github.com/brogergvhs/kaodoku/internal/service"
@@ -28,12 +31,20 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" ||
-			r.URL.Path == "/api/v1/meta" || r.URL.Path == "/api/v1/auth/login" {
+			r.URL.Path == "/api/v1/meta" || r.URL.Path == "/api/v1/auth/login" ||
+			r.URL.Path == "/komga/api/v1/claim" ||
+			r.URL.Path == "/komga/api/v1/client-settings/global/list" ||
+			r.URL.Path == "/komga/api/v1/oauth2/providers" {
 			next.ServeHTTP(w, r)
 			return
 		}
 		user := resolveUser(r, svc)
 		if user == nil {
+			if strings.HasPrefix(r.URL.Path, "/opds") || strings.HasPrefix(r.URL.Path, "/komga") {
+				w.Header().Set("WWW-Authenticate", `Basic realm="Kaodoku"`)
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
 			if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
@@ -98,6 +109,8 @@ func requiredPerm(r *http.Request) string {
 	case strings.HasPrefix(p, "/api/v1/anilist"):
 		return auth.PermReaderUse
 	case strings.HasPrefix(p, "/api/v1/reader/"):
+		return auth.PermReaderUse
+	case strings.HasPrefix(p, "/opds") || strings.HasPrefix(p, "/komga"):
 		return auth.PermReaderUse
 	case strings.HasPrefix(p, "/api/v1/library") && strings.HasSuffix(p, "/favourite"):
 		return auth.PermLibraryView
@@ -178,7 +191,72 @@ func resolveUser(r *http.Request, svc *service.JobService) *auth.User {
 			return user
 		}
 	}
+	if t := r.Header.Get("X-Auth-Token"); t != "" {
+		if user, err := svc.Auth().UserBySession(ctx, t); err == nil && user != nil {
+			return user
+		}
+	}
+	if c, err := r.Cookie("KOMGA-SESSION"); err == nil {
+		if user, err := svc.Auth().UserBySession(ctx, c.Value); err == nil && user != nil {
+			return user
+		}
+	}
+	if username, password, ok := r.BasicAuth(); ok {
+		if user := basicAuthUser(r, svc, username, password); user != nil {
+			return user
+		}
+	}
 	return nil
+}
+
+// basicCreds caches verified Basic credentials so OPDS page streams don't pay
+// bcrypt per request; entries expire after basicAuthTTL.
+var basicCreds = struct {
+	sync.Mutex
+	m map[[32]byte]basicCred
+}{m: map[[32]byte]basicCred{}}
+
+type basicCred struct {
+	userID int64
+	expiry time.Time
+}
+
+const basicAuthTTL = 5 * time.Minute
+
+func basicAuthUser(r *http.Request, svc *service.JobService, username, password string) *auth.User {
+	ctx := r.Context()
+	key := sha256.Sum256([]byte(strings.TrimSpace(username) + "\x00" + password))
+	now := time.Now()
+	basicCreds.Lock()
+	cred, ok := basicCreds.m[key]
+	basicCreds.Unlock()
+	if !ok || now.After(cred.expiry) {
+		id, err := svc.Auth().Authenticate(ctx, username, password)
+		if err != nil {
+			return nil
+		}
+		cred = basicCred{userID: id, expiry: now.Add(basicAuthTTL)}
+		basicCreds.Lock()
+		for k, c := range basicCreds.m {
+			if now.After(c.expiry) {
+				delete(basicCreds.m, k)
+			}
+		}
+		basicCreds.m[key] = cred
+		basicCreds.Unlock()
+	}
+	user, err := svc.Auth().GetUser(ctx, cred.userID)
+	if err != nil {
+		return nil
+	}
+	return user
+}
+
+// flushBasicCreds drops all cached Basic credentials; call on password change.
+func flushBasicCreds() {
+	basicCreds.Lock()
+	basicCreds.m = map[[32]byte]basicCred{}
+	basicCreds.Unlock()
 }
 
 // clientIP prefers the proxy-forwarded address from a local proxy.

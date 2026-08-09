@@ -35,6 +35,7 @@ func (u *webUI) accountPassword(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	flushBasicCreds()
 	u.frag(w, "toast", toastView{OK: true, Msg: "Password changed ✓"})
 }
 
