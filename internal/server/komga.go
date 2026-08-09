@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"image"
 	"log"
 	"math"
 	"mime"
@@ -277,6 +278,10 @@ type komgaPageDto struct {
 	Number    int    `json:"number"`
 	FileName  string `json:"fileName"`
 	MediaType string `json:"mediaType"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Size      string `json:"size"`
 }
 
 func komgaTime(t time.Time) string {
@@ -1280,7 +1285,17 @@ func (k *komga) bookPages(w http.ResponseWriter, r *http.Request) {
 		if mt == "" {
 			mt = "image/jpeg"
 		}
-		out = append(out, komgaPageDto{Number: i + 1, FileName: filepath.Base(e.Name), MediaType: mt})
+		dto := komgaPageDto{
+			Number: i + 1, FileName: filepath.Base(e.Name), MediaType: mt,
+			SizeBytes: int64(e.UncompressedSize64), Size: util.Human(int64(e.UncompressedSize64)),
+		}
+		if rc, err := e.Open(); err == nil {
+			if cfg, _, err := image.DecodeConfig(rc); err == nil {
+				dto.Width, dto.Height = cfg.Width, cfg.Height
+			}
+			rc.Close()
+		}
+		out = append(out, dto)
 	}
 	komgaWrite(w, out)
 }

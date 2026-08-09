@@ -113,7 +113,13 @@ func TestKomgaAPI(t *testing.T) {
 		MediaType string `json:"mediaType"`
 	}
 	rec = do(t, api, http.MethodGet, "/komga/api/v1/books/"+bid+"/pages", "", nil)
-	if err := json.NewDecoder(rec.Body).Decode(&pages); err != nil {
+	raw := rec.Body.String()
+	for _, key := range []string{`"width"`, `"height"`, `"sizeBytes"`, `"size"`} {
+		if !strings.Contains(raw, key) {
+			t.Fatalf("pages missing %s: %s", key, raw)
+		}
+	}
+	if err := json.NewDecoder(strings.NewReader(raw)).Decode(&pages); err != nil {
 		t.Fatal(err)
 	}
 	if len(pages) != 3 || pages[0].Number != 1 || pages[0].FileName != "1.jpg" || pages[0].MediaType != "image/jpeg" {
