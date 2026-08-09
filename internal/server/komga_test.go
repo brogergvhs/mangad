@@ -225,10 +225,60 @@ func TestKomgaAPI(t *testing.T) {
 		!strings.Contains(rec.Body.String(), `"name":"Example"`) {
 		t.Fatalf("series/list POST = %d", rec.Code)
 	}
+	rec = do(t, api, http.MethodPost, "/komga/api/v1/books/list?page=0&size=50&sort=series,metadata.numberSort,asc", "",
+		map[string]any{"condition": map[string]any{"seriesId": map[string]any{"value": tid, "operator": "is"}}})
+	books.Content = nil
+	if err := json.NewDecoder(rec.Body).Decode(&books); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || len(books.Content) != 1 || books.Content[0].ID != bid {
+		t.Fatalf("books/list by series = %d %+v", rec.Code, books)
+	}
+	rec = do(t, api, http.MethodPost, "/komga/api/v1/books/list?page=0&size=20&sort=createdDate,desc", "", map[string]any{})
+	books.Content = nil
+	_ = json.NewDecoder(rec.Body).Decode(&books)
+	if rec.Code != http.StatusOK || len(books.Content) != 1 {
+		t.Fatalf("books/list dashboard = %d %+v", rec.Code, books)
+	}
+
 	for _, path := range []string{"/komga/api/v1/books/latest", "/komga/api/v1/books/ondeck", "/komga/api/v1/books"} {
 		if rec := do(t, api, http.MethodGet, path, "", nil); rec.Code != http.StatusOK {
 			t.Fatalf("%s = %d", path, rec.Code)
 		}
+	}
+	if rec := do(t, api, http.MethodGet, "/komga/api/v1/books/"+bid+"/previous", "", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("previous of first book = %d, want 404", rec.Code)
+	}
+	if rec := do(t, api, http.MethodGet, "/komga/api/v1/books/"+bid+"/next", "", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("next of only book = %d, want 404", rec.Code)
+	}
+	if rec := do(t, api, http.MethodPost, "/komga/api/v1/series/"+tid+"/read-progress", "", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("series mark read = %d", rec.Code)
+	}
+	rec = do(t, api, http.MethodGet, "/komga/api/v2/series/"+tid+"/read-progress/tachiyomi", "", nil)
+	progress.BooksReadCount = -1
+	_ = json.NewDecoder(rec.Body).Decode(&progress)
+	if progress.BooksReadCount != 1 {
+		t.Fatalf("after series mark read = %+v", progress)
+	}
+	if rec := do(t, api, http.MethodDelete, "/komga/api/v1/series/"+tid+"/read-progress", "", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("series mark unread = %d", rec.Code)
+	}
+	rec = do(t, api, http.MethodPost, "/komga/api/v1/series/list/alphabetical-groups", "", map[string]any{})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"group":"E"`) {
+		t.Fatalf("alphabetical groups = %d %s", rec.Code, rec.Body.String())
+	}
+	for _, path := range []string{
+		"/komga/api/v2/genres", "/komga/api/v2/authors", "/komga/api/v1/fonts/families",
+		"/komga/api/v1/books/" + bid + "/readlists", "/komga/api/v1/books/" + bid + "/thumbnails",
+		"/komga/api/v1/series/" + tid + "/collections", "/komga/api/v1/series/" + tid + "/thumbnails",
+	} {
+		if rec := do(t, api, http.MethodGet, path, "", nil); rec.Code != http.StatusOK {
+			t.Fatalf("%s = %d", path, rec.Code)
+		}
+	}
+	if rec := do(t, api, http.MethodGet, "/komga/api/v1/books/"+bid+"/pages/2/raw", "", nil); rec.Code != http.StatusOK {
+		t.Fatalf("raw page = %d", rec.Code)
 	}
 
 	for _, path := range []string{

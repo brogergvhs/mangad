@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/brogergvhs/kaodoku/internal/auth"
 	"github.com/brogergvhs/kaodoku/internal/library"
@@ -45,14 +46,26 @@ func registerKomga(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET /komga/api/v1/series/updated", k.seriesByTime("updated"))
 	mux.HandleFunc("GET /komga/api/v1/series/new", k.seriesByTime("created"))
 	mux.HandleFunc("GET /komga/api/v1/books", k.emptyPage)
-	mux.HandleFunc("GET /komga/api/v1/books/latest", k.emptyPage)
-	mux.HandleFunc("GET /komga/api/v1/books/ondeck", k.emptyPage)
+	mux.HandleFunc("POST /komga/api/v1/books/list", k.booksListPost)
+	mux.HandleFunc("GET /komga/api/v1/books/latest", k.booksLatest)
+	mux.HandleFunc("GET /komga/api/v1/books/ondeck", k.booksOnDeck)
+	mux.HandleFunc("POST /komga/api/v1/series/list/alphabetical-groups", k.alphabeticalGroups)
 	mux.HandleFunc("GET /komga/api/v1/series/{id}", k.seriesGet)
 	mux.HandleFunc("GET /komga/api/v1/series/{id}/books", k.seriesBooks)
 	mux.HandleFunc("GET /komga/api/v1/series/{id}/thumbnail", k.seriesThumbnail)
+	mux.HandleFunc("GET /komga/api/v1/series/{id}/thumbnails", k.seriesThumbnails)
+	mux.HandleFunc("GET /komga/api/v1/series/{id}/collections", k.emptyList)
+	mux.HandleFunc("POST /komga/api/v1/series/{id}/read-progress", k.seriesReadProgress(true))
+	mux.HandleFunc("DELETE /komga/api/v1/series/{id}/read-progress", k.seriesReadProgress(false))
 	mux.HandleFunc("GET /komga/api/v1/books/{id}", k.bookGet)
 	mux.HandleFunc("GET /komga/api/v1/books/{id}/pages", k.bookPages)
 	mux.HandleFunc("GET /komga/api/v1/books/{id}/pages/{page}", k.bookPage)
+	mux.HandleFunc("GET /komga/api/v1/books/{id}/pages/{page}/raw", k.bookPage)
+	mux.HandleFunc("GET /komga/api/v1/books/{id}/pages/{page}/thumbnail", k.bookPage)
+	mux.HandleFunc("GET /komga/api/v1/books/{id}/previous", k.bookSibling(-1))
+	mux.HandleFunc("GET /komga/api/v1/books/{id}/next", k.bookSibling(1))
+	mux.HandleFunc("GET /komga/api/v1/books/{id}/readlists", k.emptyList)
+	mux.HandleFunc("GET /komga/api/v1/books/{id}/thumbnails", k.bookThumbnails)
 	mux.HandleFunc("GET /komga/api/v1/books/{id}/thumbnail", k.bookThumbnail)
 	mux.HandleFunc("GET /komga/api/v1/books/{id}/file", k.bookFile)
 	mux.HandleFunc("PATCH /komga/api/v1/books/{id}/read-progress", k.bookReadProgress)
@@ -65,6 +78,25 @@ func registerKomga(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET /komga/api/v1/tags", k.emptyStrings)
 	mux.HandleFunc("GET /komga/api/v1/publishers", k.emptyStrings)
 	mux.HandleFunc("GET /komga/api/v1/authors", k.emptyList)
+	mux.HandleFunc("GET /komga/api/v1/authors/roles", k.emptyStrings)
+	mux.HandleFunc("GET /komga/api/v1/authors/names", k.emptyStrings)
+	mux.HandleFunc("GET /komga/api/v1/languages", k.emptyStrings)
+	mux.HandleFunc("GET /komga/api/v1/age-ratings", k.emptyStrings)
+	mux.HandleFunc("GET /komga/api/v1/sharing-labels", k.emptyStrings)
+	mux.HandleFunc("GET /komga/api/v1/fonts/families", k.emptyStrings)
+	mux.HandleFunc("GET /komga/api/v2/authors", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/authors/roles", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/authors/names", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/genres", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/tags", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/publishers", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/languages", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/sharing-labels", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/age-ratings", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/series/release-years", k.emptyPage)
+	mux.HandleFunc("GET /komga/api/v2/users/me/api-keys", k.emptyList)
+	mux.HandleFunc("GET /komga/api/v1/login/set-cookie", k.setCookie)
+	mux.HandleFunc("GET /komga/sse/v1/events", k.sse)
 	mux.HandleFunc("GET /komga/series/{id}", k.seriesWeb)
 	mux.HandleFunc("GET /komga/book/{id}", k.bookWeb)
 	mux.HandleFunc("/komga/", k.unmatched)
@@ -649,6 +681,358 @@ func (k *komga) writeSeriesPage(w http.ResponseWriter, r *http.Request, titles [
 	komgaWrite(w, komgaPageOf(out, total, page, size, unpaged))
 }
 
+func (k *komga) booksLatest(w http.ResponseWriter, r *http.Request) {
+	titles, err := k.svc.ListTitles(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	books := k.recentBooks(r, filterRestrictedTitles(r.Context(), titles))
+	if books == nil {
+		books = []komgaBook{}
+	}
+	sortKomgaBooks(books, "lastModifiedDate,desc")
+	k.writeBooksPage(w, r, books)
+}
+
+// booksOnDeck lists the next unread book of each started series.
+func (k *komga) booksOnDeck(w http.ResponseWriter, r *http.Request) {
+	titles, err := k.svc.ListTitles(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	titles = filterRestrictedTitles(r.Context(), titles)
+	books := []komgaBook{}
+	for _, t := range titles {
+		total, read := seriesCounts(t)
+		if read == 0 || read >= total {
+			continue
+		}
+		for _, b := range k.seriesBookList(r, t) {
+			if b.ReadProgress == nil {
+				books = append(books, b)
+				break
+			}
+		}
+		if len(books) >= 20 {
+			break
+		}
+	}
+	k.writeBooksPage(w, r, books)
+}
+
+func (k *komga) bookSibling(step int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ref, err := k.resolveBook(r)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "book not found")
+			return
+		}
+		t, err := k.svc.GetTitle(r.Context(), ref.titleID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "book not found")
+			return
+		}
+		books := k.seriesBookList(r, t)
+		want := r.PathValue("id")
+		for i, b := range books {
+			if b.ID == want {
+				j := i + step
+				if j < 0 || j >= len(books) {
+					writeError(w, http.StatusNotFound, "no sibling")
+					return
+				}
+				komgaWrite(w, books[j])
+				return
+			}
+		}
+		writeError(w, http.StatusNotFound, "book not found")
+	}
+}
+
+func (k *komga) seriesReadProgress(read bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		t, ok := k.allowedTitle(w, r)
+		if !ok {
+			return
+		}
+		ctx := r.Context()
+		for _, b := range k.seriesBookList(r, t) {
+			id, err := strconv.ParseInt(b.ID[1:], 10, 64)
+			if err != nil {
+				continue
+			}
+			if strings.HasPrefix(b.ID, "v") {
+				_ = k.svc.SetVolumeRead(ctx, id, read)
+			} else if read {
+				_, _ = k.svc.MarkChapterRead(ctx, id)
+			} else {
+				_, _ = k.svc.MarkChapterUnread(ctx, id)
+			}
+		}
+		if read {
+			k.svc.PushAniListEntry(ctx, auth.UserID(ctx), t.ID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// alphabeticalGroups backs the A-Z browse index.
+func (k *komga) alphabeticalGroups(w http.ResponseWriter, r *http.Request) {
+	titles, err := k.svc.ListTitles(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	titles = filterRestrictedTitles(r.Context(), titles)
+	counts := map[string]int{}
+	for _, t := range titles {
+		group := "#"
+		for _, c := range t.DisplayTitle {
+			if unicode.IsLetter(c) {
+				group = strings.ToUpper(string(c))
+			}
+			break
+		}
+		counts[group]++
+	}
+	type groupCount struct {
+		Group string `json:"group"`
+		Count int    `json:"count"`
+	}
+	out := make([]groupCount, 0, len(counts))
+	for g, c := range counts {
+		out = append(out, groupCount{Group: g, Count: c})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Group < out[j].Group })
+	komgaWrite(w, out)
+}
+
+func (k *komga) seriesThumbnails(w http.ResponseWriter, r *http.Request) {
+	t, ok := k.allowedTitle(w, r)
+	if !ok {
+		return
+	}
+	komgaWrite(w, []map[string]any{{
+		"id": "0", "seriesId": strconv.FormatInt(t.ID, 10), "type": "GENERATED", "selected": true,
+		"mediaType": "image/jpeg", "fileSize": 0, "width": 0, "height": 0,
+	}})
+}
+
+func (k *komga) bookThumbnails(w http.ResponseWriter, r *http.Request) {
+	ref, err := k.resolveBook(r)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "book not found")
+		return
+	}
+	komgaWrite(w, []map[string]any{{
+		"id": "0", "bookId": r.PathValue("id"), "type": "GENERATED", "selected": true,
+		"mediaType": "image/jpeg", "fileSize": ref.pages, "width": 0, "height": 0,
+	}})
+}
+
+func (k *komga) setCookie(w http.ResponseWriter, r *http.Request) {
+	if t := r.Header.Get("X-Auth-Token"); t != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name: "KOMGA-SESSION", Value: t, Path: "/komga",
+			HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureRequest(r),
+		})
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// sse holds an event-stream open so clients don't error-loop on reconnects;
+// kaodoku emits no Komga domain events.
+func (k *komga) sse(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	<-r.Context().Done()
+}
+
+func (k *komga) writeBooksPage(w http.ResponseWriter, r *http.Request, books []komgaBook) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 0 {
+		page = 0
+	}
+	size, _ := strconv.Atoi(q.Get("size"))
+	if size <= 0 {
+		size = 20
+	}
+	unpaged := q.Get("unpaged") == "true"
+	total := len(books)
+	window := books
+	if !unpaged {
+		lo := page * size
+		if lo > total {
+			lo = total
+		}
+		hi := lo + size
+		if hi > total {
+			hi = total
+		}
+		window = books[lo:hi]
+	}
+	komgaWrite(w, komgaPageOf(window, total, page, size, unpaged))
+}
+
+// booksListPost is Komga's current book-search endpoint. The condition tree
+// is reduced to the constraints clients actually send: seriesId (chapter
+// lists) and readStatus, nested under allOf/anyOf.
+func (k *komga) booksListPost(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Condition      json.RawMessage `json:"condition"`
+		FullTextSearch string          `json:"fullTextSearch"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	cond := parseKomgaCondition(body.Condition)
+
+	ctx := r.Context()
+	titles, err := k.svc.ListTitles(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	titles = filterRestrictedTitles(ctx, titles)
+
+	var books []komgaBook
+	if len(cond.seriesIDs) > 0 {
+		for _, t := range titles {
+			if cond.seriesIDs[strconv.FormatInt(t.ID, 10)] {
+				books = append(books, k.seriesBookList(r, t)...)
+			}
+		}
+	} else {
+		books = k.recentBooks(r, titles)
+	}
+	if books == nil {
+		books = []komgaBook{}
+	}
+	if cond.readStatus != nil {
+		kept := books[:0]
+		for _, b := range books {
+			state := "UNREAD"
+			switch {
+			case b.ReadProgress != nil && b.ReadProgress.Completed:
+				state = "READ"
+			case b.ReadProgress != nil:
+				state = "IN_PROGRESS"
+			}
+			if cond.readStatus[state] {
+				kept = append(kept, b)
+			}
+		}
+		books = kept
+	}
+	if q := strings.TrimSpace(body.FullTextSearch); q != "" {
+		kept := books[:0]
+		for _, b := range books {
+			if strings.Contains(strings.ToLower(b.Name), strings.ToLower(q)) ||
+				strings.Contains(strings.ToLower(b.SeriesTitle), strings.ToLower(q)) {
+				kept = append(kept, b)
+			}
+		}
+		books = kept
+	}
+	sortKomgaBooks(books, r.URL.Query().Get("sort"))
+	k.writeBooksPage(w, r, books)
+}
+
+type komgaCondition struct {
+	seriesIDs  map[string]bool
+	readStatus map[string]bool
+}
+
+// parseKomgaCondition walks the polymorphic condition tree collecting the
+// supported constraints; unknown condition types are ignored.
+func parseKomgaCondition(raw json.RawMessage) komgaCondition {
+	out := komgaCondition{}
+	var walk func(json.RawMessage)
+	walk = func(node json.RawMessage) {
+		if len(node) == 0 {
+			return
+		}
+		var m map[string]json.RawMessage
+		if json.Unmarshal(node, &m) != nil {
+			return
+		}
+		for key, val := range m {
+			switch key {
+			case "allOf", "anyOf":
+				var list []json.RawMessage
+				if json.Unmarshal(val, &list) == nil {
+					for _, item := range list {
+						walk(item)
+					}
+				}
+			case "seriesId":
+				var c struct {
+					Operator string `json:"operator"`
+					Value    string `json:"value"`
+				}
+				if json.Unmarshal(val, &c) == nil && c.Value != "" && c.Operator != "isNot" {
+					if out.seriesIDs == nil {
+						out.seriesIDs = map[string]bool{}
+					}
+					out.seriesIDs[c.Value] = true
+				}
+			case "readStatus":
+				var c struct {
+					Operator string `json:"operator"`
+					Value    string `json:"value"`
+				}
+				if json.Unmarshal(val, &c) == nil && c.Value != "" && c.Operator != "isNot" {
+					if out.readStatus == nil {
+						out.readStatus = map[string]bool{}
+					}
+					out.readStatus[c.Value] = true
+				}
+			}
+		}
+	}
+	walk(raw)
+	return out
+}
+
+// recentBooks approximates a library-wide book query from the most recently
+// updated titles. ponytail: caps at 30 titles to bound the per-request
+// queries; a chapters-table index query would be exact.
+func (k *komga) recentBooks(r *http.Request, titles []library.Title) []komgaBook {
+	sorted := append([]library.Title(nil), titles...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].UpdatedAt.After(sorted[j].UpdatedAt) })
+	if len(sorted) > 30 {
+		sorted = sorted[:30]
+	}
+	var books []komgaBook
+	for _, t := range sorted {
+		books = append(books, k.seriesBookList(r, t)...)
+	}
+	return books
+}
+
+func sortKomgaBooks(books []komgaBook, sortParam string) {
+	desc := strings.HasSuffix(sortParam, ",desc")
+	byCreated := strings.Contains(sortParam, "createdDate") || strings.Contains(sortParam, "lastModified")
+	sort.SliceStable(books, func(i, j int) bool {
+		var less bool
+		if byCreated {
+			less = books[i].Created < books[j].Created
+		} else if books[i].SeriesTitle != books[j].SeriesTitle {
+			less = books[i].SeriesTitle < books[j].SeriesTitle
+		} else {
+			less = books[i].Metadata.NumberSort < books[j].Metadata.NumberSort
+		}
+		if desc {
+			return !less
+		}
+		return less
+	})
+}
+
 func (k *komga) allowedTitle(w http.ResponseWriter, r *http.Request) (library.Title, bool) {
 	id, err := parseInt64Path(r, "id")
 	if err != nil {
@@ -798,31 +1182,7 @@ func (k *komga) seriesBooks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	books := k.seriesBookList(r, t)
-	q := r.URL.Query()
-	page, _ := strconv.Atoi(q.Get("page"))
-	if page < 0 {
-		page = 0
-	}
-	size, _ := strconv.Atoi(q.Get("size"))
-	if size <= 0 {
-		size = 20
-	}
-	unpaged := q.Get("unpaged") == "true"
-	total := len(books)
-	window := books
-	if !unpaged {
-		lo := page * size
-		if lo > total {
-			lo = total
-		}
-		hi := lo + size
-		if hi > total {
-			hi = total
-		}
-		window = books[lo:hi]
-	}
-	komgaWrite(w, komgaPageOf(window, total, page, size, unpaged))
+	k.writeBooksPage(w, r, k.seriesBookList(r, t))
 }
 
 func (k *komga) seriesThumbnail(w http.ResponseWriter, r *http.Request) {
