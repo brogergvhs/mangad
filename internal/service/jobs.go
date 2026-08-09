@@ -392,7 +392,7 @@ func OpenJobs(ctx context.Context, dbPath string) (*JobService, func(), error) {
 }
 
 func newJobService(db *sql.DB) *JobService {
-	return &JobService{
+	svc := &JobService{
 		db:         db,
 		dbPath:     database.DefaultPath(),
 		jobTimeout: defaultJobTimeout,
@@ -405,6 +405,8 @@ func newJobService(db *sql.DB) *JobService {
 		src:  newSourceService(db),
 		want: newWantedService(db),
 	}
+	svc.lib.SetMangaLookup(svc.want.GetManga)
+	return svc
 }
 
 // applyLimits seeds the retry/timeout tunables from stored settings.
@@ -1880,6 +1882,14 @@ func (s *JobService) VolumeThumb(ctx context.Context, id int64) ([]byte, string,
 
 func (s *JobService) VolumeCover(ctx context.Context, id int64) ([]byte, string, error) {
 	return s.lib.VolumeCover(ctx, id)
+}
+
+func (s *JobService) TitleCover(ctx context.Context, id int64) ([]byte, string, error) {
+	return s.lib.TitleCover(ctx, id)
+}
+
+func (s *JobService) SetTitleCover(ctx context.Context, id int64, blob []byte, mime string) error {
+	return s.lib.SetTitleCover(ctx, id, blob, mime)
 }
 
 func (s *JobService) SetVolumeCover(ctx context.Context, id int64, blob []byte, mime string) error {

@@ -133,4 +133,3 @@ func TestRotateEncryptionKeyRefusesEnvKey(t *testing.T) {
 		t.Fatal("expected refusal when key is pinned via env")
 	}
 }
-

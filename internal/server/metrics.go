@@ -24,11 +24,11 @@ type metricsBodyView struct {
 	CanPersonal  bool
 	CanOverview  bool
 	CanUsers     bool
-	P            personalVM               // you / users tabs
-	O            service.OverviewMetrics  // overview tab
-	Users        []auth.User              // users tab picker
-	SelectedUser int64                    // users tab
-	SelectedName string                   // users tab
+	P            personalVM              // you / users tabs
+	O            service.OverviewMetrics // overview tab
+	Users        []auth.User             // users tab picker
+	SelectedUser int64                   // users tab
+	SelectedName string                  // users tab
 }
 
 // metricsDays clamps the window selector to the supported values.

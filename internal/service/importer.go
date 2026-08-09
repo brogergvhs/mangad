@@ -15,6 +15,7 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/chapters"
 	"github.com/brogergvhs/kaodoku/internal/library"
 	"github.com/brogergvhs/kaodoku/internal/providers"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 // ImportCandidate is a download-dir folder not yet tracked as a title.
@@ -94,17 +95,22 @@ func (s *WantedService) ImportFolder(ctx context.Context, root, folder string, a
 	// One chapter per label (the first file wins); the chapter list must
 	// dedupe by label since (title_id, label) is unique.
 	type parsedFile struct {
-		file string
-		num  int
+		file  string
+		num   int
+		title string
 	}
 	byLabel := map[string]parsedFile{}
 	var labels []string
 	for _, f := range cbzFiles(dir) {
-		label, num := parseChapterFile(f)
+		label, num, title := importedChapterMeta(dir, f)
 		if _, seen := byLabel[label]; seen {
-			continue
+			if fnLabel, fnNum := parseChapterFile(f); byLabel[fnLabel].file == "" {
+				label, num = fnLabel, fnNum
+			} else {
+				continue
+			}
 		}
-		byLabel[label] = parsedFile{file: f, num: num}
+		byLabel[label] = parsedFile{file: f, num: num, title: title}
 		labels = append(labels, label)
 	}
 
@@ -114,7 +120,7 @@ func (s *WantedService) ImportFolder(ctx context.Context, root, folder string, a
 		discovered = append(discovered, chapters.Chapter{Chapter: providers.Chapter{
 			Label:   label,
 			NumMain: p.num,
-			Title:   strings.TrimSuffix(p.file, filepath.Ext(p.file)),
+			Title:   p.title,
 			URL:     localURL(folder + "/" + p.file),
 		}})
 	}
@@ -265,6 +271,24 @@ var (
 	reFileChapter = regexp.MustCompile(`(?i)(?:chapter|episode|ch|ep|c)[\s._-]*([0-9]+(?:\.[0-9]+)?)`)
 	reFileNumber  = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`)
 )
+
+// importedChapterMeta derives a chapter's label, number, and title from the
+// file, preferring embedded ComicInfo.xml over filename parsing.
+func importedChapterMeta(dir, f string) (string, int, string) {
+	label, num := parseChapterFile(f)
+	title := strings.TrimSuffix(f, filepath.Ext(f))
+	if ci, ok := util.ReadComicInfo(filepath.Join(dir, f)); ok {
+		if main, _, _, lbl, numOK := providers.ParseChapterNumber(ci.Number); numOK {
+			label, num = lbl, main
+		} else if strings.TrimSpace(ci.Number) != "" {
+			label = strings.TrimSpace(ci.Number)
+		}
+		if strings.TrimSpace(ci.Title) != "" {
+			title = strings.TrimSpace(ci.Title)
+		}
+	}
+	return label, num, title
+}
 
 // parseChapterFile derives a chapter label and main number from a .cbz name.
 // The label is normalized (leading zeros stripped) to match scraper output so

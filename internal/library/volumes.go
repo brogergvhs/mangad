@@ -180,6 +180,23 @@ func (r *Repository) SetVolumeCover(ctx context.Context, id int64, blob []byte, 
 	return err
 }
 
+// TitleCover returns a title's custom cover blob, or nil when none is set.
+func (r *Repository) TitleCover(ctx context.Context, id int64) ([]byte, string, error) {
+	var blob []byte
+	var mime string
+	err := r.db.QueryRowContext(ctx, `SELECT cover, cover_type FROM titles WHERE id = ?`, id).Scan(&blob, &mime)
+	if err == sql.ErrNoRows {
+		return nil, "", nil
+	}
+	return blob, mime, err
+}
+
+// SetTitleCover stores a custom title cover; nil blob reverts to the catalog cover.
+func (r *Repository) SetTitleCover(ctx context.Context, id int64, blob []byte, mime string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE titles SET cover = ?, cover_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, blob, mime, id)
+	return err
+}
+
 // MoveVolumeFiles rewrites stored volume paths from oldDir to newDir after a
 // physical move.
 func (r *Repository) MoveVolumeFiles(ctx context.Context, titleID int64, oldDir, newDir string) error {

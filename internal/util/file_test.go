@@ -17,7 +17,7 @@ func TestCreateCBZ(t *testing.T) {
 	}
 	output := filepath.Join(dir, "chapter.cbz")
 
-	if err := CreateCBZ([]string{page}, output, false); err != nil {
+	if err := CreateCBZ([]string{page}, output, false, nil); err != nil {
 		t.Fatalf("CreateCBZ() error = %v", err)
 	}
 	r, err := zip.OpenReader(output)
@@ -40,7 +40,7 @@ func TestCreateCBZBrokenFile(t *testing.T) {
 	missing := filepath.Join(dir, "gone.jpg")
 	output := filepath.Join(dir, "chapter.cbz")
 
-	if err := CreateCBZ([]string{missing}, output, false); err == nil {
+	if err := CreateCBZ([]string{missing}, output, false, nil); err == nil {
 		t.Fatal("CreateCBZ() error = nil, want add failure")
 	}
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
@@ -51,7 +51,7 @@ func TestCreateCBZBrokenFile(t *testing.T) {
 	}
 
 	// skipBroken tolerates unreadable files.
-	if err := CreateCBZ([]string{missing}, output, true); err != nil {
+	if err := CreateCBZ([]string{missing}, output, true, nil); err != nil {
 		t.Fatalf("CreateCBZ(skipBroken) error = %v", err)
 	}
 }

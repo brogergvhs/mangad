@@ -340,6 +340,8 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/volumes/{id}/cover", u.volumeCover)
 	mux.HandleFunc("POST /ui/volumes/{id}/cover", u.volumeCoverUpload)
 	mux.HandleFunc("POST /ui/volumes/{id}/cover/reset", u.volumeCoverReset)
+	mux.HandleFunc("POST /ui/titles/{id}/cover", u.titleCoverUpload)
+	mux.HandleFunc("POST /ui/titles/{id}/cover/reset", u.titleCoverReset)
 	mux.HandleFunc("POST /ui/import/attach-volumes", u.importAttachVolumes)
 	mux.HandleFunc("GET /ui/library/{id}/progress", u.titleProgress)
 	mux.HandleFunc("POST /ui/library/{id}/chapters/{chapterID}/read", u.chapterRead(true))
@@ -3908,8 +3910,8 @@ func pathID(r *http.Request) (int64, error) {
 
 func (u *webUI) funcs() template.FuncMap {
 	return template.FuncMap{
-		"assetVer":  func() string { return u.assetVer },
-		"jobLabel":  jobLabel,
+		"assetVer": func() string { return u.assetVer },
+		"jobLabel": jobLabel,
 		"tokenExpired": func(expiresAt string) bool {
 			t, err := database.ParseTime(expiresAt)
 			return err == nil && !t.IsZero() && t.Before(time.Now())

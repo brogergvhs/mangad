@@ -456,6 +456,11 @@
             <li><button hx-post="/ui/library/{{.Title.ID}}/scan" hx-target="#act-{{.Title.ID}}" hx-swap="outerHTML" {{if index .Running "scan_downloads"}}disabled{{end}}>{{template "iconScan"}}Scan files</button></li>
             {{if .AniList.Connected}}<li><button hx-post="/ui/library/{{.Title.ID}}/anilist-sync" hx-swap="none">{{template "iconVerify"}}Sync AniList</button></li>{{end}}
             {{if linked .Title.SourceURL}}<li><button onclick="title_settings_modal.showModal()">{{template "iconSettings"}}Title settings</button></li>{{end}}
+            <li><label>{{template "iconEdit"}}Upload cover
+              <input type="file" name="cover" accept="image/*" class="hidden"
+                hx-post="/ui/titles/{{.Title.ID}}/cover" hx-encoding="multipart/form-data" hx-trigger="change">
+            </label></li>
+            {{if .Title.CustomCover}}<li><button hx-post="/ui/titles/{{.Title.ID}}/cover/reset">{{template "iconRefresh"}}Use catalog cover</button></li>{{end}}
             <li><button hx-get="/ui/library/{{.Title.ID}}/collections" hx-target="#add-collection-body" hx-swap="innerHTML" onclick="add_to_collection_modal.showModal()">{{template "iconLayers"}}Add to collection</button></li>
             <li><button class="text-error" onclick="remove_title_modal.showModal()">{{template "iconTrash"}}Remove title</button></li>
           </ul>

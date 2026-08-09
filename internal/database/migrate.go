@@ -388,6 +388,8 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"sessions", "last_seen_at", "TEXT"},
 		{"volumes", "thumb", "BLOB"},
 		{"volumes", "thumb_type", "TEXT NOT NULL DEFAULT ''"},
+		{"titles", "cover", "BLOB"},
+		{"titles", "cover_type", "TEXT NOT NULL DEFAULT ''"},
 		{"volume_read_progress", "read_pages", "INTEGER NOT NULL DEFAULT 0"},
 		{"volume_read_progress", "total_pages", "INTEGER NOT NULL DEFAULT 0"},
 		{"volume_read_progress", "last_page", "INTEGER NOT NULL DEFAULT 0"},
