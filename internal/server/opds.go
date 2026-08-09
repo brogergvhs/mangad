@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ const (
 	opdsThumbRel = "http://opds-spec.org/image/thumbnail"
 	opdsPseRel   = "http://vaemendis.net/opds-pse/stream"
 	opdsCbzType  = "application/x-cbz"
+	opdsSearchNS = "http://a9.com/-/spec/opensearch/1.1/"
 	opdsBase     = "/opds/v1.2"
 )
 
@@ -78,6 +80,7 @@ func registerOPDS(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET /opds/{$}", o.series)
 	mux.HandleFunc("GET "+opdsBase+"/catalog", o.series)
 	mux.HandleFunc("GET "+opdsBase+"/series", o.series)
+	mux.HandleFunc("GET "+opdsBase+"/opensearch.xml", o.openSearch)
 	mux.HandleFunc("GET "+opdsBase+"/series/{id}", o.title)
 	mux.HandleFunc("GET "+opdsBase+"/series/{id}/chapters", o.chapters)
 	mux.HandleFunc("GET "+opdsBase+"/series/{id}/volumes", o.volumes)
@@ -104,13 +107,49 @@ func opdsNow() string { return time.Now().UTC().Format(time.RFC3339) }
 
 func opdsSelfStart(self string) []opdsLink {
 	kind := opdsAcqType
-	if self == opdsBase+"/series" {
+	if strings.HasPrefix(self, opdsBase+"/series") && !strings.Contains(strings.TrimPrefix(self, opdsBase+"/series"), "/") {
 		kind = opdsNavType
 	}
 	return []opdsLink{
 		{Rel: "self", Type: kind, Href: self},
 		{Rel: "start", Type: opdsNavType, Href: opdsBase + "/series"},
+		{Rel: "search", Type: "application/opensearchdescription+xml", Href: opdsBase + "/opensearch.xml"},
 	}
+}
+
+type openSearchURL struct {
+	Type     string `xml:"type,attr"`
+	Template string `xml:"template,attr"`
+}
+
+type openSearchDoc struct {
+	XMLName     xml.Name        `xml:"OpenSearchDescription"`
+	NS          string          `xml:"xmlns,attr"`
+	ShortName   string          `xml:"ShortName"`
+	Description string          `xml:"Description"`
+	URLs        []openSearchURL `xml:"Url"`
+}
+
+// openSearch emits absolute template URLs like Komga: several readers
+// (Mantano, Marvin) mis-resolve relative ones. Behind a non-loopback TLS
+// proxy the scheme falls back to http — the same ceiling as the login flow.
+func (o *opds) openSearch(w http.ResponseWriter, r *http.Request) {
+	scheme := "http"
+	if secureRequest(r) {
+		scheme = "https"
+	}
+	tmpl := scheme + "://" + requestHost(r) + opdsBase + "/series?search={searchTerms}"
+	w.Header().Set("Content-Type", "application/opensearchdescription+xml;charset=utf-8")
+	_, _ = w.Write([]byte(xml.Header))
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+	_ = enc.Encode(openSearchDoc{
+		NS: opdsSearchNS, ShortName: "Kaodoku", Description: "Search the Kaodoku library",
+		URLs: []openSearchURL{
+			{Type: "application/atom+xml", Template: tmpl},
+			{Type: opdsNavType, Template: tmpl},
+		},
+	})
 }
 
 func (o *opds) series(w http.ResponseWriter, r *http.Request) {
@@ -120,11 +159,25 @@ func (o *opds) series(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	titles = filterRestrictedTitles(r.Context(), titles)
+	feedID, feedTitle := "urn:kaodoku:series", "All series"
+	self := opdsBase + "/series"
+	if q := strings.TrimSpace(r.URL.Query().Get("search")); q != "" {
+		kept := titles[:0]
+		for _, t := range titles {
+			if strings.Contains(strings.ToLower(t.DisplayTitle), strings.ToLower(q)) {
+				kept = append(kept, t)
+			}
+		}
+		titles = kept
+		escaped := url.QueryEscape(q)
+		feedID, feedTitle = "urn:kaodoku:search:"+escaped, "Search: "+q
+		self += "?search=" + escaped
+	}
 	sort.Slice(titles, func(i, j int) bool { return titles[i].DisplayTitle < titles[j].DisplayTitle })
 	descriptions := o.descriptions(r, titles)
 	feed := opdsFeed{
-		ID: "urn:kaodoku:series", Title: "All series", Updated: opdsNow(),
-		Links: opdsSelfStart(opdsBase + "/series"),
+		ID: feedID, Title: feedTitle, Updated: opdsNow(),
+		Links: opdsSelfStart(self),
 	}
 	for _, t := range titles {
 		id := strconv.FormatInt(t.ID, 10)

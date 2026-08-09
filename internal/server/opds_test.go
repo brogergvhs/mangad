@@ -84,6 +84,26 @@ func TestOPDSCatalog(t *testing.T) {
 	if !strings.Contains(body, `xmlns="http://www.w3.org/2005/Atom"`) || !strings.Contains(body, "/opds/v1.2/series") {
 		t.Fatalf("root feed = %s", body)
 	}
+	if !strings.Contains(body, `rel="search"`) || !strings.Contains(body, "/opds/v1.2/opensearch.xml") {
+		t.Fatalf("search discovery link missing: %s", body)
+	}
+
+	rec = do(t, api, http.MethodGet, "/opds/v1.2/opensearch.xml", "", nil)
+	if rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `template="http://example.com/opds/v1.2/series?search={searchTerms}"`) ||
+		!strings.Contains(rec.Body.String(), `xmlns="http://a9.com/-/spec/opensearch/1.1/"`) {
+		t.Fatalf("opensearch doc = %d %s", rec.Code, rec.Body.String())
+	}
+	rec = do(t, api, http.MethodGet, "/opds/v1.2/series?search=exam", "", nil)
+	if body := rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(body, "Example") ||
+		!strings.Contains(body, "Search: exam") ||
+		!strings.Contains(body, `rel="self" type="application/atom+xml;profile=opds-catalog;kind=navigation" href="/opds/v1.2/series?search=exam"`) {
+		t.Fatalf("search feed = %d %s", rec.Code, body)
+	}
+	rec = do(t, api, http.MethodGet, "/opds/v1.2/series?search=zzz", "", nil)
+	if body := rec.Body.String(); strings.Contains(body, "Example") {
+		t.Fatalf("search must filter: %s", body)
+	}
 
 	rec = do(t, api, http.MethodGet, "/opds/v1.2/series", "", nil)
 	body = rec.Body.String()
