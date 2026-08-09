@@ -112,10 +112,10 @@ func (s *DownloadService) SetComicInfo(ci *util.ComicInfo) {
 }
 
 func (s *DownloadService) comicInfoEntry(ch chapters.Chapter, pages int) map[string][]byte {
-	if s.comicInfo == nil {
-		return nil
+	ci := util.ComicInfo{Manga: "Yes"}
+	if s.comicInfo != nil {
+		ci = *s.comicInfo
 	}
-	ci := *s.comicInfo
 	ci.Title = ch.Title
 	ci.Number = ch.Label
 	ci.PageCount = pages

@@ -68,8 +68,11 @@ func TestComicInfoTemplateAndEntry(t *testing.T) {
 			t.Fatalf("entry missing %s: %s", want, body)
 		}
 	}
-	if (&DownloadService{}).comicInfoEntry(chapters.Chapter{}, 1) != nil {
-		t.Fatal("no template must add no entry")
+	minimal := string((&DownloadService{}).comicInfoEntry(
+		chapters.Chapter{Chapter: providers.Chapter{Label: "3"}}, 5)[util.ComicInfoName])
+	if !strings.Contains(minimal, "<Number>3</Number>") || !strings.Contains(minimal, "<Manga>Yes</Manga>") ||
+		strings.Contains(minimal, "<Series>") {
+		t.Fatalf("minimal entry = %s", minimal)
 	}
 
 	bare := lib.comicInfoTemplate(context.Background(), library.Title{DisplayTitle: "NoCatalog"})
