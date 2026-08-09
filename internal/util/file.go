@@ -13,8 +13,9 @@ import (
 
 // CreateCBZ zips files into output, writing to a temp file first so a crash
 // or failed write never leaves a partial archive at the final path. With
-// skipBroken, files that cannot be added are logged and skipped.
-func CreateCBZ(files []string, output string, skipBroken bool) (err error) {
+// skipBroken, files that cannot be added are logged and skipped. extra adds
+// named non-image entries (e.g. ComicInfo.xml); nil adds none.
+func CreateCBZ(files []string, output string, skipBroken bool, extra map[string][]byte) (err error) {
 	tmp := output + ".tmp"
 	out, err := os.Create(tmp)
 	if err != nil {
@@ -38,6 +39,15 @@ func CreateCBZ(files []string, output string, skipBroken bool) (err error) {
 				return fmt.Errorf("cbz: add %s: %w", file, addErr)
 			}
 			log.Printf("warning: skipping %s: %v", file, addErr)
+		}
+	}
+	for name, body := range extra {
+		w, addErr := z.Create(name)
+		if addErr == nil {
+			_, addErr = w.Write(body)
+		}
+		if addErr != nil {
+			return fmt.Errorf("cbz: add %s: %w", name, addErr)
 		}
 	}
 

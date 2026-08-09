@@ -201,3 +201,29 @@ func TestOPDSBasicAuth(t *testing.T) {
 		t.Fatalf("rotated creds = %d", rec.Code)
 	}
 }
+
+func TestTitleCustomCover(t *testing.T) {
+	api, svc, titleID, _ := opdsTestAPI(t)
+	tid := strconv.FormatInt(titleID, 10)
+
+	if rec := do(t, api, http.MethodGet, "/api/v1/covers/"+tid, "", nil); rec.Code == http.StatusOK {
+		t.Fatalf("no custom cover and no https catalog cover: expected failure, got %d", rec.Code)
+	}
+	ctx := context.Background()
+	if err := svc.SetTitleCover(ctx, titleID, []byte("fakepng"), "image/png"); err != nil {
+		t.Fatal(err)
+	}
+	rec := do(t, api, http.MethodGet, "/api/v1/covers/"+tid, "", nil)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || rec.Body.String() != "fakepng" {
+		t.Fatalf("custom cover = %d %q %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+	}
+	if rec := do(t, api, http.MethodGet, "/opds/v1.2/covers/"+tid, "", nil); rec.Code != http.StatusOK || rec.Body.String() != "fakepng" {
+		t.Fatalf("opds cover = %d", rec.Code)
+	}
+	if err := svc.SetTitleCover(ctx, titleID, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, api, http.MethodGet, "/api/v1/covers/"+tid, "", nil); rec.Code == http.StatusOK {
+		t.Fatalf("reset must fall back to remote proxy, got %d", rec.Code)
+	}
+}

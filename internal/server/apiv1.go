@@ -405,11 +405,21 @@ func (a *apiV1) titleCover(w http.ResponseWriter, r *http.Request) {
 	serveTitleCover(w, r, a.svc, id)
 }
 
-// serveTitleCover proxies a title's remote cover for authed clients.
+// serveTitleCover serves a custom cover blob when set, else proxies the
+// remote catalog cover.
 func serveTitleCover(w http.ResponseWriter, r *http.Request, svc *service.JobService, id int64) {
 	t, err := svc.GetTitle(r.Context(), id)
 	if err != nil || !contentAllowed(r.Context(), t.IsAdult, t.ContentTags) {
 		http.NotFound(w, r)
+		return
+	}
+	if blob, mime, err := svc.TitleCover(r.Context(), id); err == nil && len(blob) > 0 {
+		if mime == "" {
+			mime = "image/jpeg"
+		}
+		w.Header().Set("Content-Type", mime)
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+		_, _ = w.Write(blob)
 		return
 	}
 	if !strings.HasPrefix(t.CoverImage, "https://") {

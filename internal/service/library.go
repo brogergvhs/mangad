@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/brogergvhs/kaodoku/internal/catalog"
 	"github.com/brogergvhs/kaodoku/internal/chapters"
 	"github.com/brogergvhs/kaodoku/internal/config"
 	"github.com/brogergvhs/kaodoku/internal/database"
@@ -19,12 +20,14 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/providers"
 	"github.com/brogergvhs/kaodoku/internal/sources"
 	"github.com/brogergvhs/kaodoku/internal/ui"
+	"github.com/brogergvhs/kaodoku/internal/util"
 )
 
 // LibraryService coordinates tracked titles and chapter discovery.
 type LibraryService struct {
 	repo     *library.Repository
 	sources  *sources.Repository
+	manga    func(ctx context.Context, catalogID int64) (catalog.Manga, error)
 	syncOnce sync.Once
 }
 
@@ -78,6 +81,14 @@ func (s *LibraryService) SetRefreshInterval(ctx context.Context, id int64, inter
 }
 
 // SetMonitored toggles monitoring for a tracked title.
+func (s *LibraryService) TitleCover(ctx context.Context, id int64) ([]byte, string, error) {
+	return s.repo.TitleCover(ctx, id)
+}
+
+func (s *LibraryService) SetTitleCover(ctx context.Context, id int64, blob []byte, mime string) error {
+	return s.repo.SetTitleCover(ctx, id, blob, mime)
+}
+
 func (s *LibraryService) Volumes(ctx context.Context, titleID int64) ([]library.Volume, error) {
 	return s.repo.Volumes(ctx, titleID)
 }
@@ -675,12 +686,45 @@ func (s *LibraryService) downloadServiceForTitle(
 	progress ProgressManager,
 	title library.Title,
 ) (*DownloadService, error) {
-	if src, ok := s.sourceForTitle(ctx, title); ok {
-		next := ConfigForSource(*cfg, src, SourceConfigOptions{})
-		next.LanguageMode = title.LanguageMode
-		return NewSourceDownloadService(&next, logSvc, progress, src.Scraper)
+	svc, err := func() (*DownloadService, error) {
+		if src, ok := s.sourceForTitle(ctx, title); ok {
+			next := ConfigForSource(*cfg, src, SourceConfigOptions{})
+			next.LanguageMode = title.LanguageMode
+			return NewSourceDownloadService(&next, logSvc, progress, src.Scraper)
+		}
+		return NewDefaultDownloadService(cfg, logSvc, progress)
+	}()
+	if err == nil {
+		svc.SetComicInfo(s.comicInfoTemplate(ctx, title))
 	}
-	return NewDefaultDownloadService(cfg, logSvc, progress)
+	return svc, err
+}
+
+// SetMangaLookup wires catalog metadata access for ComicInfo templates.
+func (s *LibraryService) SetMangaLookup(fn func(ctx context.Context, catalogID int64) (catalog.Manga, error)) {
+	s.manga = fn
+}
+
+// comicInfoTemplate builds the series-level ComicInfo for a title, or nil
+// when no catalog entry is linked.
+func (s *LibraryService) comicInfoTemplate(ctx context.Context, title library.Title) *util.ComicInfo {
+	ci := util.ComicInfo{Series: title.DisplayTitle, Web: title.SourceURL, Manga: "Yes"}
+	if s.manga != nil && title.CatalogMangaID != nil {
+		if m, err := s.manga(ctx, *title.CatalogMangaID); err == nil {
+			ci.Summary = util.PlainSnippet(m.Description, 1500)
+			ci.Writer = strings.Join(m.Authors, ", ")
+			ci.Genre = strings.Join(m.Genres, ", ")
+			ci.Tags = strings.Join(m.Tags, ", ")
+			ci.Year = m.Year
+			if m.Chapters != nil {
+				ci.Count = *m.Chapters
+			}
+			if m.IsAdult {
+				ci.AgeRating = "Adults Only 18+"
+			}
+		}
+	}
+	return &ci
 }
 
 func (s *LibraryService) sourceForTitle(ctx context.Context, title library.Title) (sources.Source, bool) {

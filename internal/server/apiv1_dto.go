@@ -44,6 +44,15 @@ type titleDTO struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
+// titleCoverPath keeps the version query on custom covers so cached clients
+// refetch after an upload.
+func titleCoverPath(t library.Title) string {
+	if t.CustomCover {
+		return t.CoverImage
+	}
+	return fmt.Sprintf("/api/v1/covers/%d", t.ID)
+}
+
 func toTitleDTO(t library.Title) titleDTO {
 	tags := t.ContentTags
 	if tags == nil {
@@ -51,7 +60,7 @@ func toTitleDTO(t library.Title) titleDTO {
 	}
 	return titleDTO{
 		ID: t.ID, SourceID: t.SourceID, CatalogMangaID: t.CatalogMangaID, SourceURL: t.SourceURL,
-		DisplayTitle: t.DisplayTitle, CoverImage: fmt.Sprintf("/api/v1/covers/%d", t.ID),
+		DisplayTitle: t.DisplayTitle, CoverImage: titleCoverPath(t),
 		Monitored: t.Monitored, RefreshInterval: t.RefreshInterval, ReleaseStatus: t.ReleaseStatus,
 		IsAdult: t.IsAdult, AverageScore: t.AverageScore, ContentTags: tags, Favourite: t.Favourite,
 		LanguageMode: t.LanguageMode, LanguageGap: t.LanguageGap, DiscoveredCount: t.DiscoveredCount,

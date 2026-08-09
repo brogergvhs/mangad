@@ -78,23 +78,23 @@ type PersonalMetrics struct {
 	ChaptersMarkedTotal       int64 // all-time, bulk/AniList-marked (read elsewhere)
 	PagesReadTotal            int64 // all-time, genuine
 	VolumesReadTotal          int64
-	TitlesCompleted   int64
-	TitlesInProgress  int64
-	Backlog           int64
-	StreakDays        int
-	LongestStreak     int
-	ActiveDays        int
-	PerDay            []DayCount
-	Heatmap           []DayCount
-	HourHist          [24]int64
-	WeekdayHist       [7]int64
-	TopGenres         []NamedCount
-	TopTags           []NamedCount
-	TopAuthors        []NamedCount
-	ScoreBuckets      []NamedCount
-	FormatSplit       []NamedCount
-	ReadingTime       ReadingTimeStats
-	Recent            []TitleProgress
+	TitlesCompleted           int64
+	TitlesInProgress          int64
+	Backlog                   int64
+	StreakDays                int
+	LongestStreak             int
+	ActiveDays                int
+	PerDay                    []DayCount
+	Heatmap                   []DayCount
+	HourHist                  [24]int64
+	WeekdayHist               [7]int64
+	TopGenres                 []NamedCount
+	TopTags                   []NamedCount
+	TopAuthors                []NamedCount
+	ScoreBuckets              []NamedCount
+	FormatSplit               []NamedCount
+	ReadingTime               ReadingTimeStats
+	Recent                    []TitleProgress
 }
 
 // PersonalMetrics computes a user's reading dashboard over the last `days`.

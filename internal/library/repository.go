@@ -1420,6 +1420,7 @@ func (r *Repository) titleSelectQuery() string {
 			COALESCE(m.genres_json, '[]'),
 			COALESCE(m.average_score, 0),
 			uf.title_id IS NOT NULL,
+			t.cover IS NOT NULL AND length(t.cover) > 0,
 			COALESCE(vagg.count, 0),
 			COALESCE(vagg.read, 0),
 			COALESCE(vagg.bytes, 0),
@@ -1465,6 +1466,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 	var lastRefreshed sql.NullString
 	var createdAt string
 	var updatedAt string
+	var customCover int
 
 	if err := row.Scan(
 		&title.ID,
@@ -1494,6 +1496,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 		&genresJSON,
 		&title.AverageScore,
 		&favourite,
+		&customCover,
 		&title.VolumeCount,
 		&title.VolumeReadCount,
 		&title.VolumeBytes,
@@ -1505,6 +1508,7 @@ func scanTitle(row database.Scanner) (Title, error) {
 	_ = json.Unmarshal([]byte(tagsJSON), &tags)
 	_ = json.Unmarshal([]byte(genresJSON), &genres)
 	title.ContentTags = append(tags, genres...)
+	title.CustomCover = customCover != 0
 
 	if catalogID.Valid {
 		title.CatalogMangaID = &catalogID.Int64
@@ -1530,6 +1534,9 @@ func scanTitle(row database.Scanner) (Title, error) {
 	}
 	title.CreatedAt = created
 	title.UpdatedAt = updated
+	if title.CustomCover {
+		title.CoverImage = fmt.Sprintf("/api/v1/covers/%d?v=%d", title.ID, title.UpdatedAt.Unix())
+	}
 
 	return title, nil
 }

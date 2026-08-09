@@ -121,34 +121,84 @@ func (u *webUI) volumeCoverUpload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := r.ParseMultipartForm(maxCoverBytes); err != nil {
-		u.fail(w, fmt.Errorf("cover upload too large or malformed"))
-		return
-	}
-	file, header, err := r.FormFile("cover")
-	if err != nil {
-		u.fail(w, fmt.Errorf("no cover file selected"))
-		return
-	}
-	defer file.Close()
-	blob, err := io.ReadAll(io.LimitReader(file, maxCoverBytes))
+	blob, mime, err := readCoverUpload(w, r)
 	if err != nil {
 		u.fail(w, err)
 		return
-	}
-	mime := header.Header.Get("Content-Type")
-	if !strings.HasPrefix(mime, "image/") {
-		mime = http.DetectContentType(blob)
-		if !strings.HasPrefix(mime, "image/") {
-			u.fail(w, fmt.Errorf("cover must be an image"))
-			return
-		}
 	}
 	if err := u.svc.SetVolumeCover(r.Context(), id, blob, mime); err != nil {
 		u.fail(w, err)
 		return
 	}
 	u.volumeSectionByVolume(w, r, id)
+}
+
+// readCoverUpload reads a bounded cover image from a multipart form; the
+// request body is capped so oversized uploads fail instead of truncating.
+func readCoverUpload(w http.ResponseWriter, r *http.Request) ([]byte, string, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCoverBytes+512*1024)
+	if err := r.ParseMultipartForm(maxCoverBytes); err != nil {
+		return nil, "", fmt.Errorf("cover upload too large or malformed")
+	}
+	file, header, err := r.FormFile("cover")
+	if err != nil {
+		return nil, "", fmt.Errorf("no cover file selected")
+	}
+	defer file.Close()
+	blob, err := io.ReadAll(io.LimitReader(file, maxCoverBytes+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(blob) > maxCoverBytes {
+		return nil, "", fmt.Errorf("cover must be 5 MB or smaller")
+	}
+	mime := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(mime, "image/") {
+		mime = http.DetectContentType(blob)
+		if !strings.HasPrefix(mime, "image/") {
+			return nil, "", fmt.Errorf("cover must be an image")
+		}
+	}
+	return blob, mime, nil
+}
+
+func (u *webUI) titleCoverUpload(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
+	blob, mime, err := readCoverUpload(w, r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.SetTitleCover(r.Context(), id, blob, mime); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Refresh", "true")
+}
+
+func (u *webUI) titleCoverReset(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if !titleAllowed(r.Context(), u.svc, id) {
+		http.NotFound(w, r)
+		return
+	}
+	if err := u.svc.SetTitleCover(r.Context(), id, nil, ""); err != nil {
+		u.fail(w, err)
+		return
+	}
+	w.Header().Set("HX-Refresh", "true")
 }
 
 func (u *webUI) volumeCoverReset(w http.ResponseWriter, r *http.Request) {

@@ -70,12 +70,13 @@ type ChapterDownloadResult struct {
 
 // DownloadService coordinates scraping, chapter selection, and CBZ downloads.
 type DownloadService struct {
-	cfg      *config.Config
-	client   *http.Client
-	scraper  providers.Scraper
-	log      ui.Log
-	progress ProgressManager
-	browser  downloader.BrowserFetcher
+	cfg       *config.Config
+	client    *http.Client
+	scraper   providers.Scraper
+	log       ui.Log
+	progress  ProgressManager
+	browser   downloader.BrowserFetcher
+	comicInfo *util.ComicInfo
 }
 
 // NewDownloadService creates a service from explicit dependencies.
@@ -102,6 +103,27 @@ func NewDownloadService(
 // SetProgressManager sets or replaces the progress manager used by Download.
 func (s *DownloadService) SetProgressManager(progress ProgressManager) {
 	s.progress = progress
+}
+
+// SetComicInfo sets the series-level ComicInfo template embedded into every
+// downloaded CBZ; per-chapter fields are filled at write time.
+func (s *DownloadService) SetComicInfo(ci *util.ComicInfo) {
+	s.comicInfo = ci
+}
+
+func (s *DownloadService) comicInfoEntry(ch chapters.Chapter, pages int) map[string][]byte {
+	if s.comicInfo == nil {
+		return nil
+	}
+	ci := *s.comicInfo
+	ci.Title = ch.Title
+	ci.Number = ch.Label
+	ci.PageCount = pages
+	body, err := util.MarshalComicInfo(ci)
+	if err != nil {
+		return nil
+	}
+	return map[string][]byte{util.ComicInfoName: body}
 }
 
 // NewDefaultDownloadService creates the default HTTP client and generic scraper.
@@ -461,7 +483,9 @@ func (s *DownloadService) downloadChapter(
 		return ChapterDownloadResult{}, err
 	}
 
-	if err := util.CreateCBZ(files, cbzOut, s.cfg.SkipBroken); err != nil {
+	// PageCount reflects the pre-skip count when SkipBroken drops files; the
+	// target readers count pages from the archive itself.
+	if err := util.CreateCBZ(files, cbzOut, s.cfg.SkipBroken, s.comicInfoEntry(ch, len(files))); err != nil {
 		return ChapterDownloadResult{}, fmt.Errorf("create cbz: %w", err)
 	}
 
@@ -469,6 +493,8 @@ func (s *DownloadService) downloadChapter(
 	return ChapterDownloadResult{Chapter: ch, OutputFile: cbzOut, Images: len(files), Bytes: bytes}, nil
 }
 
+// downloadChapterWithBrowser delegates CBZ assembly to the remote browser
+// worker, so those archives carry no ComicInfo.xml.
 func (s *DownloadService) downloadChapterWithBrowser(
 	ctx context.Context,
 	ch chapters.Chapter,
