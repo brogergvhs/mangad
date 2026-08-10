@@ -388,6 +388,8 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		{"sessions", "last_seen_at", "TEXT"},
 		{"volumes", "thumb", "BLOB"},
 		{"volumes", "thumb_type", "TEXT NOT NULL DEFAULT ''"},
+		{"users", "oidc_subject", "TEXT NOT NULL DEFAULT ''"},
+		{"users", "pending", "INTEGER NOT NULL DEFAULT 0"},
 		{"titles", "cover", "BLOB"},
 		{"titles", "cover_type", "TEXT NOT NULL DEFAULT ''"},
 		{"volume_read_progress", "read_pages", "INTEGER NOT NULL DEFAULT 0"},
@@ -419,6 +421,10 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		if err = ensureColumn(ctx, tx, col.table, col.name, col.def); err != nil {
 			return fmt.Errorf("migrate %s.%s: %w", col.table, col.name, err)
 		}
+	}
+
+	if _, err = tx.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc_subject ON users(oidc_subject) WHERE oidc_subject != ''`); err != nil {
+		return fmt.Errorf("migrate users oidc index: %w", err)
 	}
 
 	// One-shot backfill when the manual column is first added; rerunning would

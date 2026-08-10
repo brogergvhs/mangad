@@ -139,6 +139,7 @@ Configuration is via environment variables (see the compose example) and a few
 | `KAODOKU_DOWNLOAD_DIR` | Where CBZ files are written (mount a volume here). |
 | `KAODOKU_DB` | SQLite database path (the `--db` flag takes precedence). |
 | `KAODOKU_ENCRYPTION_KEY` | 64 hex chars; encrypts stored secrets (AniList tokens). If unset, a `kaodoku.key` is generated next to the database. |
+| `KAODOKU_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URL` | OIDC single sign-on (requires the admin password as break-glass). See the compose example for the optional role-mapping and auto-provisioning knobs. |
 | `KAODOKU_BROWSER_SOLVER_ENABLED` / `_ENDPOINT` / `_TIMEOUT_SECONDS` | FlareSolverr for Cloudflare-protected sites. |
 | `KAODOKU_BROWSER_DOWNLOADER_ENABLED` / `_ENDPOINT` / `_TIMEOUT_SECONDS` | Headless-browser worker for JS-rendered readers. |
 | `XDG_CONFIG_HOME` | Config directory (source definitions, profiles). |

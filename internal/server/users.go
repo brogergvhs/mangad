@@ -39,6 +39,8 @@ func permMeta(perm string) (label, desc string) {
 		return "Manage settings", "Change global scheduling, job and service settings."
 	case auth.PermUsersManage:
 		return "Manage users", "Create users and roles and assign permissions."
+	case auth.PermUsersApprove:
+		return "Approve users", "Approve accounts that signed in via SSO and are awaiting approval."
 	case auth.PermMetricsUsers:
 		return "View others' metrics", "Open the Metrics page's Users tab and see any user's reading metrics."
 	case auth.PermSessionsView:
@@ -60,7 +62,7 @@ func permGroups() []permGroup {
 		{Title: "Library", Perms: []string{auth.PermLibraryView, auth.PermLibraryAdd, auth.PermLibraryManage, auth.PermImportUse}},
 		{Title: "Reading", Perms: []string{auth.PermReaderUse}},
 		{Title: "Personal", Perms: []string{auth.PermSettingsAppearance}},
-		{Title: "Administration", Perms: []string{auth.PermJobsManage, auth.PermSourcesManage, auth.PermSettingsManage, auth.PermUsersManage, auth.PermMetricsUsers}},
+		{Title: "Administration", Perms: []string{auth.PermJobsManage, auth.PermSourcesManage, auth.PermSettingsManage, auth.PermUsersManage, auth.PermUsersApprove, auth.PermMetricsUsers}},
 	}
 }
 
@@ -158,8 +160,27 @@ func (u *webUI) userUpdate(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if _, present := r.Form["oidc_subject"]; present && id != auth.EnvAdminID {
+		if err := u.svc.Auth().SetOIDCSubject(r.Context(), id, r.FormValue("oidc_subject")); err != nil {
+			u.fail(w, err)
+			return
+		}
+	}
 	flushBasicCreds()
 	w.Header().Set("HX-Refresh", "true")
+}
+
+func (u *webUI) userApprove(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.Auth().SetUserPending(r.Context(), id, false); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.usersFrag(w, r)
 }
 
 func (u *webUI) userDelete(w http.ResponseWriter, r *http.Request) {

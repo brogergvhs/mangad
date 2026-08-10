@@ -925,7 +925,11 @@
           <span class="text-sm font-medium">{{.Username}}</span>
           <span class="badge badge-ghost badge-sm">{{.RoleName}}</span>
           {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; role and password are env-owned, content preferences editable">env</span>{{end}}
+          {{if .Pending}}<span class="badge badge-soft badge-warning badge-sm" title="Signed in via SSO but not yet approved">pending</span>{{end}}
         </div>
+        {{if .Pending}}
+        <button class="btn btn-sm btn-success" hx-post="/ui/users/{{.ID}}/approve" hx-target="#users-content" hx-swap="outerHTML">Approve</button>
+        {{end}}
         <details class="dropdown dropdown-end">
           <summary class="btn btn-sm btn-ghost btn-square" aria-label="User actions">{{template "iconDots"}}</summary>
           <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">
@@ -1092,6 +1096,9 @@
         </select></label>
       <label class="fieldset"><span class="fieldset-legend">New password</span>
         <input class="input w-full" type="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
+      <label class="fieldset"><span class="fieldset-legend">OIDC subject</span>
+        <input class="input w-full" name="oidc_subject" value="{{.User.OIDCSubject}}" placeholder="IdP subject (sub claim); blank unlinks">
+        <span class="text-xs text-base-content/50">Links this account to your identity provider for SSO sign-in.</span></label>
       {{end}}
       {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
       {{template "tagPicker" tagPicker .TagOptions .User.AllowedTags "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}
