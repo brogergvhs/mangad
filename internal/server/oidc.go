@@ -20,8 +20,7 @@ import (
 	"github.com/brogergvhs/kaodoku/internal/service"
 )
 
-// OIDC single sign-on: one IdP configured via environment, users linked by
-// subject. The env-admin password login stays as break-glass.
+// oidcSettings is the env-configured single-IdP SSO setup.
 type oidcSettings struct {
 	issuer          string
 	clientID        string
@@ -29,7 +28,7 @@ type oidcSettings struct {
 	redirectURL     string
 	usernameClaim   string
 	roleClaim       string
-	roleMap         map[string]string // IdP group/claim value -> kaodoku role name
+	roleMap         map[string]string
 	defaultRole     string
 	autoProvision   bool
 	requireApproval bool
@@ -62,13 +61,11 @@ func oidcConfig() oidcSettings {
 	return cfg
 }
 
-func oidcEnabled() bool {
-	cfg := oidcConfig()
-	return authEnabled() && cfg.issuer != "" && cfg.clientID != ""
-}
+func (c oidcSettings) ready() bool { return c.issuer != "" && c.clientID != "" }
 
-// oidcProviders caches issuer discovery so a slow IdP never blocks startup
-// and repeated logins skip rediscovery.
+func oidcEnabled() bool { return authEnabled() && oidcConfig().ready() }
+
+// oidcProviders caches issuer discovery across logins.
 var oidcProviders sync.Map
 
 func oidcProvider(ctx context.Context, issuer string) (*oidc.Provider, error) {
@@ -118,8 +115,7 @@ func oidcStateCookieFor(r *http.Request) (name, path string) {
 	return oidcStateCookie, "/auth/oidc"
 }
 
-// oidcFail logs the detail and shows the login page with a readable notice —
-// these errors land in a browser, not an API client.
+// oidcFail logs the detail and renders the login page with a readable notice.
 func oidcFail(w http.ResponseWriter, status int, public string, err error) {
 	if err != nil {
 		log.Printf("oidc: %s: %v", public, err)
@@ -131,7 +127,7 @@ func oidcFail(w http.ResponseWriter, status int, public string, err error) {
 
 func oidcLogin(w http.ResponseWriter, r *http.Request) {
 	cfg := oidcConfig()
-	if !oidcEnabled() {
+	if !authEnabled() || !cfg.ready() {
 		http.NotFound(w, r)
 		return
 	}
@@ -157,7 +153,7 @@ func oidcLogin(w http.ResponseWriter, r *http.Request) {
 func oidcCallback(svc *service.JobService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := oidcConfig()
-		if !oidcEnabled() {
+		if !authEnabled() || !cfg.ready() {
 			http.NotFound(w, r)
 			return
 		}
@@ -224,9 +220,8 @@ func oidcCallback(svc *service.JobService) http.HandlerFunc {
 	}
 }
 
-// oidcResolveUser maps a verified subject to a kaodoku user: linked users are
-// found by subject (role synced from the claim map), unknown subjects are
-// provisioned when auto-provisioning is on.
+// oidcResolveUser maps a verified subject to a user, provisioning one when
+// auto-provisioning is on and syncing the role from the claim map.
 func oidcResolveUser(ctx context.Context, svc *service.JobService, cfg oidcSettings, subject string, claims map[string]any) (*auth.User, error) {
 	user, err := svc.Auth().UserByOIDCSubject(ctx, subject)
 	if err != nil {
@@ -234,7 +229,7 @@ func oidcResolveUser(ctx context.Context, svc *service.JobService, cfg oidcSetti
 	}
 	mappedRole := oidcMappedRole(cfg, claims)
 	if cfg.roleClaim != "" && mappedRole == "" {
-		mappedRole = cfg.defaultRole // removed from every mapped group: revoke
+		mappedRole = cfg.defaultRole
 	}
 	if user != nil {
 		if mappedRole != "" && !user.IsEnvAdmin() && !strings.EqualFold(user.RoleName, mappedRole) {
@@ -267,7 +262,7 @@ func oidcResolveUser(ctx context.Context, svc *service.JobService, cfg oidcSetti
 	id, err := svc.Auth().CreateOIDCUser(ctx, username, subject, roleID, cfg.requireApproval)
 	if err != nil {
 		if existing, lookupErr := svc.Auth().UserByOIDCSubject(ctx, subject); lookupErr == nil && existing != nil {
-			return existing, nil // concurrent first login won the race
+			return existing, nil
 		}
 		suffix := subject
 		if len(suffix) > 6 {

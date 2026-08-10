@@ -188,9 +188,8 @@ func (s *Service) UserByOIDCSubject(ctx context.Context, subject string) (*User,
 	return s.GetUser(ctx, id)
 }
 
-// CreateOIDCUser provisions a password-less user owned by the IdP; the empty
-// password hash makes password login impossible for it. Pending users cannot
-// use the app until approved.
+// CreateOIDCUser provisions a password-less IdP-owned user (empty hash blocks
+// password login); pending users cannot use the app until approved.
 func (s *Service) CreateOIDCUser(ctx context.Context, username, subject string, roleID int64, pending bool) (int64, error) {
 	username, err := validUsername(username)
 	subject = strings.TrimSpace(subject)
