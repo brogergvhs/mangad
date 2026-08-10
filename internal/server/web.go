@@ -50,13 +50,14 @@ type webUI struct {
 }
 
 type pageData struct {
-	Title, Nav string
-	User       *auth.User
-	Theme      string
-	ThemeCSS   template.CSS // custom-theme variable overrides
-	Screens    []library.Screen
-	ActiveID   int64
-	Content    template.HTML
+	Title, Nav   string
+	User         *auth.User
+	Theme        string
+	ThemeCSS     template.CSS // custom-theme variable overrides
+	Screens      []library.Screen
+	ActiveID     int64
+	PendingUsers int
+	Content      template.HTML
 }
 type readerView struct {
 	PrevURL      string
@@ -421,7 +422,11 @@ func (u *webUI) page(w http.ResponseWriter, r *http.Request, content, title stri
 		screens, _ = u.svc.Screens(r.Context())
 	}
 	activeID, _ := strconv.ParseInt(r.URL.Query().Get("screen"), 10, 64)
-	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), User: userFrom(r.Context()), Theme: theme, ThemeCSS: css, Screens: screens, ActiveID: activeID, Content: template.HTML(buf.String())}); err != nil {
+	pending := 0
+	if viewer := userFrom(r.Context()); viewer.Can(auth.PermUsersApprove) || viewer.Can(auth.PermUsersManage) {
+		pending, _ = u.svc.Auth().CountPendingUsers(r.Context())
+	}
+	if err := u.tmpl.ExecuteTemplate(w, "layout.html", pageData{Title: title, Nav: navFor(r.URL.Path), User: userFrom(r.Context()), Theme: theme, ThemeCSS: css, Screens: screens, ActiveID: activeID, PendingUsers: pending, Content: template.HTML(buf.String())}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

@@ -206,6 +206,13 @@ func (s *Service) CreateOIDCUser(ctx context.Context, username, subject string, 
 	return res.LastInsertId()
 }
 
+// CountPendingUsers reports how many accounts await approval.
+func (s *Service) CountPendingUsers(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE pending = 1`).Scan(&n)
+	return n, err
+}
+
 // SetUserPending approves (false) or suspends into approval (true) a user.
 func (s *Service) SetUserPending(ctx context.Context, userID int64, pending bool) error {
 	if userID == EnvAdminID {

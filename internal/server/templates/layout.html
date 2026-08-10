@@ -56,7 +56,7 @@
         </li>
         {{if .User.Can "import.use"}}<li><a href="/import" class="{{if eq .Nav "import"}}menu-active{{end}}">{{template "iconImport"}}Import</a></li>{{end}}
         {{if .User.Can "sources.manage"}}<li><a href="/sources" class="{{if eq .Nav "sources"}}menu-active{{end}}">{{template "iconSources"}}Sources</a></li>{{end}}
-        {{if .User.Can "users.manage"}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users</a></li>{{end}}
+        {{if or (.User.Can "users.manage") (.User.Can "users.approve")}}<li><a href="/users" class="{{if eq .Nav "users"}}menu-active{{end}}">{{template "iconUsers"}}Users{{if .PendingUsers}}<span class="badge badge-warning badge-sm ml-auto">{{.PendingUsers}}</span>{{end}}</a></li>{{end}}
       </ul>
       <ul class="menu w-full px-4 pb-4">
         {{if or (or (.User.Can "reader.use") (.User.Can "stats.view")) (.User.Can "metrics.users")}}<li><a href="/metrics" class="{{if eq .Nav "metrics"}}menu-active{{end}}">{{template "iconChart"}}Metrics</a></li>{{end}}
