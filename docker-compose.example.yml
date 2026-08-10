@@ -18,6 +18,33 @@ services:
       # This account is immutable in-app and manages further users/roles.
       # KAODOKU_ADMIN_USER: admin
       # KAODOKU_ADMIN_PASSWORD: change-me
+      #
+      # OIDC single sign-on (requires the admin password above; that login
+      # stays available as break-glass). Register kaodoku at your identity
+      # provider with redirect URI https://<your-host>/auth/oidc/callback.
+      # KAODOKU_OIDC_ISSUER: https://auth.example.com
+      # KAODOKU_OIDC_CLIENT_ID: kaodoku
+      # KAODOKU_OIDC_CLIENT_SECRET: change-me
+      #
+      # Set explicitly when behind a reverse proxy:
+      # KAODOKU_OIDC_REDIRECT_URL: https://kaodoku.example.com/auth/oidc/callback
+      #
+      # Create accounts on first SSO login (else an admin links subjects on
+      # the Users page):
+      # KAODOKU_OIDC_AUTO_PROVISION: "true"
+      # KAODOKU_OIDC_DEFAULT_ROLE: member
+      #
+      # Map IdP groups/roles to kaodoku roles, re-synced on every login.
+      # Keycloak realm roles use the nested path realm_access.roles.
+      # KAODOKU_OIDC_ROLE_CLAIM: groups
+      # KAODOKU_OIDC_ROLE_MAP: kaodoku-admins:admin,kaodoku-users:member
+      #
+      # Extra scopes when your IdP gates claims behind one ("openid" is
+      # always requested):
+      # KAODOKU_OIDC_SCOPES: profile email groups
+      #
+      # Claim used for provisioned usernames (falls back to email, then sub):
+      # KAODOKU_OIDC_USERNAME_CLAIM: preferred_username
       KAODOKU_BROWSER_DOWNLOADER_ENABLED: "true"
       KAODOKU_BROWSER_DOWNLOADER_ENDPOINT: http://browser-worker:8192
       KAODOKU_BROWSER_DOWNLOADER_TIMEOUT_SECONDS: "180"
