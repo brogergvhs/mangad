@@ -31,6 +31,7 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/static/") || r.URL.Path == "/login" ||
+			strings.HasPrefix(r.URL.Path, "/auth/oidc/") ||
 			r.URL.Path == "/api/v1/meta" || r.URL.Path == "/api/v1/auth/login" ||
 			r.URL.Path == "/komga/api/v1/claim" ||
 			r.URL.Path == "/komga/api/v1/client-settings/global/list" ||
@@ -337,19 +338,33 @@ const loginPage = `<!doctype html><html lang="en" data-theme="mocha"><meta chars
 <input class="input w-full" name="username" placeholder="Username" autofocus autocomplete="username">
 <input class="input w-full" type="password" name="password" placeholder="Password" autocomplete="current-password">
 <button class="btn btn-primary w-full">Sign in</button>
+<!--sso-->
 </form></body></html>`
+
+// renderLoginPage fills the notice slot and adds the SSO button when OIDC is
+// configured.
+func renderLoginPage(notice string) string {
+	page := strings.Replace(loginPage, "%s", notice, 1)
+	if oidcEnabled() {
+		page = strings.Replace(page, "<!--sso-->",
+			`<a class="btn btn-outline w-full" href="/auth/oidc/login">Sign in with SSO</a>`, 1)
+	}
+	return page
+}
 
 func registerAuthRoutes(mux *http.ServeMux, svc *service.JobService) {
 	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(strings.Replace(loginPage, "%s", "", 1)))
+		_, _ = w.Write([]byte(renderLoginPage("")))
 	})
+	mux.HandleFunc("GET /auth/oidc/login", oidcLogin)
+	mux.HandleFunc("GET /auth/oidc/callback", oidcCallback(svc))
 	mux.HandleFunc("POST /login", func(w http.ResponseWriter, r *http.Request) {
 		token, err := svc.Auth().Login(r.Context(), r.FormValue("username"), r.FormValue("password"), r.UserAgent(), clientIP(r))
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(strings.Replace(loginPage, "%s", `<p class="text-sm text-error">Invalid username or password.</p>`, 1)))
+			_, _ = w.Write([]byte(renderLoginPage(`<p class="text-sm text-error">Invalid username or password.</p>`)))
 			return
 		}
 		http.SetCookie(w, &http.Cookie{

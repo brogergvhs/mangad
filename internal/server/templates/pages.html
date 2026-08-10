@@ -1092,6 +1092,9 @@
         </select></label>
       <label class="fieldset"><span class="fieldset-legend">New password</span>
         <input class="input w-full" type="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password"></label>
+      <label class="fieldset"><span class="fieldset-legend">OIDC subject</span>
+        <input class="input w-full" name="oidc_subject" value="{{.User.OIDCSubject}}" placeholder="IdP subject (sub claim); blank unlinks">
+        <span class="text-xs text-base-content/50">Links this account to your identity provider for SSO sign-in.</span></label>
       {{end}}
       {{template "tagPicker" tagPicker .TagOptions .User.BlockedTags "blocked_tags" "Blocked tags/genres" "Matching manga are hidden from this user everywhere."}}
       {{template "tagPicker" tagPicker .TagOptions .User.AllowedTags "allowed_tags" "Include tags/genres (only)" "When set, only manga carrying at least one of these are shown."}}

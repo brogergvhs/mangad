@@ -42,6 +42,7 @@ const (
 	OriginEnv     = "env"
 	OriginLocal   = "local"
 	OriginBuiltin = "builtin"
+	OriginOIDC    = "oidc"
 )
 
 type User struct {
@@ -50,6 +51,7 @@ type User struct {
 	Origin      string // env|local
 	RoleID      int64
 	RoleName    string
+	OIDCSubject string
 	AllowAdult  bool
 	BlockedTags []string // tags/genres this user must not see
 	AllowedTags []string // when set, only manga carrying one of these are shown

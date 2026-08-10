@@ -5,12 +5,15 @@ go 1.26
 require (
 	github.com/DaRealFreak/cloudflare-bp-go v1.0.4
 	github.com/PuerkitoBio/goquery v1.10.3
+	github.com/coreos/go-oidc/v3 v3.20.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/manifoldco/promptui v0.9.0
 	github.com/spf13/cobra v1.10.1
 	github.com/vbauerster/mpb/v8 v8.11.1
 	golang.org/x/crypto v0.54.0
 	golang.org/x/image v0.44.0
 	golang.org/x/net v0.56.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.53.0

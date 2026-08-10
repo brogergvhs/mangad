@@ -158,6 +158,12 @@ func (u *webUI) userUpdate(w http.ResponseWriter, r *http.Request) {
 		u.fail(w, err)
 		return
 	}
+	if _, present := r.Form["oidc_subject"]; present && id != auth.EnvAdminID {
+		if err := u.svc.Auth().SetOIDCSubject(r.Context(), id, r.FormValue("oidc_subject")); err != nil {
+			u.fail(w, err)
+			return
+		}
+	}
 	flushBasicCreds()
 	w.Header().Set("HX-Refresh", "true")
 }

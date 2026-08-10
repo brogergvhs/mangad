@@ -151,6 +151,11 @@ func (s *Service) Login(ctx context.Context, username, password, userAgent, ip s
 	if err != nil {
 		return "", err
 	}
+	return s.IssueSession(ctx, id, userAgent, ip)
+}
+
+// IssueSession mints a session for an already-authenticated user id.
+func (s *Service) IssueSession(ctx context.Context, id int64, userAgent, ip string) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -164,6 +169,55 @@ func (s *Service) Login(ctx context.Context, username, password, userAgent, ip s
 		return "", fmt.Errorf("store session: %w", err)
 	}
 	return token, nil
+}
+
+// UserByOIDCSubject resolves a linked OIDC subject to its user, or nil.
+func (s *Service) UserByOIDCSubject(ctx context.Context, subject string) (*User, error) {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
+		return nil, nil
+	}
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE oidc_subject = ?`, subject).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.GetUser(ctx, id)
+}
+
+// CreateOIDCUser provisions a password-less user owned by the IdP; the empty
+// password hash makes password login impossible for it.
+func (s *Service) CreateOIDCUser(ctx context.Context, username, subject string, roleID int64) (int64, error) {
+	username, err := validUsername(username)
+	subject = strings.TrimSpace(subject)
+	if err != nil || subject == "" {
+		return 0, fmt.Errorf("a valid username and subject are required")
+	}
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO users (username, password_hash, role_id, origin, oidc_subject) VALUES (?, '', ?, ?, ?)
+	`, username, roleID, OriginOIDC, subject)
+	if err != nil {
+		return 0, fmt.Errorf("create oidc user %q: %w", username, err)
+	}
+	return res.LastInsertId()
+}
+
+// SetOIDCSubject links (or with "" unlinks) an IdP subject to a user.
+func (s *Service) SetOIDCSubject(ctx context.Context, userID int64, subject string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET oidc_subject = ? WHERE id = ?`, strings.TrimSpace(subject), userID)
+	return err
+}
+
+// SetUserRole updates a user's role; the env admin is immutable.
+func (s *Service) SetUserRole(ctx context.Context, userID, roleID int64) error {
+	if userID == EnvAdminID {
+		return fmt.Errorf("the environment admin's role is fixed")
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET role_id = ? WHERE id = ?`, roleID, userID)
+	return err
 }
 
 // UserBySession resolves a session token to its user, or nil when invalid.
@@ -250,7 +304,7 @@ func (s *Service) Logout(ctx context.Context, token string) {
 }
 
 const userSelect = `
-	SELECT u.id, u.username, u.origin, u.allow_adult, u.blocked_tags, u.allowed_tags, u.created_at, r.id, r.name, r.permissions_json
+	SELECT u.id, u.username, u.origin, u.allow_adult, u.blocked_tags, u.allowed_tags, u.oidc_subject, u.created_at, r.id, r.name, r.permissions_json
 	FROM users u JOIN roles r ON r.id = u.role_id`
 
 // GetUser loads one user with its role and permissions.
@@ -266,7 +320,7 @@ func scanUser(row database.Scanner) (*User, error) {
 	var u User
 	var created, perms, blocked, allowed string
 	var allowAdult int
-	if err := row.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &blocked, &allowed, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &blocked, &allowed, &u.OIDCSubject, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
 		return nil, err
 	}
 	u.AllowAdult = allowAdult != 0
@@ -308,10 +362,23 @@ type ContentGuards struct {
 }
 
 // CreateUser adds a local user.
-func (s *Service) CreateUser(ctx context.Context, username, password string, roleID int64, guards ContentGuards) error {
+func validUsername(username string) (string, error) {
 	username = strings.TrimSpace(username)
-	if username == "" || len(password) < 4 {
-		return fmt.Errorf("username and a password of at least 4 characters are required")
+	if username == "" || len(username) > 64 {
+		return "", fmt.Errorf("username must be 1-64 characters")
+	}
+	for _, r := range username {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("username contains control characters")
+		}
+	}
+	return username, nil
+}
+
+func (s *Service) CreateUser(ctx context.Context, username, password string, roleID int64, guards ContentGuards) error {
+	username, err := validUsername(username)
+	if err != nil || len(password) < 4 {
+		return fmt.Errorf("a valid username and a password of at least 4 characters are required")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
