@@ -57,7 +57,17 @@ func requireUser(next http.Handler, svc *service.JobService) http.Handler {
 			}
 			return
 		}
-		if p := requiredPerm(r); p != "" && !user.Can(p) {
+		if user.Pending {
+			if r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html") {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(renderLoginPage(`<p class="text-sm">Your account is waiting for an admin's approval.</p>`)))
+				return
+			}
+			writeError(w, http.StatusForbidden, "account pending approval")
+			return
+		}
+		if p := requiredPerm(r); p != "" && !canAny(user, p) {
 			if strings.HasPrefix(r.URL.Path, "/api/v1/") {
 				v1err(w, http.StatusForbidden, "forbidden", "missing permission: "+p)
 			} else {
@@ -125,6 +135,10 @@ func requiredPerm(r *http.Request) string {
 		return "" // any signed-in user (dashboard sections gate individually)
 	case strings.HasPrefix(p, "/reader/") || strings.HasPrefix(p, "/api/reader/"):
 		return auth.PermReaderUse
+	case strings.HasPrefix(p, "/ui/users/") && strings.HasSuffix(p, "/approve"):
+		return auth.PermUsersApprove
+	case (p == "/users" || strings.HasPrefix(p, "/ui/users")) && r.Method == http.MethodGet:
+		return auth.PermUsersManage + "|" + auth.PermUsersApprove
 	case p == "/users" || strings.HasPrefix(p, "/ui/users"):
 		return auth.PermUsersManage
 	case p == "/api/settings":
@@ -172,6 +186,16 @@ func requiredPerm(r *http.Request) string {
 	default:
 		return auth.PermLibraryManage
 	}
+}
+
+// canAny accepts "a|b" alternatives from requiredPerm.
+func canAny(user *auth.User, perms string) bool {
+	for _, p := range strings.Split(perms, "|") {
+		if user.Can(p) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveUser(r *http.Request, svc *service.JobService) *auth.User {

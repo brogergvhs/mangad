@@ -168,6 +168,19 @@ func (u *webUI) userUpdate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Refresh", "true")
 }
 
+func (u *webUI) userApprove(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Path(r, "id")
+	if err != nil {
+		u.fail(w, err)
+		return
+	}
+	if err := u.svc.Auth().SetUserPending(r.Context(), id, false); err != nil {
+		u.fail(w, err)
+		return
+	}
+	u.usersFrag(w, r)
+}
+
 func (u *webUI) userDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := parseInt64Path(r, "id")
 	if err != nil {

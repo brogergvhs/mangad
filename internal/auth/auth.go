@@ -22,6 +22,7 @@ const (
 	PermSettingsAppearance = "settings.appearance" // own theme settings
 	PermSettingsManage     = "settings.manage"     // global settings sections
 	PermUsersManage        = "users.manage"        // users & roles administration
+	PermUsersApprove       = "users.approve"       // approve pending (auto-provisioned) accounts
 	PermMetricsUsers       = "metrics.users"       // view other users' reading metrics
 )
 
@@ -31,7 +32,7 @@ func Permissions() []string {
 		PermLibraryView, PermStatsView, PermServicesView, PermSessionsView, PermJobsView,
 		PermReaderUse, PermLibraryAdd, PermLibraryManage, PermImportUse,
 		PermSourcesManage, PermJobsManage,
-		PermSettingsAppearance, PermSettingsManage, PermUsersManage, PermMetricsUsers,
+		PermSettingsAppearance, PermSettingsManage, PermUsersManage, PermUsersApprove, PermMetricsUsers,
 	}
 }
 
@@ -52,6 +53,7 @@ type User struct {
 	RoleID      int64
 	RoleName    string
 	OIDCSubject string
+	Pending     bool // provisioned but awaiting admin approval
 	AllowAdult  bool
 	BlockedTags []string // tags/genres this user must not see
 	AllowedTags []string // when set, only manga carrying one of these are shown

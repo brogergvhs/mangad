@@ -925,7 +925,11 @@
           <span class="text-sm font-medium">{{.Username}}</span>
           <span class="badge badge-ghost badge-sm">{{.RoleName}}</span>
           {{if .IsEnvAdmin}}<span class="badge badge-soft badge-info badge-sm" title="Provisioned from the environment; role and password are env-owned, content preferences editable">env</span>{{end}}
+          {{if .Pending}}<span class="badge badge-soft badge-warning badge-sm" title="Signed in via SSO but not yet approved">pending</span>{{end}}
         </div>
+        {{if .Pending}}
+        <button class="btn btn-sm btn-success" hx-post="/ui/users/{{.ID}}/approve" hx-target="#users-content" hx-swap="outerHTML">Approve</button>
+        {{end}}
         <details class="dropdown dropdown-end">
           <summary class="btn btn-sm btn-ghost btn-square" aria-label="User actions">{{template "iconDots"}}</summary>
           <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-44 p-2 shadow-lg border border-base-300">

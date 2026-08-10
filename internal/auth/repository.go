@@ -189,20 +189,30 @@ func (s *Service) UserByOIDCSubject(ctx context.Context, subject string) (*User,
 }
 
 // CreateOIDCUser provisions a password-less user owned by the IdP; the empty
-// password hash makes password login impossible for it.
-func (s *Service) CreateOIDCUser(ctx context.Context, username, subject string, roleID int64) (int64, error) {
+// password hash makes password login impossible for it. Pending users cannot
+// use the app until approved.
+func (s *Service) CreateOIDCUser(ctx context.Context, username, subject string, roleID int64, pending bool) (int64, error) {
 	username, err := validUsername(username)
 	subject = strings.TrimSpace(subject)
 	if err != nil || subject == "" {
 		return 0, fmt.Errorf("a valid username and subject are required")
 	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (username, password_hash, role_id, origin, oidc_subject) VALUES (?, '', ?, ?, ?)
-	`, username, roleID, OriginOIDC, subject)
+		INSERT INTO users (username, password_hash, role_id, origin, oidc_subject, pending) VALUES (?, '', ?, ?, ?, ?)
+	`, username, roleID, OriginOIDC, subject, boolInt(pending))
 	if err != nil {
 		return 0, fmt.Errorf("create oidc user %q: %w", username, err)
 	}
 	return res.LastInsertId()
+}
+
+// SetUserPending approves (false) or suspends into approval (true) a user.
+func (s *Service) SetUserPending(ctx context.Context, userID int64, pending bool) error {
+	if userID == EnvAdminID {
+		return fmt.Errorf("the environment admin cannot be pending")
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET pending = ? WHERE id = ?`, boolInt(pending), userID)
+	return err
 }
 
 // SetOIDCSubject links (or with "" unlinks) an IdP subject to a user.
@@ -304,7 +314,7 @@ func (s *Service) Logout(ctx context.Context, token string) {
 }
 
 const userSelect = `
-	SELECT u.id, u.username, u.origin, u.allow_adult, u.blocked_tags, u.allowed_tags, u.oidc_subject, u.created_at, r.id, r.name, r.permissions_json
+	SELECT u.id, u.username, u.origin, u.allow_adult, u.blocked_tags, u.allowed_tags, u.oidc_subject, u.pending, u.created_at, r.id, r.name, r.permissions_json
 	FROM users u JOIN roles r ON r.id = u.role_id`
 
 // GetUser loads one user with its role and permissions.
@@ -319,11 +329,12 @@ func (s *Service) GetUser(ctx context.Context, id int64) (*User, error) {
 func scanUser(row database.Scanner) (*User, error) {
 	var u User
 	var created, perms, blocked, allowed string
-	var allowAdult int
-	if err := row.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &blocked, &allowed, &u.OIDCSubject, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
+	var allowAdult, pending int
+	if err := row.Scan(&u.ID, &u.Username, &u.Origin, &allowAdult, &blocked, &allowed, &u.OIDCSubject, &pending, &created, &u.RoleID, &u.RoleName, &perms); err != nil {
 		return nil, err
 	}
 	u.AllowAdult = allowAdult != 0
+	u.Pending = pending != 0
 	_ = json.Unmarshal([]byte(blocked), &u.BlockedTags)
 	_ = json.Unmarshal([]byte(allowed), &u.AllowedTags)
 	u.CreatedAt, _ = database.ParseTime(created)

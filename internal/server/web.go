@@ -401,6 +401,7 @@ func registerUI(mux *http.ServeMux, svc *service.JobService, runJobs func(contex
 	mux.HandleFunc("GET /ui/users/roles/{id}/edit", u.roleEditModal)
 	mux.HandleFunc("POST /ui/users/{id}", u.userUpdate)
 	mux.HandleFunc("POST /ui/users/{id}/delete", u.userDelete)
+	mux.HandleFunc("POST /ui/users/{id}/approve", u.userApprove)
 	mux.HandleFunc("POST /ui/users/roles", u.roleSave)
 	mux.HandleFunc("POST /ui/users/roles/{id}/delete", u.roleDelete)
 	mux.HandleFunc("PUT /ui/settings", u.settingsSave)

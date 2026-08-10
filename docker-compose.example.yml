@@ -32,6 +32,10 @@ services:
       # Create accounts on first SSO login (else an admin links subjects on
       # the Users page):
       # KAODOKU_OIDC_AUTO_PROVISION: "true"
+      #
+      # Hold auto-provisioned accounts as "pending" until someone with the
+      # users.approve permission approves them on the Users page:
+      # KAODOKU_OIDC_REQUIRE_APPROVAL: "true"
       # KAODOKU_OIDC_DEFAULT_ROLE: member
       #
       # Map IdP groups/roles to kaodoku roles, re-synced on every login.

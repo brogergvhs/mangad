@@ -23,15 +23,16 @@ import (
 // OIDC single sign-on: one IdP configured via environment, users linked by
 // subject. The env-admin password login stays as break-glass.
 type oidcSettings struct {
-	issuer        string
-	clientID      string
-	clientSecret  string
-	redirectURL   string
-	usernameClaim string
-	roleClaim     string
-	roleMap       map[string]string // IdP group/claim value -> kaodoku role name
-	defaultRole   string
-	autoProvision bool
+	issuer          string
+	clientID        string
+	clientSecret    string
+	redirectURL     string
+	usernameClaim   string
+	roleClaim       string
+	roleMap         map[string]string // IdP group/claim value -> kaodoku role name
+	defaultRole     string
+	autoProvision   bool
+	requireApproval bool
 }
 
 func oidcConfig() oidcSettings {
@@ -46,6 +47,7 @@ func oidcConfig() oidcSettings {
 		defaultRole:   strings.TrimSpace(os.Getenv("KAODOKU_OIDC_DEFAULT_ROLE")),
 		autoProvision: os.Getenv("KAODOKU_OIDC_AUTO_PROVISION") == "true",
 	}
+	cfg.requireApproval = os.Getenv("KAODOKU_OIDC_REQUIRE_APPROVAL") == "true"
 	if cfg.usernameClaim == "" {
 		cfg.usernameClaim = "preferred_username"
 	}
@@ -203,6 +205,10 @@ func oidcCallback(svc *service.JobService) http.HandlerFunc {
 			oidcFail(w, http.StatusForbidden, err.Error(), nil)
 			return
 		}
+		if user.Pending {
+			oidcFail(w, http.StatusForbidden, "Your account is waiting for an admin's approval.", nil)
+			return
+		}
 		session, err := svc.Auth().IssueSession(r.Context(), user.ID, r.UserAgent(), clientIP(r))
 		if err != nil {
 			oidcFail(w, http.StatusInternalServerError, "Sign-in could not be completed.", err)
@@ -258,7 +264,7 @@ func oidcResolveUser(ctx context.Context, svc *service.JobService, cfg oidcSetti
 		return nil, fmt.Errorf("role %q not found for auto-provisioning", roleName)
 	}
 	username := oidcUsername(cfg, subject, claims)
-	id, err := svc.Auth().CreateOIDCUser(ctx, username, subject, roleID)
+	id, err := svc.Auth().CreateOIDCUser(ctx, username, subject, roleID, cfg.requireApproval)
 	if err != nil {
 		if existing, lookupErr := svc.Auth().UserByOIDCSubject(ctx, subject); lookupErr == nil && existing != nil {
 			return existing, nil // concurrent first login won the race
@@ -267,7 +273,7 @@ func oidcResolveUser(ctx context.Context, svc *service.JobService, cfg oidcSetti
 		if len(suffix) > 6 {
 			suffix = suffix[:6]
 		}
-		if id, err = svc.Auth().CreateOIDCUser(ctx, username+"-"+suffix, subject, roleID); err != nil {
+		if id, err = svc.Auth().CreateOIDCUser(ctx, username+"-"+suffix, subject, roleID, cfg.requireApproval); err != nil {
 			log.Printf("oidc: provisioning %q failed: %v", username, err)
 			return nil, fmt.Errorf("your account could not be provisioned — ask an admin to check the server log")
 		}
