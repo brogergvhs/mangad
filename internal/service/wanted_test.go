@@ -95,6 +95,18 @@ func TestMatchesWantedTitleAllowsPartialTitleOverlap(t *testing.T) {
 	}
 }
 
+// A short trailing token (the "D" in "Initial D") must not raise the match
+// threshold beyond what the countable words can ever satisfy.
+func TestMatchesWantedTitleShortTitle(t *testing.T) {
+	manga := catalog.Manga{TitleEnglish: "Initial D"}
+	if !matchesWantedTitle(manga, "https://mangakatana.com/manga/initial-d.20114") {
+		t.Fatalf("short title did not match on HTML search source")
+	}
+	if matchesWantedTitle(manga, "https://mangakatana.com/manga/one-piece.100") {
+		t.Fatalf("unrelated title matched short title")
+	}
+}
+
 // Sample URLs whose identifying segment is an opaque id (UUIDs included) must
 // not produce slug-probe guesses: the site ignores the slug, so a swapped
 // slug resolves to the SAME manga under a wrong name.

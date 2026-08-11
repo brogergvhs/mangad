@@ -728,13 +728,18 @@ func uniqueStrings(values []string) []string {
 func matchesWantedTitle(m catalog.Manga, value string) bool {
 	value = strings.ToLower(value)
 	for _, title := range mangaTitleVariants(m) {
-		words := strings.Fields(strings.ReplaceAll(slugify(title), "-", " "))
+		var words []string
+		for _, word := range strings.Fields(strings.ReplaceAll(slugify(title), "-", " ")) {
+			if len(word) >= 3 {
+				words = append(words, word)
+			}
+		}
 		if len(words) == 0 {
 			continue
 		}
 		hits := 0
 		for _, word := range words {
-			if len(word) >= 3 && strings.Contains(value, word) {
+			if strings.Contains(value, word) {
 				hits++
 			}
 		}
