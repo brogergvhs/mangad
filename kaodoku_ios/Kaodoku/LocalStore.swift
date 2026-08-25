@@ -486,8 +486,12 @@ final class LocalStore {
               data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
             ),
             let props = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
-            let w = props[kCGImagePropertyPixelWidth] as? Double,
-            let h = props[kCGImagePropertyPixelHeight] as? Double, w > 0, h > 0 else { return 0 }
+            var w = props[kCGImagePropertyPixelWidth] as? Double,
+            var h = props[kCGImagePropertyPixelHeight] as? Double, w > 0, h > 0 else { return 0 }
+      let orientation = (props[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+      if orientation >= 5, orientation <= 8 {
+        swap(&w, &h)
+      }
       return w / h
     }
   }

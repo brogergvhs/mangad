@@ -145,9 +145,25 @@ struct StripReader: UIViewRepresentable {
       }
       let page = pages[indexPath.item]
       let loader = parent.loadImage
+      let item = indexPath.item
       cell.setComfort(comfort)
-      cell.load(page, size: parent.maxPixelSize) { await loader($0, $1) }
+      cell.load(page, size: parent.maxPixelSize, using: { await loader($0, $1) },
+                report: { [weak self] aspect in self?.correctAspect(item: item, page: page, aspect: aspect) })
       return cell
+    }
+
+    /// correctAspect fixes a page's frame height once its true aspect is known,
+    /// so a stale or missing precomputed aspect can't leave the image squashed.
+    private func correctAspect(item: Int, page: ReaderView.PageRef, aspect: CGFloat) {
+      guard aspect > 0.05, pages.indices.contains(item), pages[item] == page,
+            let v = view, v.layout.aspects.indices.contains(item) else { return }
+      if abs(v.layout.aspects[item] - aspect) <= aspect * 0.02 {
+        return
+      }
+      let key = "\(page.volume ? "v" : "c")\(page.chapterID)-\(page.page)"
+      ReaderView.aspects[key] = aspect
+      v.layout.aspects[item] = aspect
+      v.adjustContentSize()
     }
   }
 }
@@ -348,7 +364,8 @@ final class StripCell: UICollectionViewCell {
   }
 
   func load(_ page: ReaderView.PageRef, size: CGSize,
-            using loader: @escaping (ReaderView.PageRef, CGSize) async -> UIImage?)
+            using loader: @escaping (ReaderView.PageRef, CGSize) async -> UIImage?,
+            report: @escaping (CGFloat) -> Void)
   {
     guard page != pageKey else { return }
     pageKey = page
@@ -365,6 +382,9 @@ final class StripCell: UICollectionViewCell {
       guard !Task.isCancelled else { return }
       original = img
       imageView.image = img.map { ReaderComfort.apply($0, comfort) }
+      if let img, img.size.height > 0 {
+        report(img.size.width / img.size.height)
+      }
     }
   }
 
